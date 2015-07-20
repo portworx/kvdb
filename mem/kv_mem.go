@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	KVMem = "kv-mem"
+	Name = "kv-mem"
 )
 
 type watchData struct {
@@ -47,7 +47,7 @@ func MemInit(domain string,
 }
 
 func (kv *MemKV) String() string {
-	return KVMem
+	return Name
 }
 
 func (kv *MemKV) normalize(kvp *kvdb.KVPair) {
@@ -313,5 +313,5 @@ func (kv *MemKV) TxNew() (kvdb.Tx, error) {
 }
 
 func init() {
-	kvdb.Register(KVMem, MemInit)
+	kvdb.Register(Name, MemInit)
 }

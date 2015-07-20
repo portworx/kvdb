@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	KVEtcd  = "etcd-kv"
+	Name    = "etcd-kv"
 	defHost = "http://127.0.0.1:4001"
 )
 
@@ -39,7 +39,7 @@ func EtcdInit(domain string,
 }
 
 func (kv *EtcdKV) String() string {
-	return KVEtcd
+	return Name
 }
 
 func (kv *EtcdKV) nodeToKv(node *e.Node) *kvdb.KVPair {
@@ -323,5 +323,5 @@ func (kv *EtcdKV) TxNew() (kvdb.Tx, error) {
 }
 
 func init() {
-	kvdb.Register(KVEtcd, EtcdInit)
+	kvdb.Register(Name, EtcdInit)
 }
