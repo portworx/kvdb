@@ -121,10 +121,10 @@ type Kvdb interface {
 	DeleteTree(prefix string) error
 	// Keys returns an array of keys that share specified prefix.
 	Keys(prefix, key string) ([]string, error)
-	// CompareAndSet updates value at kvp.Key if the previous resident matches
+	// CompareAndSet updates value at kvp.Key if the previous resident 
 	// satisfies conditions set in flags and optional prevValue.
 	CompareAndSet(kvp *KVPair, flags KVFlags, prevValue []byte) (*KVPair, error)
-	// CompareAndDelete delets value at kvp.Key if the previous resident matches
+	// CompareAndDelete deletes value at kvp.Key if the previous resident matches
 	// satisfies conditions set in flags.
 	CompareAndDelete(kvp *KVPair, flags KVFlags) (*KVPair, error)
 	// WatchKey calls watchCB everytime a value at key is updated. waitIndex
