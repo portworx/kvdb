@@ -36,6 +36,7 @@ func Run(t *testing.T) {
 	lock(t)
 	watchKey(t)
 	watchTree(t)
+	cas(t)
 }
 
 func get(t *testing.T) {
@@ -392,4 +393,39 @@ func watchTree(t *testing.T) {
 	for watchData.watchStopped == false {
 		time.Sleep(time.Millisecond * 100)
 	}
+}
+
+func cas(t *testing.T) {
+	fmt.Println("cas")
+
+	kv := kvdb.Instance()
+	assert.NotNil(t, kv, "Default KVDB is not set")
+	key := "foo/docker"
+	val := "great"
+	defer func() {
+		kv.Delete(key)
+	}()
+
+	kvPair, err := kv.Put(key, []byte(val), 10)
+	assert.NoError(t, err, "Unxpected error in Put")
+
+	kvPair, err = kv.Get(key)
+	assert.NoError(t, err, "Failed in Get")
+
+	_, err = kv.CompareAndSet(kvPair, kvdb.KVFlags(0), []byte("badval"))
+	assert.Error(t, err, "CompareAndSet should fail on an incorrect previous value")
+
+	kvPair.ModifiedIndex++
+	_, err = kv.CompareAndSet(kvPair, kvdb.KVModifiedIndex, nil)
+	assert.Error(t, err, "CompareAndSet should fail on an incorrect modified index")
+
+	kvPair.ModifiedIndex--
+	kvPair, err = kv.CompareAndSet(kvPair, kvdb.KVModifiedIndex, nil)
+	assert.NoError(t, err, "CompareAndSet should succeed on an correct modified index")
+
+	kvPair, err = kv.CompareAndSet(kvPair, kvdb.KVFlags(0), []byte(val))
+	assert.NoError(t, err, "CompareAndSet should succeed on an correct value")
+
+	kvPair, err = kv.CompareAndSet(kvPair, kvdb.KVModifiedIndex, []byte(val))
+	assert.NoError(t, err, "CompareAndSet should succeed on an correct value and modified index")
 }

@@ -211,7 +211,21 @@ func (kv *EtcdKV) CompareAndSet(
 	kvp *kvdb.KVPair,
 	flags kvdb.KVFlags,
 	prevValue []byte) (*kvdb.KVPair, error) {
-	return nil, kvdb.ErrNotSupported
+
+	prevIndex := uint64(0)
+	if (flags & kvdb.KVModifiedIndex) != 0 {
+		prevIndex = kvp.ModifiedIndex
+	}
+	result, err := kv.client.CompareAndSwap(
+		kv.domain+kvp.Key,
+		string(kvp.Value),
+		0,
+		string(prevValue),
+		prevIndex)
+	if err != nil {
+		return nil, err
+	}
+	return kv.resultToKv(result), err
 }
 
 func (kv *EtcdKV) CompareAndDelete(

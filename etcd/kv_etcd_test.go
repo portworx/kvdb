@@ -8,7 +8,7 @@ import (
 )
 
 func TestAll(t *testing.T) {
-	kv, err := kvdb.New(KVEtcd, "pwx/test", nil, nil)
+	kv, err := kvdb.New(Name, "pwx/test", nil, nil)
 	if err != nil {
 		t.Fatalf("Failed to initialize KVDB: %v", err)
 	}
