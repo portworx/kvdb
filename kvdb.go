@@ -68,9 +68,9 @@ type KVFlags uint64
 const (
 	// KVPrevExists flag to check key already exists
 	KVPrevExists KVFlags = 1 << iota
-	// KVCreatedIndex flag compares with pased in index (possibly in KVPair)
+	// KVCreatedIndex flag compares with passed in index (possibly in KVPair)
 	KVCreatedIndex
-	// KVModifiedIndex flag compares with pased in index (possibly in KVPair)
+	// KVModifiedIndex flag compares with passed in index (possibly in KVPair)
 	KVModifiedIndex
 )
 
