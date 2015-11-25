@@ -2,7 +2,6 @@ package consul
 
 import (
 	"encoding/json"
-	_ "fmt"
 	"net/http"
 	"strings"
 
@@ -103,7 +102,9 @@ func (kv *ConsulKV) pairToKvs(action string, pair []*api.KVPair, meta *api.Query
 	kvs := make([]*kvdb.KVPair, len(pair))
 	for i := range pair {
 		kvs[i] = kv.pairToKv(action, pair[i], meta)
-		kvs[i].KVDBIndex = meta.LastIndex
+		if meta != nil {
+			kvs[i].KVDBIndex = meta.LastIndex
+		}
 	}
 	return kvs
 }

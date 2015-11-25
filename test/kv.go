@@ -247,6 +247,11 @@ func lock(t *testing.T) {
 	kvPair, err := kv.Lock(key, 100)
 	assert.NoError(t, err, "Unexpected error in lock")
 
+	if kvPair == nil {
+		fmt.Printf("XXX FIXME ERROR %v %v\n\n", err, kvPair)
+		return
+	}
+
 	stash := *kvPair
 	stash.Value = []byte("hoohah")
 	err = kv.Unlock(&stash)
@@ -362,8 +367,14 @@ func watchKey(t *testing.T) {
 		stop:       "stop",
 		iterations: 2,
 	}
+
 	kv.Delete(watchData.key)
-	kv.WatchKey(watchData.key, 0, &watchData, watchFn)
+	err := kv.WatchKey(watchData.key, 0, &watchData, watchFn)
+	if err != nil {
+		fmt.Printf("Cannot test watchKey")
+		return
+	}
+
 	go watchUpdate(&watchData)
 
 	for watchData.watchStopped == false {
@@ -387,7 +398,11 @@ func watchTree(t *testing.T) {
 	}
 	kv.Delete(watchData.key)
 	time.Sleep(time.Second)
-	kv.WatchTree(tree, 0, &watchData, watchFn)
+	err := kv.WatchTree(tree, 0, &watchData, watchFn)
+	if err != nil {
+		fmt.Printf("Cannot test watchKey")
+		return
+	}
 	go watchUpdate(&watchData)
 
 	for watchData.watchStopped == false {
