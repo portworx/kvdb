@@ -1,3 +1,5 @@
+// This package implements the KVDB interface based on consul.
+// Code from docker/libkv was leveraged to build parts of this module.
 package consul
 
 import (
@@ -5,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	api "github.com/hashicorp/consul/api"
 
@@ -15,6 +18,11 @@ const (
 	Name    = "consul-kv"
 	defHost = "127.0.0.1:8500"
 )
+
+type consulLock struct {
+	lock    *api.Lock
+	renewCh chan struct{}
+}
 
 type ConsulKV struct {
 	client *api.Client
@@ -63,9 +71,6 @@ func (kv *ConsulKV) createKv(pair *api.KVPair) *kvdb.KVPair {
 	kvp := &kvdb.KVPair{
 		Key:   pair.Key,
 		Value: []byte(pair.Value),
-		// TTL:           node.TTL,
-		// ModifiedIndex: node.ModifiedIndex,
-		// CreatedIndex:  node.CreatedIndex,
 	}
 
 	kvp.Key = strings.TrimPrefix(kvp.Key, kv.domain)
@@ -255,11 +260,6 @@ func (kv *ConsulKV) Delete(key string) (*kvdb.KVPair, error) {
 }
 
 func (kv *ConsulKV) DeleteTree(key string) error {
-	if _, err := kv.Get(key); err != nil {
-		fmt.Printf("1. DELETE TREE ERROR %v\n", key)
-		return err
-	}
-
 	key = kv.domain + key
 
 	_, err := kv.client.KV().DeleteTree(key, nil)
@@ -285,100 +285,75 @@ func (kv *ConsulKV) CompareAndDelete(kvp *kvdb.KVPair, flags kvdb.KVFlags) (*kvd
 
 func (kv *ConsulKV) WatchKey(key string, waitIndex uint64, opaque interface{}, cb kvdb.WatchCB) error {
 	return kvdb.ErrNotSupported
-
-	/*
-		key = kv.domain + key
-		go kv.watchStart(key, false, waitIndex, opaque, cb)
-		return nil
-	*/
 }
 
 func (kv *ConsulKV) WatchTree(prefix string, waitIndex uint64, opaque interface{}, cb kvdb.WatchCB) error {
 	return kvdb.ErrNotSupported
-	/*
-		prefix = kv.domain + prefix
-		go kv.watchStart(prefix, true, waitIndex, opaque, cb)
-		return nil
-	*/
 }
 
-func (kv *ConsulKV) Lock(key string, ttl uint64) (*kvdb.KVPair, error) {
-	return nil, kvdb.ErrNotSupported
+func (kv *ConsulKV) getLock(key string, ttl uint64) (*consulLock, error) {
+	key = kv.domain + key
 
-	/*
-		key = kv.domain + key
+	lockOpts := &api.LockOptions{
+		Key: key,
+	}
 
-		duration := time.Duration(math.Min(float64(time.Second),
-			float64((time.Duration(ttl)*time.Second)/10)))
+	lock := &consulLock{}
 
-		result, err := kv.client.Create(key, "locked", ttl)
-		for err != nil {
-			time.Sleep(duration)
-			result, err = kv.client.Create(key, "locked", ttl)
+	if ttl != 0 {
+		TTL := time.Duration(0)
+		entry := &api.SessionEntry{
+			Behavior:  api.SessionBehaviorRelease, // Release the lock when the session expires
+			TTL:       (TTL / 2).String(),         // Consul multiplies the TTL by 2x
+			LockDelay: 1 * time.Millisecond,       // Virtually disable lock delay
 		}
 
+		// Create the key session
+		session, _, err := kv.client.Session().Create(entry, nil)
 		if err != nil {
 			return nil, err
 		}
-		return kv.pairToKv(result), err
-	*/
+
+		// Place the session on lock
+		lockOpts.Session = session
+
+		// Renew the session ttl lock periodically
+		go kv.client.Session().RenewPeriodic(entry.TTL, session, nil, nil)
+	}
+
+	l, err := kv.client.LockOpts(lockOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	lock.lock = l
+	return lock, nil
+}
+
+func (kv *ConsulKV) Lock(key string, ttl uint64) (*kvdb.KVPair, error) {
+	l, err := kv.getLock(key, ttl)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = l.lock.Lock(nil)
+	if err != nil {
+		return nil, err
+	}
+
+	pair := &kvdb.KVPair{
+		Key:  key,
+		Lock: l,
+	}
+
+	return pair, nil
 }
 
 func (kv *ConsulKV) Unlock(kvp *kvdb.KVPair) error {
-	return kvdb.ErrNotSupported
-	/*
-		// Don't modify kvp here, CompareAndDelete does that.
-		_, err := kv.CompareAndDelete(kvp, kvdb.KVFlags(0))
-		return err
-	*/
+	l := kvp.Lock.(*consulLock)
+
+	return l.lock.Unlock()
 }
-
-/*
-func (kv *ConsulKV) watchReceive(
-	key string,
-	opaque interface{},
-	c chan *e.Response,
-	stop chan bool,
-	cb kvdb.WatchCB) {
-
-	var err error
-	for r, more := <-c; err == nil && more; {
-		if more {
-			err = cb(key, opaque, kv.pairToKv(r), nil)
-			if err == nil {
-				r, more = <-c
-			}
-		}
-	}
-	stop <- true
-	close(stop)
-}
-
-func (kv *ConsulKV) watchStart(key string,
-	recursive bool,
-	waitIndex uint64,
-	opaque interface{},
-	cb kvdb.WatchCB) {
-
-	ch := make(chan *e.Response, 10)
-	stop := make(chan bool, 1)
-
-	go kv.watchReceive(key, opaque, ch, stop, cb)
-
-	_, err := kv.client.Watch(key, waitIndex, recursive, ch, stop)
-	if err != e.ErrWatchStoppedByUser {
-		e, ok := err.(e.EtcdError)
-		if ok {
-			fmt.Printf("Etcd error code %d, message %s cause %s Index %ju\n",
-				e.ErrorCode, e.Message, e.Cause, e.Index)
-		}
-		cb(key, opaque, nil, err)
-		fmt.Errorf("Watch returned unexpected error %s\n", err.Error())
-	} else {
-		cb(key, opaque, nil, kvdb.ErrWatchStopped)
-	}
-}
-*/
 
 func (kv *ConsulKV) TxNew() (kvdb.Tx, error) {
 	return nil, kvdb.ErrNotSupported
