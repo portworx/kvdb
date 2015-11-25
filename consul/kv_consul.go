@@ -2,6 +2,7 @@ package consul
 
 import (
 	"encoding/json"
+	_ "fmt"
 	"net/http"
 	"strings"
 
@@ -12,7 +13,7 @@ import (
 
 const (
 	Name    = "consul-kv"
-	defHost = "http://127.0.0.1:8500"
+	defHost = "127.0.0.1:8500"
 )
 
 type ConsulKV struct {
@@ -58,7 +59,7 @@ func (kv *ConsulKV) String() string {
 	return Name
 }
 
-func (kv *ConsulKV) createKv(pair *api.KVPair, meta *api.QueryMeta) *kvdb.KVPair {
+func (kv *ConsulKV) createKv(pair *api.KVPair) *kvdb.KVPair {
 	kvp := &kvdb.KVPair{
 		Value: []byte(pair.Value),
 		// TTL:           node.TTL,
@@ -77,7 +78,7 @@ func (kv *ConsulKV) createKv(pair *api.KVPair, meta *api.QueryMeta) *kvdb.KVPair
 }
 
 func (kv *ConsulKV) pairToKv(action string, pair *api.KVPair, meta *api.QueryMeta) *kvdb.KVPair {
-	kvp := kv.createKv(pair, meta)
+	kvp := kv.createKv(pair)
 	switch action {
 	case "create":
 		kvp.Action = kvdb.KVCreate
@@ -138,6 +139,10 @@ func (kv *ConsulKV) Get(key string) (*kvdb.KVPair, error) {
 	pair, meta, err := kv.client.KV().Get(key, options)
 	if err != nil {
 		return nil, err
+	}
+
+	if pair == nil {
+		return nil, kvdb.ErrNotFound
 	}
 
 	return kv.pairToKv("get", pair, meta), nil
