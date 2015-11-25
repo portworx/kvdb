@@ -4,7 +4,6 @@ package consul
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -264,7 +263,6 @@ func (kv *ConsulKV) DeleteTree(key string) error {
 
 	_, err := kv.client.KV().DeleteTree(key, nil)
 	if err != nil {
-		fmt.Printf("2. DELETE TREE ERROR %v\n", key)
 		return err
 	}
 

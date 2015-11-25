@@ -18,5 +18,5 @@ func TestAll(t *testing.T) {
 		t.Fatalf("Failed to set instance: %v", err)
 	}
 
-	test.Run(t)
+	test.RunBasic(t)
 }
