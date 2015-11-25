@@ -2,6 +2,7 @@ package consul
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -60,18 +61,13 @@ func (kv *ConsulKV) String() string {
 
 func (kv *ConsulKV) createKv(pair *api.KVPair) *kvdb.KVPair {
 	kvp := &kvdb.KVPair{
+		Key:   pair.Key,
 		Value: []byte(pair.Value),
 		// TTL:           node.TTL,
 		// ModifiedIndex: node.ModifiedIndex,
 		// CreatedIndex:  node.CreatedIndex,
 	}
 
-	// Strip out the leading '/'
-	if len(pair.Key) != 0 {
-		kvp.Key = pair.Key[1:]
-	} else {
-		kvp.Key = pair.Key
-	}
 	kvp.Key = strings.TrimPrefix(kvp.Key, kv.domain)
 	return kvp
 }
@@ -180,6 +176,11 @@ func (kv *ConsulKV) Put(key string, val interface{}, ttl uint64) (*kvdb.KVPair, 
 }
 
 func (kv *ConsulKV) Create(key string, val interface{}, ttl uint64) (*kvdb.KVPair, error) {
+	_, err := kv.Get(key)
+	if err == nil {
+		return nil, kvdb.ErrExist
+	}
+
 	key = kv.domain + key
 
 	b, err := kv.toBytes(val)
@@ -201,6 +202,11 @@ func (kv *ConsulKV) Create(key string, val interface{}, ttl uint64) (*kvdb.KVPai
 }
 
 func (kv *ConsulKV) Update(key string, val interface{}, ttl uint64) (*kvdb.KVPair, error) {
+	_, err := kv.Get(key)
+	if err != nil {
+		return nil, err
+	}
+
 	key = kv.domain + key
 
 	b, err := kv.toBytes(val)
@@ -218,7 +224,7 @@ func (kv *ConsulKV) Update(key string, val interface{}, ttl uint64) (*kvdb.KVPai
 		return nil, err
 	}
 
-	return kv.pairToKv("create", pair, nil), nil
+	return kv.pairToKv("update", pair, nil), nil
 }
 
 func (kv *ConsulKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
@@ -233,12 +239,12 @@ func (kv *ConsulKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 }
 
 func (kv *ConsulKV) Delete(key string) (*kvdb.KVPair, error) {
-	key = kv.domain + key
-
 	pair, err := kv.Get(key)
 	if err != nil {
 		return nil, err
 	}
+
+	key = kv.domain + key
 
 	_, err = kv.client.KV().Delete(key, nil)
 	if err != nil {
@@ -249,14 +255,16 @@ func (kv *ConsulKV) Delete(key string) (*kvdb.KVPair, error) {
 }
 
 func (kv *ConsulKV) DeleteTree(key string) error {
-	key = kv.domain + key
-
 	if _, err := kv.Get(key); err != nil {
+		fmt.Printf("1. DELETE TREE ERROR %v\n", key)
 		return err
 	}
 
+	key = kv.domain + key
+
 	_, err := kv.client.KV().DeleteTree(key, nil)
 	if err != nil {
+		fmt.Printf("2. DELETE TREE ERROR %v\n", key)
 		return err
 	}
 
