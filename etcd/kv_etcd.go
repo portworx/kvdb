@@ -363,22 +363,26 @@ func (kv *EtcdKV) refreshLock(kvPair *kvdb.KVPair) {
 		select {
 		case <-refresh.C:
 			l.Lock()
-			if l.unlocked {
-				l.Unlock()
-				return
+			for !l.unlocked {
+				kvPair.TTL = ttl
+				kvp, err := kv.CompareAndSet(
+					kvPair,
+					kvdb.KVTTL|kvdb.KVModifiedIndex,
+					kvPair.Value,
+				)
+				if err != nil {
+					fmt.Printf(
+						"Error refreshing lock for key %v: %v\n",
+						string(kvp.Key), err,
+					)
+					l.err = err
+					l.Unlock()
+					return
+				}
+				kvPair.ModifiedIndex = kvp.ModifiedIndex
+				break
 			}
-			kvPair.TTL = ttl
-			kvp, err := kv.CompareAndSet(kvPair, kvdb.KVTTL|kvdb.KVModifiedIndex, kvPair.Value)
-			if err != nil {
-				l.Unlock()
-				fmt.Printf("Error refreshing lock for key %v: %v\n",
-					string(kvp.Key), err)
-				l.err = err
-				return
-			}
-			kvPair.ModifiedIndex = kvp.ModifiedIndex
 			l.Unlock()
-
 		case <-l.done:
 			return
 		}
