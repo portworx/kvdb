@@ -258,7 +258,7 @@ func lock(t *testing.T) {
 	assert.NotNil(t, kv, "Default KVDB is not set")
 
 	key := "locktest"
-	kvPair, err := kv.Lock(key, 100)
+	kvPair, err := kv.Lock(key, 10)
 	assert.NoError(t, err, "Unexpected error in lock")
 
 	if kvPair == nil {
@@ -267,17 +267,42 @@ func lock(t *testing.T) {
 
 	stash := *kvPair
 	stash.Value = []byte("hoohah")
+	fmt.Println("bad unlock")
 	err = kv.Unlock(&stash)
 	assert.Error(t, err, "Unlock should fail for bad KVPair")
 
+	fmt.Println("unlock")
 	err = kv.Unlock(kvPair)
 	assert.NoError(t, err, "Unexpected error from Unlock")
 
-	kvPair, err = kv.Lock(key, 20)
+	fmt.Println("relock")
+	kvPair, err = kv.Lock(key, 3)
 	assert.NoError(t, err, "Failed to lock after unlock")
 
+	fmt.Println("reunlock")
 	err = kv.Unlock(kvPair)
 	assert.NoError(t, err, "Unexpected error from Unlock")
+
+	fmt.Println("repeat lock once")
+	kvPair, err = kv.Lock(key, 3)
+	assert.NoError(t, err, "Failed to lock unlock")
+
+	done := 0
+	go func() {
+		time.Sleep(time.Second * 10)
+		done = 1
+		err = kv.Unlock(kvPair)
+		fmt.Println("repeat lock unlock once")
+		assert.NoError(t, err, "Unexpected error from Unlock")
+	}()
+	fmt.Println("repeat lock lock twice")
+	kvPair, err = kv.Lock(key, 3)
+	assert.NoError(t, err, "Failed to lock")
+	assert.Equal(t, done, 1, "Locked before unlock")
+	fmt.Println("repeat lock unlock twice")
+	err = kv.Unlock(kvPair)
+	assert.NoError(t, err, "Unexpected error from Unlock")
+
 }
 
 func lockBasic(t *testing.T) {
