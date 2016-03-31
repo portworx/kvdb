@@ -305,15 +305,11 @@ func (kv *EtcdKV) Lock(key string, ttl uint64) (*kvdb.KVPair, error) {
 	duration := time.Duration(math.Min(float64(time.Second),
 		float64((time.Duration(ttl)*time.Second)/10)))
 
-	result, err := kv.client.Set(context.Background(), key, "locked", &e.SetOptions{
-		TTL: time.Duration(ttl) * time.Second,
-	})
+	kvPair, err := kv.Create(key, "locked", ttl)
 	for err != nil {
 		time.Sleep(duration)
 		count++
-		result, err = kv.client.Set(context.Background(), key, "locked", &e.SetOptions{
-			TTL: time.Duration(ttl) * time.Second,
-		})
+		kvPair, err = kv.Create(key, "locked", ttl)
 	}
 
 	if err != nil {
@@ -322,7 +318,7 @@ func (kv *EtcdKV) Lock(key string, ttl uint64) (*kvdb.KVPair, error) {
 	if count > 3 {
 		fmt.Printf("ETCD: spent %v iteations locking %v", count, key)
 	}
-	return kv.resultToKv(result), err
+	return kvPair, err
 }
 
 func (kv *EtcdKV) Unlock(kvp *kvdb.KVPair) error {
