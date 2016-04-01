@@ -438,6 +438,9 @@ func watchKey(t *testing.T) {
 		return
 	}
 
+	// Sleep for sometime before calling the watchUpdate go routine.
+	time.Sleep(time.Millisecond * 100)
+
 	go watchUpdate(&watchData)
 
 	for watchData.watchStopped == false {
