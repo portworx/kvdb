@@ -16,7 +16,7 @@ import (
 const (
 	Name                          = "etcd-kv"
 	defHost                       = "http://etcd.portworx.com:4001"
-	defaultRetryCount             = 5
+	defaultRetryCount             = 20
 	defaultIntervalBetweenRetries = time.Millisecond * 500
 )
 
