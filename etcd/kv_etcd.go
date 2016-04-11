@@ -14,8 +14,10 @@ import (
 )
 
 const (
-	Name    = "etcd-kv"
-	defHost = "http://etcd.portworx.com:4001"
+	Name                          = "etcd-kv"
+	defHost                       = "http://etcd.portworx.com:4001"
+	defaultRetryCount             = 5
+	defaultIntervalBetweenRetries = time.Millisecond * 500
 )
 
 type EtcdKV struct {
@@ -111,16 +113,28 @@ func (kv *EtcdKV) resultToKvs(result *e.Response) kvdb.KVPairs {
 	return kvs
 }
 
+func (kv *EtcdKV) get(key string, recursive, sort bool) (*kvdb.KVPair, error) {
+	var err error
+	for i := 0; i < defaultRetryCount; i++ {
+		result, err := kv.client.Get(context.Background(), key, &e.GetOptions{
+			Recursive: recursive,
+			Sort:      sort,
+		})
+		switch {
+		case err == nil:
+			return kv.resultToKv(result), err
+		case err == e.ErrClusterUnavailable:
+			time.Sleep(defaultIntervalBetweenRetries)
+		default:
+			return nil, err
+		}
+	}
+	return nil, err
+}
+
 func (kv *EtcdKV) Get(key string) (*kvdb.KVPair, error) {
 	key = kv.domain + key
-	result, err := kv.client.Get(context.Background(), key, &e.GetOptions{
-		Recursive: false,
-		Sort:      false,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return kv.resultToKv(result), err
+	return kv.get(key, false, false)
 }
 
 func (kv *EtcdKV) GetVal(key string, val interface{}) (*kvdb.KVPair, error) {
@@ -153,6 +167,23 @@ func (kv *EtcdKV) toBytes(val interface{}) ([]byte, error) {
 	return b, nil
 }
 
+func (kv *EtcdKV) setWithRetry(ctx context.Context, key, value string,
+	opts *e.SetOptions) (*kvdb.KVPair, error) {
+	var err error
+	for i := 0; i < defaultRetryCount; i++ {
+		result, err := kv.client.Set(ctx, key, value, opts)
+		switch {
+		case err == nil:
+			return kv.resultToKv(result), err
+		case err == e.ErrClusterUnavailable:
+			time.Sleep(defaultIntervalBetweenRetries)
+		default:
+			return nil, err
+		}
+	}
+	return nil, err
+}
+
 func (kv *EtcdKV) Put(
 	key string,
 	val interface{},
@@ -164,19 +195,13 @@ func (kv *EtcdKV) Put(
 	if err != nil {
 		return nil, err
 	}
-	result, err := kv.client.Set(
+	return kv.setWithRetry(
 		context.Background(),
 		key,
 		string(b),
 		&e.SetOptions{
 			TTL: time.Duration(ttl) * time.Second,
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return kv.resultToKv(result), err
+		})
 }
 
 func (kv *EtcdKV) Create(
@@ -191,14 +216,10 @@ func (kv *EtcdKV) Create(
 	if err != nil {
 		return nil, err
 	}
-	result, err := kv.client.Set(context.Background(), key, string(b), &e.SetOptions{
+	return kv.setWithRetry(context.Background(), key, string(b), &e.SetOptions{
 		TTL:       time.Duration(ttl) * time.Second,
 		PrevExist: e.PrevNoExist,
 	})
-	if err != nil {
-		return nil, err
-	}
-	return kv.resultToKv(result), err
 }
 
 func (kv *EtcdKV) Update(
@@ -213,27 +234,30 @@ func (kv *EtcdKV) Update(
 	if err != nil {
 		return nil, err
 	}
-	result, err := kv.client.Set(context.Background(), key, string(b), &e.SetOptions{
+	return kv.setWithRetry(context.Background(), key, string(b), &e.SetOptions{
 		TTL:       time.Duration(ttl) * time.Second,
 		PrevExist: e.PrevExist,
 	})
-	if err != nil {
-		return nil, err
-	}
-	return kv.resultToKv(result), err
 }
 
 func (kv *EtcdKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 	prefix = kv.domain + prefix
-
-	result, err := kv.client.Get(context.Background(), prefix, &e.GetOptions{
-		Recursive: true,
-		Sort:      true,
-	})
-	if err != nil {
-		return nil, err
+	var err error
+	for i := 0; i < defaultRetryCount; i++ {
+		result, err := kv.client.Get(context.Background(), prefix, &e.GetOptions{
+			Recursive: true,
+			Sort:      true,
+		})
+		switch {
+		case err == nil:
+			return kv.resultToKvs(result), err
+		case err == e.ErrClusterUnavailable:
+			time.Sleep(defaultIntervalBetweenRetries)
+		default:
+			return nil, err
+		}
 	}
-	return kv.resultToKvs(result), err
+	return nil, err
 }
 
 func (kv *EtcdKV) Delete(key string) (*kvdb.KVPair, error) {
