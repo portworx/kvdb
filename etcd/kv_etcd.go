@@ -382,6 +382,10 @@ func (kv *EtcdKV) refreshLock(kvPair *kvdb.KVPair) {
 	l := kvPair.Lock.(*etcdLock)
 	ttl := kvPair.TTL
 	refresh := time.NewTicker(time.Duration(kvPair.TTL) / 4)
+	var keyString string
+	if kvPair != nil {
+		keyString = kvPair.Key
+	}
 	defer refresh.Stop()
 	for {
 		select {
@@ -397,7 +401,7 @@ func (kv *EtcdKV) refreshLock(kvPair *kvdb.KVPair) {
 				if err != nil {
 					fmt.Printf(
 						"Error refreshing lock for key %v: %v\n",
-						string(kvp.Key), err,
+						keyString, err,
 					)
 					l.err = err
 					l.Unlock()
