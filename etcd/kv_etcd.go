@@ -120,10 +120,10 @@ func (kv *EtcdKV) get(key string, recursive, sort bool) (*kvdb.KVPair, error) {
 			Recursive: recursive,
 			Sort:      sort,
 		})
-		switch {
-		case err == nil:
+		switch err {
+		case nil:
 			return kv.resultToKv(result), err
-		case err == e.ErrClusterUnavailable:
+		case e.ErrClusterUnavailable:
 			fmt.Printf("kvdb get error: %v, retry count: %v", err, i)
 			time.Sleep(defaultIntervalBetweenRetries)
 		default:
@@ -173,10 +173,10 @@ func (kv *EtcdKV) setWithRetry(ctx context.Context, key, value string,
 	var err error
 	for i := 0; i < defaultRetryCount; i++ {
 		result, err := kv.client.Set(ctx, key, value, opts)
-		switch {
-		case err == nil:
+		switch err {
+		case nil:
 			return kv.resultToKv(result), err
-		case err == e.ErrClusterUnavailable:
+		case e.ErrClusterUnavailable:
 			fmt.Printf("kvdb set error: %v, retry count: %v", err, i)
 			time.Sleep(defaultIntervalBetweenRetries)
 		default:
@@ -250,10 +250,10 @@ func (kv *EtcdKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 			Recursive: true,
 			Sort:      true,
 		})
-		switch {
-		case err == nil:
+		switch err {
+		case nil:
 			return kv.resultToKvs(result), err
-		case err == e.ErrClusterUnavailable:
+		case e.ErrClusterUnavailable:
 			fmt.Printf("kvdb enumerate error: %v, retry count: %v", err, i)
 			time.Sleep(defaultIntervalBetweenRetries)
 		default:
