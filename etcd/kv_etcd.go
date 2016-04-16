@@ -1,6 +1,7 @@
 package etcd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -15,7 +16,7 @@ import (
 
 const (
 	Name                          = "etcd-kv"
-	defHost                       = "127.0.0.1:4001"
+	defHost                       = "http://127.0.0.1:4001"
 	defaultRetryCount             = 60
 	defaultIntervalBetweenRetries = time.Millisecond * 500
 )
@@ -43,7 +44,7 @@ func EtcdInit(domain string,
 	cfg := e.Config{
 		Endpoints: machines,
 		Transport: e.DefaultTransport,
-		// The time required for a request to fail - 10 sec
+		// The time required for a request to fail - 30 sec
 		HeaderTimeoutPerRequest: time.Duration(10) * time.Second,
 	}
 	c, err := e.New(cfg)
@@ -172,9 +173,13 @@ func (kv *EtcdKV) toBytes(val interface{}) ([]byte, error) {
 
 func (kv *EtcdKV) setWithRetry(ctx context.Context, key, value string,
 	opts *e.SetOptions) (*kvdb.KVPair, error) {
-	var err error
-	for i := 0; i < defaultRetryCount; i++ {
-		result, err := kv.client.Set(ctx, key, value, opts)
+	var (
+		err    error
+		i      int
+		result *e.Response
+	)
+	for i = 0; i < defaultRetryCount; i++ {
+		result, err = kv.client.Set(ctx, key, value, opts)
 		if err == nil {
 			return kv.resultToKv(result), nil
 		}
@@ -183,9 +188,24 @@ func (kv *EtcdKV) setWithRetry(ctx context.Context, key, value string,
 			fmt.Printf("kvdb set error: %v, retry count: %v\n", err, i)
 			time.Sleep(defaultIntervalBetweenRetries)
 		default:
-			return nil, err
+			goto out
 		}
 	}
+
+out:
+	// It's possible that update succeeded but the re-update failed.
+	if i > 0 && i < defaultRetryCount && err != nil {
+		kvp, err := kv.get(key, false, false)
+		if err == nil && bytes.Equal(kvp.Value, []byte(value)) {
+			if opts.PrevExist == e.PrevNoExist {
+				kvp.Action = kvdb.KVCreate
+			} else {
+				kvp.Action = kvdb.KVSet
+			}
+			return kvp, nil
+		}
+	}
+
 	return nil, err
 }
 
