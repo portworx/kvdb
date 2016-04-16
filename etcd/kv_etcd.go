@@ -15,7 +15,7 @@ import (
 
 const (
 	Name                          = "etcd-kv"
-	defHost                       = "http://etcd.portworx.com:4001"
+	defHost                       = "127.0.0.1:4001"
 	defaultRetryCount             = 60
 	defaultIntervalBetweenRetries = time.Millisecond * 500
 )
@@ -120,11 +120,13 @@ func (kv *EtcdKV) get(key string, recursive, sort bool) (*kvdb.KVPair, error) {
 			Recursive: recursive,
 			Sort:      sort,
 		})
-		switch err {
-		case nil:
-			return kv.resultToKv(result), err
-		case e.ErrClusterUnavailable:
-			fmt.Printf("kvdb get error: %v, retry count: %v", err, i)
+		if err == nil {
+			return kv.resultToKv(result), nil
+		}
+
+		switch err.(type) {
+		case *e.ClusterError:
+			fmt.Printf("kvdb get error: %v, retry count: %v\n", err, i)
 			time.Sleep(defaultIntervalBetweenRetries)
 		default:
 			return nil, err
@@ -173,11 +175,12 @@ func (kv *EtcdKV) setWithRetry(ctx context.Context, key, value string,
 	var err error
 	for i := 0; i < defaultRetryCount; i++ {
 		result, err := kv.client.Set(ctx, key, value, opts)
-		switch err {
-		case nil:
-			return kv.resultToKv(result), err
-		case e.ErrClusterUnavailable:
-			fmt.Printf("kvdb set error: %v, retry count: %v", err, i)
+		if err == nil {
+			return kv.resultToKv(result), nil
+		}
+		switch err.(type) {
+		case *e.ClusterError:
+			fmt.Printf("kvdb set error: %v, retry count: %v\n", err, i)
 			time.Sleep(defaultIntervalBetweenRetries)
 		default:
 			return nil, err
@@ -250,11 +253,12 @@ func (kv *EtcdKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 			Recursive: true,
 			Sort:      true,
 		})
-		switch err {
-		case nil:
-			return kv.resultToKvs(result), err
-		case e.ErrClusterUnavailable:
-			fmt.Printf("kvdb enumerate error: %v, retry count: %v", err, i)
+		if err == nil {
+			return kv.resultToKvs(result), nil
+		}
+		switch err.(type) {
+		case *e.ClusterError:
+			fmt.Printf("kvdb set error: %v, retry count: %v\n", err, i)
 			time.Sleep(defaultIntervalBetweenRetries)
 		default:
 			return nil, err

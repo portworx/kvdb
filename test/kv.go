@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coreos/etcd/client"
 	"github.com/portworx/kvdb"
 	"github.com/stretchr/testify/assert"
 )
@@ -448,6 +449,14 @@ func watchKey(t *testing.T) {
 	}
 }
 
+func randomUpdate(w *watchData) {
+	kv := kvdb.Instance()
+	for w.watchStopped == false {
+		kv.Put("randomKey", []byte("bar"), 10)
+		time.Sleep(time.Millisecond * 80)
+	}
+}
+
 func watchTree(t *testing.T) {
 	fmt.Println("watchTree")
 
@@ -469,6 +478,7 @@ func watchTree(t *testing.T) {
 		fmt.Printf("Cannot test watchKey: %v\n", err)
 		return
 	}
+	go randomUpdate(&watchData)
 	go watchUpdate(&watchData)
 
 	for watchData.watchStopped == false {
