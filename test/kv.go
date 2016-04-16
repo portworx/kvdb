@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coreos/etcd/client"
 	"github.com/portworx/kvdb"
 	"github.com/stretchr/testify/assert"
 )
