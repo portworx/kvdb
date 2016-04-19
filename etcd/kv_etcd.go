@@ -131,6 +131,10 @@ func (kv *EtcdKV) get(key string, recursive, sort bool) (*kvdb.KVPair, error) {
 			fmt.Printf("kvdb get error: %v, retry count: %v\n", err, i)
 			time.Sleep(defaultIntervalBetweenRetries)
 		default:
+			etcdErr := err.(e.Error)
+			if etcdErr.Code == e.ErrorCodeKeyNotFound {
+				return nil, kvdb.ErrNotFound
+			}
 			return nil, err
 		}
 	}
@@ -148,7 +152,11 @@ func (kv *EtcdKV) GetVal(key string, val interface{}) (*kvdb.KVPair, error) {
 		return nil, err
 	}
 	err = json.Unmarshal(kvp.Value, val)
-	return kvp, err
+	if err != nil {
+		return kvp, kvdb.ErrUnmarshal
+	} else {
+		return kvp, nil
+	}
 }
 
 func (kv *EtcdKV) toBytes(val interface{}) ([]byte, error) {
