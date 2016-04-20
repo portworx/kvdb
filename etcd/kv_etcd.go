@@ -116,8 +116,9 @@ func (kv *EtcdKV) resultToKvs(result *e.Response) kvdb.KVPairs {
 
 func (kv *EtcdKV) get(key string, recursive, sort bool) (*kvdb.KVPair, error) {
 	var err error
+	var result *e.Response
 	for i := 0; i < defaultRetryCount; i++ {
-		result, err := kv.client.Get(context.Background(), key, &e.GetOptions{
+		result, err = kv.client.Get(context.Background(), key, &e.GetOptions{
 			Recursive: recursive,
 			Sort:      sort,
 		})
