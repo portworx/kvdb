@@ -194,7 +194,9 @@ func (kv *EtcdKV) setWithRetry(ctx context.Context, key, value string,
 		}
 		switch err.(type) {
 		case *e.ClusterError:
-			fmt.Printf("kvdb set error: %v, retry count: %v\n", err, i)
+			cerr := err.(*e.ClusterError)
+			fmt.Printf("kvdb set error: %v %v, retry count: %v\n",
+				err, cerr.Detail(), i)
 			time.Sleep(defaultIntervalBetweenRetries)
 		default:
 			goto out
