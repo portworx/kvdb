@@ -5,14 +5,9 @@ import (
 	"sync"
 )
 
-// DatastoreInit is called to activate a backend KV store.
-type DatastoreInit func(domain string,
-	machines []string,
-	options map[string]string) (Kvdb, error)
-
 var (
 	instance   Kvdb
-	datastores map[string]DatastoreInit
+	datastores = make(map[string]DatastoreInit)
 	lock       sync.Mutex
 )
 
@@ -37,10 +32,12 @@ func SetInstance(kvdb Kvdb) error {
 // New return a new instance of KVDB as specified by datastore name.
 // If domain is set all requests to KVDB are prefixed by domain.
 // options is interpreted by backend KVDB.
-func New(name string,
+func New(
+	name string,
 	domain string,
 	machines []string,
-	options map[string]string) (Kvdb, error) {
+	options map[string]string,
+) (Kvdb, error) {
 
 	if dsInit, exists := datastores[name]; exists {
 		kvdb, err := dsInit(domain, machines, options)
@@ -56,8 +53,4 @@ func Register(name string, dsInit DatastoreInit) error {
 	}
 	datastores[name] = dsInit
 	return nil
-}
-
-func init() {
-	datastores = make(map[string]DatastoreInit)
 }

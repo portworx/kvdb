@@ -16,9 +16,8 @@ const (
 	Name = "kv-mem"
 )
 
-type watchData struct {
-	cb     kvdb.WatchCB
-	opaque interface{}
+func init() {
+	kvdb.Register(Name, New)
 }
 
 type MemKV struct {
@@ -30,75 +29,29 @@ type MemKV struct {
 	domain string
 }
 
-func MemInit(domain string,
-	machines []string,
-	options map[string]string) (kvdb.Kvdb, error) {
+type watchData struct {
+	cb     kvdb.WatchCB
+	opaque interface{}
+}
 
+func New(
+	domain string,
+	machines []string,
+	options map[string]string,
+) (kvdb.Kvdb, error) {
 	if domain != "" && !strings.HasSuffix(domain, "/") {
 		domain = domain + "/"
 	}
-	kv := &MemKV{
+	return &MemKV{
 		m:      make(map[string]*kvdb.KVPair),
 		w:      make(map[string]*watchData),
 		wt:     make(map[string]*watchData),
 		domain: domain,
-	}
-	return kv, nil
+	}, nil
 }
 
 func (kv *MemKV) String() string {
 	return Name
-}
-
-func (kv *MemKV) normalize(kvp *kvdb.KVPair) {
-	kvp.Key = strings.TrimPrefix(kvp.Key, kv.domain)
-}
-
-func (kv *MemKV) fireCB(key string, kvp *kvdb.KVPair, err error) {
-
-	for k, v := range kv.w {
-		if k == key {
-			err := v.cb(key, v.opaque, kvp, err)
-			if err != nil {
-				v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)
-				delete(kv.w, key)
-
-			}
-			return
-		}
-	}
-	for k, v := range kv.wt {
-		if strings.HasPrefix(key, k) {
-			err := v.cb(key, v.opaque, kvp, err)
-			if err != nil {
-				v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)
-				delete(kv.wt, key)
-			}
-		}
-	}
-}
-
-func (kv *MemKV) toBytes(val interface{}) ([]byte, error) {
-	var (
-		b   []byte
-		err error
-	)
-
-	switch val.(type) {
-	case string:
-		s := val.(string)
-		b = []byte(s)
-	case []byte:
-		b = make([]byte, len(val.([]byte)))
-		copy(b, val.([]byte))
-	default:
-		b, err = json.Marshal(val)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return b, nil
 }
 
 func (kv *MemKV) Get(key string) (*kvdb.KVPair, error) {
@@ -241,7 +194,7 @@ func (kv *MemKV) CompareAndSet(
 	prevValue []byte) (*kvdb.KVPair, error) {
 
 	kv.mutex.Lock()
-	
+
 	if flags == kvdb.KVModifiedIndex {
 		if kvp.ModifiedIndex != kv.index {
 			kv.mutex.Unlock()
@@ -257,7 +210,7 @@ func (kv *MemKV) CompareAndSet(
 		if !bytes.Equal(result.Value, prevValue) {
 			kv.mutex.Unlock()
 			return nil, kvdb.ErrValueMismatch
-		}	
+		}
 	}
 	kv.mutex.Unlock()
 	return kv.Put(kvp.Key, kvp.Value, 0)
@@ -332,6 +285,48 @@ func (kv *MemKV) TxNew() (kvdb.Tx, error) {
 	return nil, kvdb.ErrNotSupported
 }
 
-func init() {
-	kvdb.Register(Name, MemInit)
+func (kv *MemKV) normalize(kvp *kvdb.KVPair) {
+	kvp.Key = strings.TrimPrefix(kvp.Key, kv.domain)
+}
+
+func (kv *MemKV) fireCB(key string, kvp *kvdb.KVPair, err error) {
+	for k, v := range kv.w {
+		if k == key {
+			err := v.cb(key, v.opaque, kvp, err)
+			if err != nil {
+				v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)
+				delete(kv.w, key)
+
+			}
+			return
+		}
+	}
+	for k, v := range kv.wt {
+		if strings.HasPrefix(key, k) {
+			err := v.cb(key, v.opaque, kvp, err)
+			if err != nil {
+				v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)
+				delete(kv.wt, key)
+			}
+		}
+	}
+}
+
+func (kv *MemKV) toBytes(val interface{}) ([]byte, error) {
+	var b []byte
+	var err error
+	switch val.(type) {
+	case string:
+		s := val.(string)
+		b = []byte(s)
+	case []byte:
+		b = make([]byte, len(val.([]byte)))
+		copy(b, val.([]byte))
+	default:
+		b, err = json.Marshal(val)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return b, nil
 }

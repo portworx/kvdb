@@ -1,4 +1,4 @@
-// This package implements the KVDB interface based on consul.
+// Package consul implements the KVDB interface based on consul.
 // Code from docker/libkv was leveraged to build parts of this module.
 package consul
 
@@ -18,9 +18,8 @@ const (
 	defHost = "127.0.0.1:8500"
 )
 
-type consulLock struct {
-	lock    *api.Lock
-	renewCh chan struct{}
+func init() {
+	kvdb.Register(Name, New)
 }
 
 type ConsulKV struct {
@@ -29,9 +28,16 @@ type ConsulKV struct {
 	domain string
 }
 
-func ConsulInit(domain string,
+type consulLock struct {
+	lock    *api.Lock
+	renewCh chan struct{}
+}
+
+func New(
+	domain string,
 	machines []string,
-	options map[string]string) (kvdb.Kvdb, error) {
+	options map[string]string,
+) (kvdb.Kvdb, error) {
 
 	if len(machines) == 0 {
 		machines = []string{defHost}
@@ -58,82 +64,15 @@ func ConsulInit(domain string,
 	if err != nil {
 		return nil, err
 	}
-
-	kv := &ConsulKV{
-		config: config,
-		client: client,
-		domain: domain,
-	}
-
-	return kv, nil
+	return &ConsulKV{
+		client,
+		config,
+		domain,
+	}, nil
 }
 
 func (kv *ConsulKV) String() string {
 	return Name
-}
-
-func (kv *ConsulKV) createKv(pair *api.KVPair) *kvdb.KVPair {
-	kvp := &kvdb.KVPair{
-		Key:   pair.Key,
-		Value: []byte(pair.Value),
-	}
-
-	kvp.Key = strings.TrimPrefix(kvp.Key, kv.domain)
-	return kvp
-}
-
-func (kv *ConsulKV) pairToKv(action string, pair *api.KVPair, meta *api.QueryMeta) *kvdb.KVPair {
-	kvp := kv.createKv(pair)
-	switch action {
-	case "create":
-		kvp.Action = kvdb.KVCreate
-	case "set", "update", "put":
-		kvp.Action = kvdb.KVSet
-	case "delete":
-		kvp.Action = kvdb.KVDelete
-	case "get":
-		kvp.Action = kvdb.KVGet
-	default:
-		kvp.Action = kvdb.KVUknown
-	}
-
-	if meta != nil {
-		kvp.KVDBIndex = meta.LastIndex
-	}
-
-	return kvp
-}
-
-func (kv *ConsulKV) pairToKvs(action string, pair []*api.KVPair, meta *api.QueryMeta) kvdb.KVPairs {
-	kvs := make([]*kvdb.KVPair, len(pair))
-	for i := range pair {
-		kvs[i] = kv.pairToKv(action, pair[i], meta)
-		if meta != nil {
-			kvs[i].KVDBIndex = meta.LastIndex
-		}
-	}
-	return kvs
-}
-
-func (kv *ConsulKV) toBytes(val interface{}) ([]byte, error) {
-	var (
-		b   []byte
-		err error
-	)
-
-	switch val.(type) {
-	case string:
-		b = []byte(val.(string))
-	case []byte:
-		b = val.([]byte)
-	default:
-		b, err = json.Marshal(val)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return b, nil
 }
 
 func (kv *ConsulKV) Get(key string) (*kvdb.KVPair, error) {
@@ -295,6 +234,99 @@ func (kv *ConsulKV) WatchTree(prefix string, waitIndex uint64, opaque interface{
 	return kvdb.ErrNotSupported
 }
 
+func (kv *ConsulKV) Lock(key string, ttl uint64) (*kvdb.KVPair, error) {
+	l, err := kv.getLock(key, ttl)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = l.lock.Lock(nil)
+	if err != nil {
+		return nil, err
+	}
+
+	pair := &kvdb.KVPair{
+		Key:  key,
+		Lock: l,
+	}
+
+	return pair, nil
+}
+
+func (kv *ConsulKV) Unlock(kvp *kvdb.KVPair) error {
+	l := kvp.Lock.(*consulLock)
+
+	return l.lock.Unlock()
+}
+
+func (kv *ConsulKV) TxNew() (kvdb.Tx, error) {
+	return nil, kvdb.ErrNotSupported
+}
+
+func (kv *ConsulKV) createKv(pair *api.KVPair) *kvdb.KVPair {
+	kvp := &kvdb.KVPair{
+		Key:   pair.Key,
+		Value: []byte(pair.Value),
+	}
+
+	kvp.Key = strings.TrimPrefix(kvp.Key, kv.domain)
+	return kvp
+}
+
+func (kv *ConsulKV) pairToKv(action string, pair *api.KVPair, meta *api.QueryMeta) *kvdb.KVPair {
+	kvp := kv.createKv(pair)
+	switch action {
+	case "create":
+		kvp.Action = kvdb.KVCreate
+	case "set", "update", "put":
+		kvp.Action = kvdb.KVSet
+	case "delete":
+		kvp.Action = kvdb.KVDelete
+	case "get":
+		kvp.Action = kvdb.KVGet
+	default:
+		kvp.Action = kvdb.KVUknown
+	}
+
+	if meta != nil {
+		kvp.KVDBIndex = meta.LastIndex
+	}
+
+	return kvp
+}
+
+func (kv *ConsulKV) pairToKvs(action string, pair []*api.KVPair, meta *api.QueryMeta) kvdb.KVPairs {
+	kvs := make([]*kvdb.KVPair, len(pair))
+	for i := range pair {
+		kvs[i] = kv.pairToKv(action, pair[i], meta)
+		if meta != nil {
+			kvs[i].KVDBIndex = meta.LastIndex
+		}
+	}
+	return kvs
+}
+
+func (kv *ConsulKV) toBytes(val interface{}) ([]byte, error) {
+	var (
+		b   []byte
+		err error
+	)
+
+	switch val.(type) {
+	case string:
+		b = []byte(val.(string))
+	case []byte:
+		b = val.([]byte)
+	default:
+		b, err = json.Marshal(val)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return b, nil
+}
+
 func (kv *ConsulKV) getLock(key string, ttl uint64) (*consulLock, error) {
 	key = kv.domain + key
 
@@ -332,37 +364,4 @@ func (kv *ConsulKV) getLock(key string, ttl uint64) (*consulLock, error) {
 
 	lock.lock = l
 	return lock, nil
-}
-
-func (kv *ConsulKV) Lock(key string, ttl uint64) (*kvdb.KVPair, error) {
-	l, err := kv.getLock(key, ttl)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = l.lock.Lock(nil)
-	if err != nil {
-		return nil, err
-	}
-
-	pair := &kvdb.KVPair{
-		Key:  key,
-		Lock: l,
-	}
-
-	return pair, nil
-}
-
-func (kv *ConsulKV) Unlock(kvp *kvdb.KVPair) error {
-	l := kvp.Lock.(*consulLock)
-
-	return l.lock.Unlock()
-}
-
-func (kv *ConsulKV) TxNew() (kvdb.Tx, error) {
-	return nil, kvdb.ErrNotSupported
-}
-
-func init() {
-	kvdb.Register(Name, ConsulInit)
 }
