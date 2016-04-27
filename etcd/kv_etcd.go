@@ -17,10 +17,14 @@ import (
 
 const (
 	// Name is the name of this kvdb implementation.
-	Name                          = "etcd-kv"
-	defHost                       = "http://127.0.0.1:4001"
+	Name = "etcd-kv"
+
 	defaultRetryCount             = 60
 	defaultIntervalBetweenRetries = time.Millisecond * 500
+)
+
+var (
+	defaultMachines = []string{"http://127.0.0.1:4001"}
 )
 
 func init() {
@@ -47,7 +51,7 @@ func New(
 	machines []string,
 ) (kvdb.Kvdb, error) {
 	if len(machines) == 0 {
-		machines = []string{defHost}
+		machines = defaultMachines
 	}
 	cfg := e.Config{
 		Endpoints: machines,
