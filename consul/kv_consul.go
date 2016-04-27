@@ -5,18 +5,21 @@ package consul
 import (
 	"encoding/json"
 	"net/http"
+	"path"
 	"strings"
 	"time"
 
-	api "github.com/hashicorp/consul/api"
-
+	"github.com/hashicorp/consul/api"
 	"github.com/portworx/kvdb"
 )
 
 const (
 	// Name is the name of this kvdb implementation.
-	Name    = "consul-kv"
-	defHost = "127.0.0.1:8500"
+	Name = "consul-kv"
+)
+
+var (
+	defaultMachines = []string{"127.0.0.1:8500"}
 )
 
 func init() {
@@ -41,9 +44,8 @@ func New(
 	domain string,
 	machines []string,
 ) (kvdb.Kvdb, error) {
-
 	if len(machines) == 0 {
-		machines = []string{defHost}
+		machines = defaultMachines
 	} else {
 		if strings.HasPrefix(machines[0], "http://") {
 			machines[0] = strings.TrimPrefix(machines[0], "http://")
@@ -51,18 +53,11 @@ func New(
 			machines[0] = strings.TrimPrefix(machines[0], "https://")
 		}
 	}
-
-	if domain != "" && !strings.HasSuffix(domain, "/") {
-		domain = domain + "/"
-	}
-
-	// Create Consul client
 	config := api.DefaultConfig()
 	config.HttpClient = http.DefaultClient
 	config.Address = machines[0]
 	config.Scheme = "http"
 
-	// Creates a new client
 	client, err := api.NewClient(config)
 	if err != nil {
 		return nil, err
@@ -83,17 +78,14 @@ func (kv *consulKV) Get(key string) (*kvdb.KVPair, error) {
 		AllowStale:        false,
 		RequireConsistent: true,
 	}
-
-	key = kv.domain + key
+	key = path.Join(kv.domain, key)
 	pair, meta, err := kv.client.KV().Get(key, options)
 	if err != nil {
 		return nil, err
 	}
-
 	if pair == nil {
 		return nil, kvdb.ErrNotFound
 	}
-
 	return kv.pairToKv("get", pair, meta), nil
 }
 
@@ -102,91 +94,69 @@ func (kv *consulKV) GetVal(key string, val interface{}) (*kvdb.KVPair, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = json.Unmarshal(kvp.Value, val)
-	return kvp, err
+	return kvp, json.Unmarshal(kvp.Value, val)
 }
 
 func (kv *consulKV) Put(key string, val interface{}, ttl uint64) (*kvdb.KVPair, error) {
-	key = kv.domain + key
-
+	key = path.Join(kv.domain, key)
 	b, err := kv.toBytes(val)
 	if err != nil {
 		return nil, err
 	}
-
 	pair := &api.KVPair{
 		Key:   key,
 		Value: b,
 	}
-
-	_, err = kv.client.KV().Put(pair, nil)
-	if err != nil {
+	if _, err := kv.client.KV().Put(pair, nil); err != nil {
 		return nil, err
 	}
-
 	return kv.pairToKv("put", pair, nil), nil
 }
 
 func (kv *consulKV) Create(key string, val interface{}, ttl uint64) (*kvdb.KVPair, error) {
-	_, err := kv.Get(key)
-	if err == nil {
+	if _, err := kv.Get(key); err == nil {
 		return nil, kvdb.ErrExist
 	}
-
-	key = kv.domain + key
-
+	key = path.Join(kv.domain, key)
 	b, err := kv.toBytes(val)
 	if err != nil {
 		return nil, err
 	}
-
 	pair := &api.KVPair{
 		Key:   key,
 		Value: b,
 	}
-
-	_, err = kv.client.KV().Put(pair, nil)
-	if err != nil {
+	if _, err := kv.client.KV().Put(pair, nil); err != nil {
 		return nil, err
 	}
-
 	return kv.pairToKv("create", pair, nil), nil
 }
 
 func (kv *consulKV) Update(key string, val interface{}, ttl uint64) (*kvdb.KVPair, error) {
-	_, err := kv.Get(key)
-	if err != nil {
+	if _, err := kv.Get(key); err != nil {
 		return nil, err
 	}
-
-	key = kv.domain + key
-
+	key = path.Join(kv.domain, key)
 	b, err := kv.toBytes(val)
 	if err != nil {
 		return nil, err
 	}
-
 	pair := &api.KVPair{
 		Key:   key,
 		Value: b,
 	}
-
-	_, err = kv.client.KV().Put(pair, nil)
-	if err != nil {
+	if _, err := kv.client.KV().Put(pair, nil); err != nil {
 		return nil, err
 	}
-
 	return kv.pairToKv("update", pair, nil), nil
 }
 
 func (kv *consulKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
-	prefix = kv.domain + prefix
-
+	prefix = path.Join(kv.domain, prefix)
 	pairs, _, err := kv.client.KV().List(prefix, nil)
 	if err != nil {
 		return nil, err
 	}
-
 	return kv.pairToKvs("enumerate", pairs, nil), nil
 }
 
@@ -195,25 +165,18 @@ func (kv *consulKV) Delete(key string) (*kvdb.KVPair, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	key = kv.domain + key
-
-	_, err = kv.client.KV().Delete(key, nil)
-	if err != nil {
+	key = path.Join(kv.domain, key)
+	if _, err := kv.client.KV().Delete(key, nil); err != nil {
 		return nil, err
 	}
-
 	return pair, nil
 }
 
 func (kv *consulKV) DeleteTree(key string) error {
 	key = kv.domain + key
-
-	_, err := kv.client.KV().DeleteTree(key, nil)
-	if err != nil {
+	if _, err := kv.client.KV().DeleteTree(key, nil); err != nil {
 		return err
 	}
-
 	return nil
 }
 
@@ -242,24 +205,17 @@ func (kv *consulKV) Lock(key string, ttl uint64) (*kvdb.KVPair, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	_, err = l.lock.Lock(nil)
-	if err != nil {
+	if _, err := l.lock.Lock(nil); err != nil {
 		return nil, err
 	}
-
-	pair := &kvdb.KVPair{
+	return &kvdb.KVPair{
 		Key:  key,
 		Lock: l,
-	}
-
-	return pair, nil
+	}, nil
 }
 
 func (kv *consulKV) Unlock(kvp *kvdb.KVPair) error {
-	l := kvp.Lock.(*consulLock)
-
-	return l.lock.Unlock()
+	return kvp.Lock.(*consulLock).lock.Unlock()
 }
 
 func (kv *consulKV) TxNew() (kvdb.Tx, error) {
@@ -267,13 +223,10 @@ func (kv *consulKV) TxNew() (kvdb.Tx, error) {
 }
 
 func (kv *consulKV) createKv(pair *api.KVPair) *kvdb.KVPair {
-	kvp := &kvdb.KVPair{
-		Key:   pair.Key,
+	return &kvdb.KVPair{
+		Key:   strings.TrimPrefix(pair.Key, kv.domain),
 		Value: []byte(pair.Value),
 	}
-
-	kvp.Key = strings.TrimPrefix(kvp.Key, kv.domain)
-	return kvp
 }
 
 func (kv *consulKV) pairToKv(action string, pair *api.KVPair, meta *api.QueryMeta) *kvdb.KVPair {
@@ -290,11 +243,9 @@ func (kv *consulKV) pairToKv(action string, pair *api.KVPair, meta *api.QueryMet
 	default:
 		kvp.Action = kvdb.KVUknown
 	}
-
 	if meta != nil {
 		kvp.KVDBIndex = meta.LastIndex
 	}
-
 	return kvp
 }
 
@@ -310,11 +261,8 @@ func (kv *consulKV) pairToKvs(action string, pair []*api.KVPair, meta *api.Query
 }
 
 func (kv *consulKV) toBytes(val interface{}) ([]byte, error) {
-	var (
-		b   []byte
-		err error
-	)
-
+	var b []byte
+	var err error
 	switch val.(type) {
 	case string:
 		b = []byte(val.(string))
@@ -326,19 +274,15 @@ func (kv *consulKV) toBytes(val interface{}) ([]byte, error) {
 			return nil, err
 		}
 	}
-
 	return b, nil
 }
 
 func (kv *consulKV) getLock(key string, ttl uint64) (*consulLock, error) {
-	key = kv.domain + key
-
+	key = path.Join(kv.domain, key)
 	lockOpts := &api.LockOptions{
 		Key: key,
 	}
-
 	lock := &consulLock{}
-
 	if ttl != 0 {
 		TTL := time.Duration(0)
 		entry := &api.SessionEntry{
@@ -367,7 +311,6 @@ func (kv *consulKV) getLock(key string, ttl uint64) (*consulLock, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	lock.lock = l
 	return lock, nil
 }
