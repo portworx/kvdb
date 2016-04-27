@@ -14,6 +14,7 @@ import (
 )
 
 const (
+	// Name is the name of this kvdb implementation.
 	Name    = "consul-kv"
 	defHost = "127.0.0.1:8500"
 )
@@ -33,6 +34,7 @@ type consulLock struct {
 	renewCh chan struct{}
 }
 
+// New constructs a new kvdb.Kvdb.
 func New(
 	domain string,
 	machines []string,

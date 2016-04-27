@@ -25,6 +25,7 @@ type watchData struct {
 	reader       int32
 }
 
+// Run runs the test suite.
 func Run(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	kv, err := datastoreInit("pwx/test", nil, nil)
 	if err != nil {
@@ -43,6 +44,7 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	cas(kv, t)
 }
 
+// RunBasic runs the basic test suite.
 func RunBasic(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	kv, err := datastoreInit("pwx/test", nil, nil)
 	if err != nil {
@@ -188,14 +190,14 @@ func deleteTree(kv kvdb.Kvdb, t *testing.T) {
 		assert.NoError(t, err, "Unexpected error on Put")
 	}
 
-	for key, _ := range keys {
+	for key := range keys {
 		_, err := kv.Get(key)
 		assert.NoError(t, err, "Unexpected error on Get")
 	}
 	err := kv.DeleteTree(prefix)
 	assert.NoError(t, err, "Unexpected error on DeleteTree")
 
-	for key, _ := range keys {
+	for key := range keys {
 		_, err := kv.Get(key)
 		assert.Error(t, err, "Get should fail on all keys after DeleteTree")
 	}

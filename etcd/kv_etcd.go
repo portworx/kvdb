@@ -15,6 +15,7 @@ import (
 )
 
 const (
+	// Name is the name of this kvdb implementation.
 	Name                          = "etcd-kv"
 	defHost                       = "http://127.0.0.1:4001"
 	defaultRetryCount             = 60
@@ -37,6 +38,7 @@ type etcdLock struct {
 	sync.Mutex
 }
 
+// New constructs a new kvdb.Kvdb.
 func New(
 	domain string,
 	machines []string,
@@ -78,12 +80,10 @@ func (kv *etcdKV) GetVal(key string, val interface{}) (*kvdb.KVPair, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = json.Unmarshal(kvp.Value, val)
-	if err != nil {
+	if err := json.Unmarshal(kvp.Value, val); err != nil {
 		return kvp, kvdb.ErrUnmarshal
-	} else {
-		return kvp, nil
 	}
+	return kvp, nil
 }
 
 func (kv *etcdKV) Put(

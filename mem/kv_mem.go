@@ -13,6 +13,7 @@ import (
 )
 
 const (
+	// Name is the name of this kvdb implementation.
 	Name = "kv-mem"
 )
 
@@ -34,6 +35,7 @@ type watchData struct {
 	opaque interface{}
 }
 
+// New constructs a new kvdb.Kvdb.
 func New(
 	domain string,
 	machines []string,
@@ -57,11 +59,11 @@ func (kv *memKV) String() string {
 func (kv *memKV) Get(key string) (*kvdb.KVPair, error) {
 
 	key = kv.domain + key
-	if v, ok := kv.m[key]; !ok {
+	v, ok := kv.m[key]
+	if !ok {
 		return nil, kvdb.ErrNotFound
-	} else {
-		return v, nil
 	}
+	return v, nil
 }
 
 func (kv *memKV) Put(
@@ -125,11 +127,11 @@ func (kv *memKV) Create(
 	value interface{},
 	ttl uint64) (*kvdb.KVPair, error) {
 
-	if result, err := kv.Get(key); err != nil {
+	result, err := kv.Get(key)
+	if err != nil {
 		return kv.Put(key, value, ttl)
-	} else {
-		return result, kvdb.ErrExist
 	}
+	return result, kvdb.ErrExist
 }
 
 func (kv *memKV) Update(
@@ -139,9 +141,8 @@ func (kv *memKV) Update(
 
 	if _, err := kv.Get(key); err != nil {
 		return nil, kvdb.ErrNotFound
-	} else {
-		return kv.Put(key, value, ttl)
 	}
+	return kv.Put(key, value, ttl)
 }
 
 func (kv *memKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
@@ -150,9 +151,9 @@ func (kv *memKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 
 	for k, v := range kv.m {
 		if strings.HasPrefix(k, prefix) && !strings.Contains(k, "/_") {
-			kvp_local := *v
-			kv.normalize(&kvp_local)
-			kvp = append(kvp, &kvp_local)
+			kvpLocal := *v
+			kv.normalize(&kvpLocal)
+			kvp = append(kvp, &kvpLocal)
 		}
 	}
 
@@ -174,12 +175,12 @@ func (kv *memKV) Delete(key string) (*kvdb.KVPair, error) {
 
 func (kv *memKV) DeleteTree(prefix string) error {
 
-	if kvp, err := kv.Enumerate(prefix); err != nil {
+	kvp, err := kv.Enumerate(prefix)
+	if err != nil {
 		return err
-	} else {
-		for _, v := range kvp {
-			kv.Delete(v.Key)
-		}
+	}
+	for _, v := range kvp {
+		kv.Delete(v.Key)
 	}
 	return nil
 }
