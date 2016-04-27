@@ -488,7 +488,7 @@ func (kv *etcdKV) watchStart(key string,
 		if watchErr != nil && !isCancelSent {
 			e, ok := watchErr.(e.Error)
 			if ok {
-				fmt.Printf("Etcd error code %d Message %s Cause %s Index %ju\n",
+				fmt.Printf("Etcd error code %d Message %s Cause %s Index %d\n",
 					e.Code, e.Message, e.Cause, e.Index)
 			} else {
 				fmt.Printf("Etcd returned an error : %s", watchErr.Error())
