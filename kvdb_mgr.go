@@ -8,7 +8,7 @@ import (
 var (
 	instance   Kvdb
 	datastores = make(map[string]DatastoreInit)
-	lock       sync.Mutex
+	lock       sync.RWMutex
 )
 
 // Instance returns instance set via SetInstance, nil if none was set.
@@ -37,6 +37,8 @@ func New(
 	domain string,
 	machines []string,
 ) (Kvdb, error) {
+	lock.RLock()
+	defer lock.RUnlock()
 	if dsInit, exists := datastores[name]; exists {
 		kvdb, err := dsInit(domain, machines)
 		return kvdb, err
@@ -46,6 +48,8 @@ func New(
 
 // Register adds specified datastore backend to the list of options.
 func Register(name string, dsInit DatastoreInit) error {
+	lock.Lock()
+	defer lock.Unlock()
 	if _, exists := datastores[name]; exists {
 		return fmt.Errorf("Datastore provider %q is already registered", name)
 	}
