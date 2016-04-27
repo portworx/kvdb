@@ -22,7 +22,7 @@ func init() {
 	kvdb.Register(Name, New)
 }
 
-type ConsulKV struct {
+type consulKV struct {
 	client *api.Client
 	config *api.Config
 	domain string
@@ -64,18 +64,18 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	return &ConsulKV{
+	return &consulKV{
 		client,
 		config,
 		domain,
 	}, nil
 }
 
-func (kv *ConsulKV) String() string {
+func (kv *consulKV) String() string {
 	return Name
 }
 
-func (kv *ConsulKV) Get(key string) (*kvdb.KVPair, error) {
+func (kv *consulKV) Get(key string) (*kvdb.KVPair, error) {
 	options := &api.QueryOptions{
 		AllowStale:        false,
 		RequireConsistent: true,
@@ -94,7 +94,7 @@ func (kv *ConsulKV) Get(key string) (*kvdb.KVPair, error) {
 	return kv.pairToKv("get", pair, meta), nil
 }
 
-func (kv *ConsulKV) GetVal(key string, val interface{}) (*kvdb.KVPair, error) {
+func (kv *consulKV) GetVal(key string, val interface{}) (*kvdb.KVPair, error) {
 	kvp, err := kv.Get(key)
 	if err != nil {
 		return nil, err
@@ -103,7 +103,7 @@ func (kv *ConsulKV) GetVal(key string, val interface{}) (*kvdb.KVPair, error) {
 	return kvp, err
 }
 
-func (kv *ConsulKV) Put(key string, val interface{}, ttl uint64) (*kvdb.KVPair, error) {
+func (kv *consulKV) Put(key string, val interface{}, ttl uint64) (*kvdb.KVPair, error) {
 	key = kv.domain + key
 
 	b, err := kv.toBytes(val)
@@ -124,7 +124,7 @@ func (kv *ConsulKV) Put(key string, val interface{}, ttl uint64) (*kvdb.KVPair, 
 	return kv.pairToKv("put", pair, nil), nil
 }
 
-func (kv *ConsulKV) Create(key string, val interface{}, ttl uint64) (*kvdb.KVPair, error) {
+func (kv *consulKV) Create(key string, val interface{}, ttl uint64) (*kvdb.KVPair, error) {
 	_, err := kv.Get(key)
 	if err == nil {
 		return nil, kvdb.ErrExist
@@ -150,7 +150,7 @@ func (kv *ConsulKV) Create(key string, val interface{}, ttl uint64) (*kvdb.KVPai
 	return kv.pairToKv("create", pair, nil), nil
 }
 
-func (kv *ConsulKV) Update(key string, val interface{}, ttl uint64) (*kvdb.KVPair, error) {
+func (kv *consulKV) Update(key string, val interface{}, ttl uint64) (*kvdb.KVPair, error) {
 	_, err := kv.Get(key)
 	if err != nil {
 		return nil, err
@@ -176,7 +176,7 @@ func (kv *ConsulKV) Update(key string, val interface{}, ttl uint64) (*kvdb.KVPai
 	return kv.pairToKv("update", pair, nil), nil
 }
 
-func (kv *ConsulKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
+func (kv *consulKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 	prefix = kv.domain + prefix
 
 	pairs, _, err := kv.client.KV().List(prefix, nil)
@@ -187,7 +187,7 @@ func (kv *ConsulKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 	return kv.pairToKvs("enumerate", pairs, nil), nil
 }
 
-func (kv *ConsulKV) Delete(key string) (*kvdb.KVPair, error) {
+func (kv *consulKV) Delete(key string) (*kvdb.KVPair, error) {
 	pair, err := kv.Get(key)
 	if err != nil {
 		return nil, err
@@ -203,7 +203,7 @@ func (kv *ConsulKV) Delete(key string) (*kvdb.KVPair, error) {
 	return pair, nil
 }
 
-func (kv *ConsulKV) DeleteTree(key string) error {
+func (kv *consulKV) DeleteTree(key string) error {
 	key = kv.domain + key
 
 	_, err := kv.client.KV().DeleteTree(key, nil)
@@ -214,27 +214,27 @@ func (kv *ConsulKV) DeleteTree(key string) error {
 	return nil
 }
 
-func (kv *ConsulKV) Keys(prefix, key string) ([]string, error) {
+func (kv *consulKV) Keys(prefix, key string) ([]string, error) {
 	return nil, kvdb.ErrNotSupported
 }
 
-func (kv *ConsulKV) CompareAndSet(kvp *kvdb.KVPair, flags kvdb.KVFlags, prevValue []byte) (*kvdb.KVPair, error) {
+func (kv *consulKV) CompareAndSet(kvp *kvdb.KVPair, flags kvdb.KVFlags, prevValue []byte) (*kvdb.KVPair, error) {
 	return nil, kvdb.ErrNotSupported
 }
 
-func (kv *ConsulKV) CompareAndDelete(kvp *kvdb.KVPair, flags kvdb.KVFlags) (*kvdb.KVPair, error) {
+func (kv *consulKV) CompareAndDelete(kvp *kvdb.KVPair, flags kvdb.KVFlags) (*kvdb.KVPair, error) {
 	return nil, kvdb.ErrNotSupported
 }
 
-func (kv *ConsulKV) WatchKey(key string, waitIndex uint64, opaque interface{}, cb kvdb.WatchCB) error {
+func (kv *consulKV) WatchKey(key string, waitIndex uint64, opaque interface{}, cb kvdb.WatchCB) error {
 	return kvdb.ErrNotSupported
 }
 
-func (kv *ConsulKV) WatchTree(prefix string, waitIndex uint64, opaque interface{}, cb kvdb.WatchCB) error {
+func (kv *consulKV) WatchTree(prefix string, waitIndex uint64, opaque interface{}, cb kvdb.WatchCB) error {
 	return kvdb.ErrNotSupported
 }
 
-func (kv *ConsulKV) Lock(key string, ttl uint64) (*kvdb.KVPair, error) {
+func (kv *consulKV) Lock(key string, ttl uint64) (*kvdb.KVPair, error) {
 	l, err := kv.getLock(key, ttl)
 	if err != nil {
 		return nil, err
@@ -253,17 +253,17 @@ func (kv *ConsulKV) Lock(key string, ttl uint64) (*kvdb.KVPair, error) {
 	return pair, nil
 }
 
-func (kv *ConsulKV) Unlock(kvp *kvdb.KVPair) error {
+func (kv *consulKV) Unlock(kvp *kvdb.KVPair) error {
 	l := kvp.Lock.(*consulLock)
 
 	return l.lock.Unlock()
 }
 
-func (kv *ConsulKV) TxNew() (kvdb.Tx, error) {
+func (kv *consulKV) TxNew() (kvdb.Tx, error) {
 	return nil, kvdb.ErrNotSupported
 }
 
-func (kv *ConsulKV) createKv(pair *api.KVPair) *kvdb.KVPair {
+func (kv *consulKV) createKv(pair *api.KVPair) *kvdb.KVPair {
 	kvp := &kvdb.KVPair{
 		Key:   pair.Key,
 		Value: []byte(pair.Value),
@@ -273,7 +273,7 @@ func (kv *ConsulKV) createKv(pair *api.KVPair) *kvdb.KVPair {
 	return kvp
 }
 
-func (kv *ConsulKV) pairToKv(action string, pair *api.KVPair, meta *api.QueryMeta) *kvdb.KVPair {
+func (kv *consulKV) pairToKv(action string, pair *api.KVPair, meta *api.QueryMeta) *kvdb.KVPair {
 	kvp := kv.createKv(pair)
 	switch action {
 	case "create":
@@ -295,7 +295,7 @@ func (kv *ConsulKV) pairToKv(action string, pair *api.KVPair, meta *api.QueryMet
 	return kvp
 }
 
-func (kv *ConsulKV) pairToKvs(action string, pair []*api.KVPair, meta *api.QueryMeta) kvdb.KVPairs {
+func (kv *consulKV) pairToKvs(action string, pair []*api.KVPair, meta *api.QueryMeta) kvdb.KVPairs {
 	kvs := make([]*kvdb.KVPair, len(pair))
 	for i := range pair {
 		kvs[i] = kv.pairToKv(action, pair[i], meta)
@@ -306,7 +306,7 @@ func (kv *ConsulKV) pairToKvs(action string, pair []*api.KVPair, meta *api.Query
 	return kvs
 }
 
-func (kv *ConsulKV) toBytes(val interface{}) ([]byte, error) {
+func (kv *consulKV) toBytes(val interface{}) ([]byte, error) {
 	var (
 		b   []byte
 		err error
@@ -327,7 +327,7 @@ func (kv *ConsulKV) toBytes(val interface{}) ([]byte, error) {
 	return b, nil
 }
 
-func (kv *ConsulKV) getLock(key string, ttl uint64) (*consulLock, error) {
+func (kv *consulKV) getLock(key string, ttl uint64) (*consulLock, error) {
 	key = kv.domain + key
 
 	lockOpts := &api.LockOptions{

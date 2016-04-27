@@ -25,7 +25,7 @@ func init() {
 	kvdb.Register(Name, New)
 }
 
-type EtcdKV struct {
+type etcdKV struct {
 	client e.KeysAPI
 	domain string
 }
@@ -58,22 +58,22 @@ func New(
 	if domain != "" && !strings.HasSuffix(domain, "/") {
 		domain = domain + "/"
 	}
-	return &EtcdKV{
+	return &etcdKV{
 		e.NewKeysAPI(c),
 		domain,
 	}, nil
 }
 
-func (kv *EtcdKV) String() string {
+func (kv *etcdKV) String() string {
 	return Name
 }
 
-func (kv *EtcdKV) Get(key string) (*kvdb.KVPair, error) {
+func (kv *etcdKV) Get(key string) (*kvdb.KVPair, error) {
 	key = kv.domain + key
 	return kv.get(key, false, false)
 }
 
-func (kv *EtcdKV) GetVal(key string, val interface{}) (*kvdb.KVPair, error) {
+func (kv *etcdKV) GetVal(key string, val interface{}) (*kvdb.KVPair, error) {
 	kvp, err := kv.Get(key)
 	if err != nil {
 		return nil, err
@@ -86,7 +86,7 @@ func (kv *EtcdKV) GetVal(key string, val interface{}) (*kvdb.KVPair, error) {
 	}
 }
 
-func (kv *EtcdKV) Put(
+func (kv *etcdKV) Put(
 	key string,
 	val interface{},
 	ttl uint64,
@@ -106,7 +106,7 @@ func (kv *EtcdKV) Put(
 		})
 }
 
-func (kv *EtcdKV) Create(
+func (kv *etcdKV) Create(
 	key string,
 	val interface{},
 	ttl uint64,
@@ -124,7 +124,7 @@ func (kv *EtcdKV) Create(
 	})
 }
 
-func (kv *EtcdKV) Update(
+func (kv *etcdKV) Update(
 	key string,
 	val interface{},
 	ttl uint64,
@@ -142,7 +142,7 @@ func (kv *EtcdKV) Update(
 	})
 }
 
-func (kv *EtcdKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
+func (kv *etcdKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 	prefix = kv.domain + prefix
 	var err error
 	for i := 0; i < defaultRetryCount; i++ {
@@ -164,7 +164,7 @@ func (kv *EtcdKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 	return nil, err
 }
 
-func (kv *EtcdKV) Delete(key string) (*kvdb.KVPair, error) {
+func (kv *etcdKV) Delete(key string) (*kvdb.KVPair, error) {
 	key = kv.domain + key
 
 	result, err := kv.client.Delete(context.Background(), key, &e.DeleteOptions{
@@ -176,7 +176,7 @@ func (kv *EtcdKV) Delete(key string) (*kvdb.KVPair, error) {
 	return nil, err
 }
 
-func (kv *EtcdKV) DeleteTree(prefix string) error {
+func (kv *etcdKV) DeleteTree(prefix string) error {
 	prefix = kv.domain + prefix
 
 	_, err := kv.client.Delete(context.Background(), prefix, &e.DeleteOptions{
@@ -185,11 +185,11 @@ func (kv *EtcdKV) DeleteTree(prefix string) error {
 	return err
 }
 
-func (kv *EtcdKV) Keys(prefix, key string) ([]string, error) {
+func (kv *etcdKV) Keys(prefix, key string) ([]string, error) {
 	return nil, kvdb.ErrNotSupported
 }
 
-func (kv *EtcdKV) CompareAndSet(
+func (kv *etcdKV) CompareAndSet(
 	kvp *kvdb.KVPair,
 	flags kvdb.KVFlags,
 	prevValue []byte,
@@ -216,7 +216,7 @@ func (kv *EtcdKV) CompareAndSet(
 	return kv.resultToKv(result), err
 }
 
-func (kv *EtcdKV) CompareAndDelete(
+func (kv *etcdKV) CompareAndDelete(
 	kvp *kvdb.KVPair,
 	flags kvdb.KVFlags,
 ) (*kvdb.KVPair, error) {
@@ -234,7 +234,7 @@ func (kv *EtcdKV) CompareAndDelete(
 	return kv.resultToKv(result), err
 }
 
-func (kv *EtcdKV) WatchKey(
+func (kv *etcdKV) WatchKey(
 	key string,
 	waitIndex uint64,
 	opaque interface{},
@@ -246,7 +246,7 @@ func (kv *EtcdKV) WatchKey(
 	return nil
 }
 
-func (kv *EtcdKV) WatchTree(
+func (kv *etcdKV) WatchTree(
 	prefix string,
 	waitIndex uint64,
 	opaque interface{},
@@ -258,7 +258,7 @@ func (kv *EtcdKV) WatchTree(
 	return nil
 }
 
-func (kv *EtcdKV) Lock(key string, ttl uint64) (*kvdb.KVPair, error) {
+func (kv *etcdKV) Lock(key string, ttl uint64) (*kvdb.KVPair, error) {
 	key = kv.domain + key
 	duration := time.Second
 
@@ -281,7 +281,7 @@ func (kv *EtcdKV) Lock(key string, ttl uint64) (*kvdb.KVPair, error) {
 	return kvPair, err
 }
 
-func (kv *EtcdKV) Unlock(kvp *kvdb.KVPair) error {
+func (kv *etcdKV) Unlock(kvp *kvdb.KVPair) error {
 	l, ok := kvp.Lock.(*etcdLock)
 	if !ok {
 		return fmt.Errorf("Invalid lock structure for key %v", string(kvp.Key))
@@ -299,11 +299,11 @@ func (kv *EtcdKV) Unlock(kvp *kvdb.KVPair) error {
 	return err
 }
 
-func (kv *EtcdKV) TxNew() (kvdb.Tx, error) {
+func (kv *etcdKV) TxNew() (kvdb.Tx, error) {
 	return nil, kvdb.ErrNotSupported
 }
 
-func (kv *EtcdKV) nodeToKv(node *e.Node) *kvdb.KVPair {
+func (kv *etcdKV) nodeToKv(node *e.Node) *kvdb.KVPair {
 	kvp := &kvdb.KVPair{
 		Value:         []byte(node.Value),
 		TTL:           node.TTL,
@@ -321,7 +321,7 @@ func (kv *EtcdKV) nodeToKv(node *e.Node) *kvdb.KVPair {
 	return kvp
 }
 
-func (kv *EtcdKV) resultToKv(result *e.Response) *kvdb.KVPair {
+func (kv *etcdKV) resultToKv(result *e.Response) *kvdb.KVPair {
 	kvp := kv.nodeToKv(result.Node)
 	switch result.Action {
 	case "create":
@@ -339,7 +339,7 @@ func (kv *EtcdKV) resultToKv(result *e.Response) *kvdb.KVPair {
 	return kvp
 }
 
-func (kv *EtcdKV) resultToKvs(result *e.Response) kvdb.KVPairs {
+func (kv *etcdKV) resultToKvs(result *e.Response) kvdb.KVPairs {
 	kvs := make([]*kvdb.KVPair, len(result.Node.Nodes))
 	for i := range result.Node.Nodes {
 		kvs[i] = kv.nodeToKv(result.Node.Nodes[i])
@@ -348,7 +348,7 @@ func (kv *EtcdKV) resultToKvs(result *e.Response) kvdb.KVPairs {
 	return kvs
 }
 
-func (kv *EtcdKV) get(key string, recursive, sort bool) (*kvdb.KVPair, error) {
+func (kv *etcdKV) get(key string, recursive, sort bool) (*kvdb.KVPair, error) {
 	var err error
 	var result *e.Response
 	for i := 0; i < defaultRetryCount; i++ {
@@ -375,7 +375,7 @@ func (kv *EtcdKV) get(key string, recursive, sort bool) (*kvdb.KVPair, error) {
 	return nil, err
 }
 
-func (kv *EtcdKV) toBytes(val interface{}) ([]byte, error) {
+func (kv *etcdKV) toBytes(val interface{}) ([]byte, error) {
 	var b []byte
 	var err error
 	switch val.(type) {
@@ -392,7 +392,7 @@ func (kv *EtcdKV) toBytes(val interface{}) ([]byte, error) {
 	return b, nil
 }
 
-func (kv *EtcdKV) setWithRetry(ctx context.Context, key, value string,
+func (kv *etcdKV) setWithRetry(ctx context.Context, key, value string,
 	opts *e.SetOptions) (*kvdb.KVPair, error) {
 	var (
 		err    error
@@ -432,7 +432,7 @@ out:
 	return nil, err
 }
 
-func (kv *EtcdKV) refreshLock(kvPair *kvdb.KVPair) {
+func (kv *etcdKV) refreshLock(kvPair *kvdb.KVPair) {
 	l := kvPair.Lock.(*etcdLock)
 	ttl := kvPair.TTL
 	refresh := time.NewTicker(time.Duration(kvPair.TTL) / 4)
@@ -471,7 +471,7 @@ func (kv *EtcdKV) refreshLock(kvPair *kvdb.KVPair) {
 	}
 }
 
-func (kv *EtcdKV) watchStart(key string,
+func (kv *etcdKV) watchStart(key string,
 	recursive bool,
 	waitIndex uint64,
 	opaque interface{},
