@@ -18,7 +18,9 @@ const (
 )
 
 func init() {
-	kvdb.Register(Name, New)
+	if err := kvdb.Register(Name, New); err != nil {
+		panic(err.Error())
+	}
 }
 
 type memKV struct {
@@ -69,7 +71,8 @@ func (kv *memKV) Get(key string) (*kvdb.KVPair, error) {
 func (kv *memKV) Put(
 	key string,
 	value interface{},
-	ttl uint64) (*kvdb.KVPair, error) {
+	ttl uint64,
+) (*kvdb.KVPair, error) {
 
 	var kvp *kvdb.KVPair
 
@@ -80,7 +83,8 @@ func (kv *memKV) Put(
 	index := atomic.AddUint64(&kv.index, 1)
 	if ttl != 0 {
 		time.AfterFunc(time.Second*time.Duration(ttl), func() {
-			kvdb.Instance().Delete(key)
+			// TODO: handle error
+			_, _ = kvdb.Instance().Delete(key)
 		})
 	}
 	b, err := kv.toBytes(value)
@@ -180,9 +184,12 @@ func (kv *memKV) DeleteTree(prefix string) error {
 		return err
 	}
 	for _, v := range kvp {
-		kv.Delete(v.Key)
+		// TODO: multiple errors
+		if _, iErr := kv.Delete(v.Key); iErr != nil {
+			err = iErr
+		}
 	}
-	return nil
+	return err
 }
 
 func (kv *memKV) Keys(prefix, key string) ([]string, error) {
@@ -295,7 +302,8 @@ func (kv *memKV) fireCB(key string, kvp *kvdb.KVPair, err error) {
 		if k == key {
 			err := v.cb(key, v.opaque, kvp, err)
 			if err != nil {
-				v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)
+				// TODO: handle error
+				_ = v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)
 				delete(kv.w, key)
 
 			}
@@ -306,7 +314,8 @@ func (kv *memKV) fireCB(key string, kvp *kvdb.KVPair, err error) {
 		if strings.HasPrefix(key, k) {
 			err := v.cb(key, v.opaque, kvp, err)
 			if err != nil {
-				v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)
+				// TODO: handle error
+				_ = v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)
 				delete(kv.wt, key)
 			}
 		}

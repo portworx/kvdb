@@ -20,7 +20,9 @@ const (
 )
 
 func init() {
-	kvdb.Register(Name, New)
+	if err := kvdb.Register(Name, New); err != nil {
+		panic(err.Error())
+	}
 }
 
 type consulKV struct {
@@ -356,7 +358,10 @@ func (kv *consulKV) getLock(key string, ttl uint64) (*consulLock, error) {
 		lockOpts.Session = session
 
 		// Renew the session ttl lock periodically
-		go kv.client.Session().RenewPeriodic(entry.TTL, session, nil, nil)
+		go func() {
+			// TODO: do something with the error
+			_ = kv.client.Session().RenewPeriodic(entry.TTL, session, nil, nil)
+		}()
 	}
 
 	l, err := kv.client.LockOpts(lockOpts)

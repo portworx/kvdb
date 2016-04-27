@@ -32,7 +32,11 @@ vet: testdeps
 
 errcheck: testdeps
 	go get -v github.com/kisielk/errcheck
-	errcheck ./...
+	errcheck \
+		github.com/portworx/kvdb \
+		github.com/portworx/kvdb/consul \
+		github.com/portworx/kvdb/etcd \
+		github.com/portworx/kvdb/mem
 
 pretest: lint vet errcheck
 

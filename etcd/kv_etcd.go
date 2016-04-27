@@ -23,7 +23,9 @@ const (
 )
 
 func init() {
-	kvdb.Register(Name, New)
+	if err := kvdb.Register(Name, New); err != nil {
+		panic(err.Error())
+	}
 }
 
 type etcdKV struct {
@@ -471,7 +473,8 @@ func (kv *etcdKV) refreshLock(kvPair *kvdb.KVPair) {
 	}
 }
 
-func (kv *etcdKV) watchStart(key string,
+func (kv *etcdKV) watchStart(
+	key string,
 	recursive bool,
 	waitIndex uint64,
 	opaque interface{},
@@ -493,7 +496,8 @@ func (kv *etcdKV) watchStart(key string,
 			} else {
 				fmt.Printf("Etcd returned an error : %s", watchErr.Error())
 			}
-			cb(key, opaque, nil, watchErr)
+			// TODO: handle error
+			_ = cb(key, opaque, nil, watchErr)
 		} else if watchErr == nil && !isCancelSent {
 			err := cb(key, opaque, kv.resultToKv(r), nil)
 			if err != nil {
@@ -502,7 +506,8 @@ func (kv *etcdKV) watchStart(key string,
 				isCancelSent = true
 			}
 		} else {
-			cb(key, opaque, nil, kvdb.ErrWatchStopped)
+			// TODO: handle error
+			_ = cb(key, opaque, nil, kvdb.ErrWatchStopped)
 			break
 		}
 	}
