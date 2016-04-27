@@ -27,7 +27,7 @@ type watchData struct {
 
 // Run runs the test suite.
 func Run(datastoreInit kvdb.DatastoreInit, t *testing.T) {
-	kv, err := datastoreInit("pwx/test", nil, nil)
+	kv, err := datastoreInit("pwx/test", nil)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
@@ -46,7 +46,7 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 
 // RunBasic runs the basic test suite.
 func RunBasic(datastoreInit kvdb.DatastoreInit, t *testing.T) {
-	kv, err := datastoreInit("pwx/test", nil, nil)
+	kv, err := datastoreInit("pwx/test", nil)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}

@@ -36,11 +36,9 @@ func New(
 	name string,
 	domain string,
 	machines []string,
-	options map[string]string,
 ) (Kvdb, error) {
-
 	if dsInit, exists := datastores[name]; exists {
-		kvdb, err := dsInit(domain, machines, options)
+		kvdb, err := dsInit(domain, machines)
 		return kvdb, err
 	}
 	return nil, ErrNotSupported

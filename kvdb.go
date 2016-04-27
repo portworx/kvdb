@@ -56,7 +56,7 @@ type KVFlags uint64
 type WatchCB func(prefix string, opaque interface{}, kvp *KVPair, err error) error
 
 // DatastoreInit is called to activate a backend KV store.
-type DatastoreInit func(domain string, machines []string, options map[string]string) (Kvdb, error)
+type DatastoreInit func(domain string, machines []string) (Kvdb, error)
 
 // KVPair represents the results of an operation on KVDB.
 type KVPair struct {

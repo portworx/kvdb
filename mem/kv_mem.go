@@ -41,7 +41,6 @@ type watchData struct {
 func New(
 	domain string,
 	machines []string,
-	options map[string]string,
 ) (kvdb.Kvdb, error) {
 	if domain != "" && !strings.HasSuffix(domain, "/") {
 		domain = domain + "/"
