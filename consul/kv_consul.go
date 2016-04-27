@@ -11,6 +11,7 @@ import (
 
 	"github.com/hashicorp/consul/api"
 	"github.com/portworx/kvdb"
+	"github.com/portworx/kvdb/common"
 )
 
 const (
@@ -99,7 +100,7 @@ func (kv *consulKV) GetVal(key string, val interface{}) (*kvdb.KVPair, error) {
 
 func (kv *consulKV) Put(key string, val interface{}, ttl uint64) (*kvdb.KVPair, error) {
 	key = path.Join(kv.domain, key)
-	b, err := kv.toBytes(val)
+	b, err := common.ToBytes(val)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +119,7 @@ func (kv *consulKV) Create(key string, val interface{}, ttl uint64) (*kvdb.KVPai
 		return nil, kvdb.ErrExist
 	}
 	key = path.Join(kv.domain, key)
-	b, err := kv.toBytes(val)
+	b, err := common.ToBytes(val)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +138,7 @@ func (kv *consulKV) Update(key string, val interface{}, ttl uint64) (*kvdb.KVPai
 		return nil, err
 	}
 	key = path.Join(kv.domain, key)
-	b, err := kv.toBytes(val)
+	b, err := common.ToBytes(val)
 	if err != nil {
 		return nil, err
 	}
@@ -258,23 +259,6 @@ func (kv *consulKV) pairToKvs(action string, pair []*api.KVPair, meta *api.Query
 		}
 	}
 	return kvs
-}
-
-func (kv *consulKV) toBytes(val interface{}) ([]byte, error) {
-	var b []byte
-	var err error
-	switch val.(type) {
-	case string:
-		b = []byte(val.(string))
-	case []byte:
-		b = val.([]byte)
-	default:
-		b, err = json.Marshal(val)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return b, nil
 }
 
 func (kv *consulKV) getLock(key string, ttl uint64) (*consulLock, error) {

@@ -34,6 +34,7 @@ errcheck: testdeps
 	go get -v github.com/kisielk/errcheck
 	errcheck \
 		github.com/portworx/kvdb \
+		github.com/portworx/kvdb/common \
 		github.com/portworx/kvdb/consul \
 		github.com/portworx/kvdb/etcd \
 		github.com/portworx/kvdb/mem

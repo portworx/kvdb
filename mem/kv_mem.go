@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/portworx/kvdb"
+	"github.com/portworx/kvdb/common"
 )
 
 const (
@@ -86,7 +87,7 @@ func (kv *memKV) Put(
 			_, _ = kvdb.Instance().Delete(key)
 		})
 	}
-	b, err := kv.toBytes(value)
+	b, err := common.ToBytes(value)
 	if err != nil {
 		return nil, err
 	}
@@ -319,23 +320,4 @@ func (kv *memKV) fireCB(key string, kvp *kvdb.KVPair, err error) {
 			}
 		}
 	}
-}
-
-func (kv *memKV) toBytes(val interface{}) ([]byte, error) {
-	var b []byte
-	var err error
-	switch val.(type) {
-	case string:
-		s := val.(string)
-		b = []byte(s)
-	case []byte:
-		b = make([]byte, len(val.([]byte)))
-		copy(b, val.([]byte))
-	default:
-		b, err = json.Marshal(val)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return b, nil
 }

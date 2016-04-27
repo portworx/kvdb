@@ -12,6 +12,7 @@ import (
 
 	e "github.com/coreos/etcd/client"
 	"github.com/portworx/kvdb"
+	"github.com/portworx/kvdb/common"
 )
 
 const (
@@ -94,7 +95,7 @@ func (kv *etcdKV) Put(
 ) (*kvdb.KVPair, error) {
 
 	key = kv.domain + key
-	b, err := kv.toBytes(val)
+	b, err := common.ToBytes(val)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +116,7 @@ func (kv *etcdKV) Create(
 
 	key = kv.domain + key
 
-	b, err := kv.toBytes(val)
+	b, err := common.ToBytes(val)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +134,7 @@ func (kv *etcdKV) Update(
 
 	key = kv.domain + key
 
-	b, err := kv.toBytes(val)
+	b, err := common.ToBytes(val)
 	if err != nil {
 		return nil, err
 	}
@@ -374,23 +375,6 @@ func (kv *etcdKV) get(key string, recursive, sort bool) (*kvdb.KVPair, error) {
 		}
 	}
 	return nil, err
-}
-
-func (kv *etcdKV) toBytes(val interface{}) ([]byte, error) {
-	var b []byte
-	var err error
-	switch val.(type) {
-	case string:
-		b = []byte(val.(string))
-	case []byte:
-		b = val.([]byte)
-	default:
-		b, err = json.Marshal(val)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return b, nil
 }
 
 func (kv *etcdKV) setWithRetry(ctx context.Context, key, value string,
