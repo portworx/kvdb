@@ -25,39 +25,46 @@ type watchData struct {
 	reader       int32
 }
 
-func Run(t *testing.T) {
-	get(t)
-	getInterface(t)
-	create(t)
-	update(t)
-	deleteKey(t)
-	deleteTree(t)
-	enumerate(t)
-	lock(t)
-	watchKey(t)
-	watchTree(t)
-	cas(t)
+// Run runs the test suite.
+func Run(datastoreInit kvdb.DatastoreInit, t *testing.T) {
+	kv, err := datastoreInit("pwx/test", nil, nil)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	get(kv, t)
+	getInterface(kv, t)
+	create(kv, t)
+	update(kv, t)
+	deleteKey(kv, t)
+	deleteTree(kv, t)
+	enumerate(kv, t)
+	lock(kv, t)
+	watchKey(kv, t)
+	watchTree(kv, t)
+	cas(kv, t)
 }
 
-func RunBasic(t *testing.T) {
-	get(t)
-	getInterface(t)
-	create(t)
-	update(t)
-	deleteKey(t)
-	deleteTree(t)
-	enumerate(t)
-	lockBasic(t)
-	// watchKey(t)
-	// watchTree(t)
-	// cas(t)
+// RunBasic runs the basic test suite.
+func RunBasic(datastoreInit kvdb.DatastoreInit, t *testing.T) {
+	kv, err := datastoreInit("pwx/test", nil, nil)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	get(kv, t)
+	getInterface(kv, t)
+	create(kv, t)
+	update(kv, t)
+	deleteKey(kv, t)
+	deleteTree(kv, t)
+	enumerate(kv, t)
+	lockBasic(kv, t)
+	// watchKey(kv, t)
+	// watchTree(kv, t)
+	// cas(kv, t)
 }
 
-func get(t *testing.T) {
+func get(kv kvdb.Kvdb, t *testing.T) {
 	fmt.Println("get")
-
-	kv := kvdb.Instance()
-	assert.NotNil(t, kv, "Default KVDB is not set")
 
 	kvPair, err := kv.Get("DEADCAFE")
 	assert.Error(t, err, "Expecting error value for non-existent value")
@@ -78,7 +85,7 @@ func get(t *testing.T) {
 	assert.Equal(t, string(kvPair.Value), val, "value mismatch in Get")
 }
 
-func getInterface(t *testing.T) {
+func getInterface(kv kvdb.Kvdb, t *testing.T) {
 
 	fmt.Println("getInterface")
 	expected := struct {
@@ -93,9 +100,6 @@ func getInterface(t *testing.T) {
 	actual.N = 0
 	actual.S = "zero"
 
-	kv := kvdb.Instance()
-	assert.NotNil(t, kv, "Default KVDB is not set")
-
 	key := "DEADBEEF"
 	_, err := kv.Delete(key)
 	_, err = kv.Put(key, &expected, 0)
@@ -108,11 +112,8 @@ func getInterface(t *testing.T) {
 		expected, actual)
 }
 
-func create(t *testing.T) {
+func create(kv kvdb.Kvdb, t *testing.T) {
 	fmt.Println("create")
-
-	kv := kvdb.Instance()
-	assert.NotNil(t, kv, "Default KVDB is not set")
 
 	key := "create/foo"
 	kv.Delete(key)
@@ -130,11 +131,8 @@ func create(t *testing.T) {
 	assert.Error(t, err, "Create on existing key should have errored.")
 }
 
-func update(t *testing.T) {
+func update(kv kvdb.Kvdb, t *testing.T) {
 	fmt.Println("update")
-
-	kv := kvdb.Instance()
-	assert.NotNil(t, kv, "Default KVDB is not set")
 
 	key := "update/foo"
 	kv.Delete(key)
@@ -156,11 +154,8 @@ func update(t *testing.T) {
 		"Expected action KVSet, actual %v", kvp.Action)
 }
 
-func deleteKey(t *testing.T) {
+func deleteKey(kv kvdb.Kvdb, t *testing.T) {
 	fmt.Println("deleteKey")
-
-	kv := kvdb.Instance()
-	assert.NotNil(t, kv, "Default KVDB is not set")
 
 	key := "delete_key"
 	_, err := kv.Delete(key)
@@ -181,11 +176,8 @@ func deleteKey(t *testing.T) {
 	assert.Error(t, err, "Delete should fail on non existent key")
 }
 
-func deleteTree(t *testing.T) {
+func deleteTree(kv kvdb.Kvdb, t *testing.T) {
 	fmt.Println("deleteTree")
-
-	kv := kvdb.Instance()
-	assert.NotNil(t, kv, "Default KVDB is not set")
 
 	prefix := "tree"
 	keys := map[string]string{
@@ -198,20 +190,20 @@ func deleteTree(t *testing.T) {
 		assert.NoError(t, err, "Unexpected error on Put")
 	}
 
-	for key, _ := range keys {
+	for key := range keys {
 		_, err := kv.Get(key)
 		assert.NoError(t, err, "Unexpected error on Get")
 	}
 	err := kv.DeleteTree(prefix)
 	assert.NoError(t, err, "Unexpected error on DeleteTree")
 
-	for key, _ := range keys {
+	for key := range keys {
 		_, err := kv.Get(key)
 		assert.Error(t, err, "Get should fail on all keys after DeleteTree")
 	}
 }
 
-func enumerate(t *testing.T) {
+func enumerate(kv kvdb.Kvdb, t *testing.T) {
 
 	fmt.Println("enumerate")
 
@@ -220,9 +212,6 @@ func enumerate(t *testing.T) {
 		prefix + "/1cbc9a98-072a-4793-8608-01ab43db96c8": "bar",
 		prefix + "/foo":                                  "baz",
 	}
-
-	kv := kvdb.Instance()
-	assert.NotNil(t, kv, "Default KVDB is not set")
 
 	kv.DeleteTree(prefix)
 	defer func() {
@@ -250,12 +239,9 @@ func enumerate(t *testing.T) {
 	}
 }
 
-func lock(t *testing.T) {
+func lock(kv kvdb.Kvdb, t *testing.T) {
 
 	fmt.Println("lock")
-
-	kv := kvdb.Instance()
-	assert.NotNil(t, kv, "Default KVDB is not set")
 
 	key := "locktest"
 	kvPair, err := kv.Lock(key, 10)
@@ -305,12 +291,9 @@ func lock(t *testing.T) {
 
 }
 
-func lockBasic(t *testing.T) {
+func lockBasic(kv kvdb.Kvdb, t *testing.T) {
 
 	fmt.Println("lock")
-
-	kv := kvdb.Instance()
-	assert.NotNil(t, kv, "Default KVDB is not set")
 
 	key := "locktest"
 	kvPair, err := kv.Lock(key, 100)
@@ -330,10 +313,12 @@ func lockBasic(t *testing.T) {
 	assert.NoError(t, err, "Unexpected error from Unlock")
 }
 
-func watchFn(prefix string,
+func watchFn(
+	prefix string,
 	opaque interface{},
 	kvp *kvdb.KVPair,
-	err error) error {
+	err error,
+) error {
 	data := opaque.(*watchData)
 
 	atomic.AddInt32(&data.reader, 1)
@@ -377,12 +362,9 @@ func watchFn(prefix string,
 	return nil
 }
 
-func watchUpdate(data *watchData) error {
+func watchUpdate(kv kvdb.Kvdb, data *watchData) error {
 	var err error
 	var kvp *kvdb.KVPair
-
-	kv := kvdb.Instance()
-	assert.NotNil(data.t, kv, "Default KVDB is not set")
 
 	data.reader, data.writer = 0, 0
 	atomic.AddInt32(&data.writer, 1)
@@ -418,11 +400,8 @@ func watchUpdate(data *watchData) error {
 	return err
 }
 
-func watchKey(t *testing.T) {
+func watchKey(kv kvdb.Kvdb, t *testing.T) {
 	fmt.Println("watchKey")
-
-	kv := kvdb.Instance()
-	assert.NotNil(t, kv, "Default KVDB is not set")
 
 	watchData := watchData{
 		t:          t,
@@ -441,26 +420,22 @@ func watchKey(t *testing.T) {
 	// Sleep for sometime before calling the watchUpdate go routine.
 	time.Sleep(time.Millisecond * 100)
 
-	go watchUpdate(&watchData)
+	go watchUpdate(kv, &watchData)
 
 	for watchData.watchStopped == false {
 		time.Sleep(time.Millisecond * 100)
 	}
 }
 
-func randomUpdate(w *watchData) {
-	kv := kvdb.Instance()
+func randomUpdate(kv kvdb.Kvdb, w *watchData) {
 	for w.watchStopped == false {
 		kv.Put("randomKey", []byte("bar"), 10)
 		time.Sleep(time.Millisecond * 80)
 	}
 }
 
-func watchTree(t *testing.T) {
+func watchTree(kv kvdb.Kvdb, t *testing.T) {
 	fmt.Println("watchTree")
-
-	kv := kvdb.Instance()
-	assert.NotNil(t, kv, "Default KVDB is not set")
 
 	tree := "tree"
 
@@ -477,19 +452,17 @@ func watchTree(t *testing.T) {
 		fmt.Printf("Cannot test watchKey: %v\n", err)
 		return
 	}
-	go randomUpdate(&watchData)
-	go watchUpdate(&watchData)
+	go randomUpdate(kv, &watchData)
+	go watchUpdate(kv, &watchData)
 
 	for watchData.watchStopped == false {
 		time.Sleep(time.Millisecond * 100)
 	}
 }
 
-func cas(t *testing.T) {
+func cas(kv kvdb.Kvdb, t *testing.T) {
 	fmt.Println("cas")
 
-	kv := kvdb.Instance()
-	assert.NotNil(t, kv, "Default KVDB is not set")
 	key := "foo/docker"
 	val := "great"
 	defer func() {
