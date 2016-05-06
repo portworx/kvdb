@@ -44,6 +44,7 @@ type consulLock struct {
 func New(
 	domain string,
 	machines []string,
+	options map[string]string,
 ) (kvdb.Kvdb, error) {
 	if len(machines) == 0 {
 		machines = defaultMachines

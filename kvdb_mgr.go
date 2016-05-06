@@ -36,11 +36,13 @@ func New(
 	name string,
 	domain string,
 	machines []string,
+	options map[string]string,
 ) (Kvdb, error) {
 	lock.RLock()
 	defer lock.RUnlock()
+
 	if dsInit, exists := datastores[name]; exists {
-		kvdb, err := dsInit(domain, machines)
+		kvdb, err := dsInit(domain, machines, options)
 		return kvdb, err
 	}
 	return nil, ErrNotSupported
