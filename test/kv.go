@@ -34,6 +34,7 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	get(kv, t)
 	getInterface(kv, t)
 	create(kv, t)
+	createWithTTL(kv, t)
 	update(kv, t)
 	deleteKey(kv, t)
 	deleteTree(kv, t)
@@ -129,6 +130,19 @@ func create(kv kvdb.Kvdb, t *testing.T) {
 
 	_, err = kv.Create(key, []byte("bar"), 0)
 	assert.Error(t, err, "Create on existing key should have errored.")
+}
+
+func createWithTTL(kv kvdb.Kvdb, t *testing.T) {
+	fmt.Println("create with ttl")
+	key := "create/foo"
+	kv.Delete(key)
+	assert.NotNil(t, kv, "Default KVDB is not set")
+	_, err := kv.Create(key, []byte("bar"), 1)
+	assert.NoError(t, err, "Error on create")
+	time.Sleep(time.Second * 2)
+	_, err = kv.Get(key)
+	assert.Error(t, err, "Expecting error value for expired value")
+
 }
 
 func update(kv kvdb.Kvdb, t *testing.T) {
