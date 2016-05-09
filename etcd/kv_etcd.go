@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Sirupsen/logrus"
+
 	"golang.org/x/net/context"
 
 	e "github.com/coreos/etcd/client"
@@ -162,7 +164,7 @@ func (kv *etcdKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 		}
 		switch err.(type) {
 		case *e.ClusterError:
-			fmt.Printf("kvdb set error: %v, retry count: %v\n", err, i)
+			logrus.Errorf("kvdb set error: %v, retry count: %v\n", err, i)
 			time.Sleep(defaultIntervalBetweenRetries)
 		default:
 			return nil, err
@@ -279,7 +281,7 @@ func (kv *etcdKV) Lock(key string, ttl uint64) (*kvdb.KVPair, error) {
 		return nil, err
 	}
 	if count > 10 {
-		fmt.Printf("ETCD: spent %v iterations locking %v\n", count, key)
+		logrus.Warnf("ETCD: spent %v iterations locking %v\n", count, key)
 	}
 	kvPair.TTL = int64(time.Duration(ttl) * time.Second)
 	kvPair.Lock = &etcdLock{done: make(chan struct{})}
@@ -369,7 +371,7 @@ func (kv *etcdKV) get(key string, recursive, sort bool) (*kvdb.KVPair, error) {
 
 		switch err.(type) {
 		case *e.ClusterError:
-			fmt.Printf("kvdb get error: %v, retry count: %v\n", err, i)
+			logrus.Errorf("kvdb get error: %v, retry count: %v\n", err, i)
 			time.Sleep(defaultIntervalBetweenRetries)
 		default:
 			etcdErr := err.(e.Error)
@@ -397,7 +399,7 @@ func (kv *etcdKV) setWithRetry(ctx context.Context, key, value string,
 		switch err.(type) {
 		case *e.ClusterError:
 			cerr := err.(*e.ClusterError)
-			fmt.Printf("kvdb set error: %v %v, retry count: %v\n",
+			logrus.Errorf("kvdb set error: %v %v, retry count: %v\n",
 				err, cerr.Detail(), i)
 			time.Sleep(defaultIntervalBetweenRetries)
 		default:
@@ -443,7 +445,7 @@ func (kv *etcdKV) refreshLock(kvPair *kvdb.KVPair) {
 					kvPair.Value,
 				)
 				if err != nil {
-					fmt.Printf(
+					logrus.Errorf(
 						"Error refreshing lock for key %v: %v\n",
 						keyString, err,
 					)
@@ -479,10 +481,10 @@ func (kv *etcdKV) watchStart(
 		if watchErr != nil && !isCancelSent {
 			e, ok := watchErr.(e.Error)
 			if ok {
-				fmt.Printf("Etcd error code %d Message %s Cause %s Index %d\n",
+				logrus.Errorf("Etcd error code %d Message %s Cause %s Index %d\n",
 					e.Code, e.Message, e.Cause, e.Index)
 			} else {
-				fmt.Printf("Etcd returned an error : %s", watchErr.Error())
+				logrus.Errorf("Etcd returned an error : %s\n", watchErr.Error())
 			}
 			// TODO: handle error
 			_ = cb(key, opaque, nil, watchErr)
