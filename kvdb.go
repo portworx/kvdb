@@ -147,4 +147,6 @@ type Kvdb interface {
 	Unlock(kvp *KVPair) error
 	// TxNew returns a new Tx coordinator object or ErrNotSupported
 	TxNew() (Tx, error)
+	// Snapshot returns a kvdb snapshot and its version.
+	Snapshot(prefix string) (Kvdb, uint64, error)
 }

@@ -3,6 +3,7 @@ package test
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -43,6 +44,7 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	watchKey(kv, t)
 	watchTree(kv, t)
 	cas(kv, t)
+	//snapshot(kv, t)
 }
 
 // RunBasic runs the basic test suite.
@@ -59,6 +61,7 @@ func RunBasic(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	deleteTree(kv, t)
 	enumerate(kv, t)
 	lockBasic(kv, t)
+	snapshot(kv, t)
 	// watchKey(kv, t)
 	// watchTree(kv, t)
 	// cas(kv, t)
@@ -245,6 +248,50 @@ func enumerate(kv kvdb.Kvdb, t *testing.T) {
 
 	for i := range kvPairs {
 		v, ok := keys[kvPairs[i].Key]
+		assert.True(t, ok, "unexpected kvpair (%s)->(%s)",
+			kvPairs[i].Key, kvPairs[i].Value)
+		assert.Equal(t, v, string(kvPairs[i].Value),
+			"Invalid kvpair (%s)->(%s) expect value %s",
+			kvPairs[i].Key, kvPairs[i].Value, v)
+	}
+}
+
+func snapshot(kv kvdb.Kvdb, t *testing.T) {
+
+	fmt.Println("snapshot")
+
+	prefix := "snapshot/"
+
+	kv.DeleteTree(prefix)
+	defer func() {
+		kv.DeleteTree(prefix)
+	}()
+
+	inputData := make(map[string]string)
+	key := "key"
+	value := "bar"
+	count := 300
+	for i := 0; i < count; i++ {
+		suffix := strconv.Itoa(i)
+		inputKey := prefix + key + suffix
+		inputValue := value + suffix
+		_, err := kv.Put(inputKey, []byte(inputValue), 0)
+		assert.NoError(t, err, "Unexpected error on Put")
+		inputData[inputKey] = inputValue
+	}
+
+	snap, _, err := kv.Snapshot(prefix)
+	assert.NoError(t, err, "Unexpected error on Enumerate")
+
+	kvPairs, err := snap.Enumerate(prefix)
+	assert.NoError(t, err, "Unexpected error on Enumerate")
+
+	assert.Equal(t, len(kvPairs), count,
+		"Expecting %d keys under %s got: %d, kv: %v",
+		count, prefix, len(kvPairs), kvPairs)
+
+	for i := range kvPairs {
+		v, ok := inputData[kvPairs[i].Key]
 		assert.True(t, ok, "unexpected kvpair (%s)->(%s)",
 			kvPairs[i].Key, kvPairs[i].Value)
 		assert.Equal(t, v, string(kvPairs[i].Value),

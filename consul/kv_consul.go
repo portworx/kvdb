@@ -4,6 +4,7 @@ package consul
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"path"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/hashicorp/consul/api"
 	"github.com/portworx/kvdb"
 	"github.com/portworx/kvdb/common"
+	"github.com/portworx/kvdb/mem"
 )
 
 const (
@@ -298,4 +300,30 @@ func (kv *consulKV) getLock(key string, ttl uint64) (*consulLock, error) {
 	}
 	lock.lock = l
 	return lock, nil
+}
+
+func (kv *consulKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
+	options := &api.QueryOptions{
+		AllowStale:        false,
+		RequireConsistent: true,
+	}
+	pairs, _, err := kv.client.KV().List(path.Join(kv.domain, prefix), options)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	kvPairs := kv.pairToKvs("enumerate", pairs, nil)
+	snapDb, err := mem.New(kv.domain, nil, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	for _, kvPair := range kvPairs {
+		_, err := snapDb.Put(kvPair.Key, kvPair.Value, 0)
+		if err != nil {
+			return nil, 0, fmt.Errorf("Failed creating snap: %v", err)
+		}
+	}
+
+	return snapDb, 0, nil
 }

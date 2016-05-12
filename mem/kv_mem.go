@@ -69,6 +69,33 @@ func (kv *memKV) Get(key string) (*kvdb.KVPair, error) {
 	return v, nil
 }
 
+func (kv *memKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
+	kv.mutex.Lock()
+	defer kv.mutex.Unlock()
+
+	data := make(map[string]*kvdb.KVPair)
+	for key, value := range kv.m {
+		if strings.HasPrefix(key, prefix) && !strings.Contains(key, "/_") {
+			continue
+		}
+		byteValue := make([]byte, len(value.Value))
+		copyValue := &kvdb.KVPair{}
+		*copyValue = *value
+		copy(byteValue, value.Value)
+		copyValue.Value = byteValue
+		data[key] = value
+	}
+
+	// only snapshot data, watches are not copied
+	return &memKV{
+		m:      data,
+		w:      make(map[string]*watchData),
+		wt:     make(map[string]*watchData),
+		domain: kv.domain,
+	}, kv.index, nil
+
+}
+
 func (kv *memKV) Put(
 	key string,
 	value interface{},
@@ -85,7 +112,7 @@ func (kv *memKV) Put(
 	if ttl != 0 {
 		time.AfterFunc(time.Second*time.Duration(ttl), func() {
 			// TODO: handle error
-			_, _ = kvdb.Instance().Delete(key)
+			_, _ = kv.Delete(key)
 		})
 	}
 	b, err := common.ToBytes(value)
