@@ -32,6 +32,7 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
+	snapshot(kv, t)
 	get(kv, t)
 	getInterface(kv, t)
 	create(kv, t)
@@ -44,7 +45,6 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	watchKey(kv, t)
 	watchTree(kv, t)
 	cas(kv, t)
-	//snapshot(kv, t)
 }
 
 // RunBasic runs the basic test suite.
@@ -268,20 +268,33 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 	}()
 
 	inputData := make(map[string]string)
+	inputDataVersion := make(map[string]uint64)
 	key := "key"
 	value := "bar"
-	count := 300
-	for i := 0; i < count; i++ {
-		suffix := strconv.Itoa(i)
-		inputKey := prefix + key + suffix
-		inputValue := value + suffix
-		_, err := kv.Put(inputKey, []byte(inputValue), 0)
-		assert.NoError(t, err, "Unexpected error on Put")
-		inputData[inputKey] = inputValue
+	count := 100
+
+	doneUpdate := make(chan bool, 2)
+	updateFn := func(count int, v string) {
+		for i := 0; i < count; i++ {
+			suffix := strconv.Itoa(i)
+			inputKey := prefix + key + suffix
+			inputValue := v
+			kv, err := kv.Put(inputKey, []byte(inputValue), 0)
+			assert.NoError(t, err, "Unexpected error on Put")
+			inputData[inputKey] = inputValue
+			inputDataVersion[inputKey] = kv.KVDBIndex
+		}
+		doneUpdate <- true
 	}
 
-	snap, _, err := kv.Snapshot(prefix)
+	updateFn(count, value)
+	<-doneUpdate
+	newValue := "bar2"
+	go updateFn(50, newValue)
+
+	snap, snapVersion, err := kv.Snapshot(prefix)
 	assert.NoError(t, err, "Unexpected error on Enumerate")
+	<-doneUpdate
 
 	kvPairs, err := snap.Enumerate(prefix)
 	assert.NoError(t, err, "Unexpected error on Enumerate")
@@ -291,12 +304,20 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 		count, prefix, len(kvPairs), kvPairs)
 
 	for i := range kvPairs {
-		v, ok := inputData[kvPairs[i].Key]
-		assert.True(t, ok, "unexpected kvpair (%s)->(%s)",
+		currValue, ok1 := inputData[kvPairs[i].Key]
+		version, ok2 := inputDataVersion[kvPairs[i].Key]
+		assert.True(t, ok1 && ok2, "unexpected kvpair (%s)->(%s)",
 			kvPairs[i].Key, kvPairs[i].Value)
-		assert.Equal(t, v, string(kvPairs[i].Value),
-			"Invalid kvpair (%s)->(%s) expect value %s",
-			kvPairs[i].Key, kvPairs[i].Value, v)
+		expectedValue := value
+		if version <= snapVersion {
+			expectedValue = currValue
+		}
+
+		assert.Equal(t, expectedValue, string(kvPairs[i].Value),
+			"Invalid kvpair %v (%s)->(%s) expect value %s"+
+				" snap version: %v kvVersion: %v",
+			i, kvPairs[i].Key, kvPairs[i].Value, expectedValue,
+			snapVersion, version)
 	}
 }
 
