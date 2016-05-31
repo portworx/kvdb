@@ -13,9 +13,13 @@ const (
 	KVGet
 	// KVDelete set when the key is deleted from the KV store
 	KVDelete
+	// KVExpire set when the key expires
+	KVExpire
 	// KVUknown operation on KV pair
 	KVUknown
+)
 
+const (
 	// KVPrevExists flag to check key already exists
 	KVPrevExists KVFlags = 1 << iota
 	// KVCreatedIndex flag compares with passed in index (possibly in KVPair)
