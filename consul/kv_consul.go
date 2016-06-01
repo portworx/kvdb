@@ -5,8 +5,10 @@ package consul
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,7 +20,8 @@ import (
 
 const (
 	// Name is the name of this kvdb implementation.
-	Name = "consul-kv"
+	Name      = "consul-kv"
+	bootstrap = "kvdb/bootstrap"
 )
 
 var (
@@ -177,7 +180,7 @@ func (kv *consulKV) Delete(key string) (*kvdb.KVPair, error) {
 }
 
 func (kv *consulKV) DeleteTree(key string) error {
-	key = kv.domain + key
+	key = path.Join(kv.domain, key)
 	if _, err := kv.client.KV().DeleteTree(key, nil); err != nil {
 		return err
 	}
@@ -227,9 +230,18 @@ func (kv *consulKV) TxNew() (kvdb.Tx, error) {
 }
 
 func (kv *consulKV) createKv(pair *api.KVPair) *kvdb.KVPair {
+	key := strings.TrimPrefix(pair.Key, kv.domain)
+	// Strip out the leading '/'
+	if len(key) != 0 {
+		key = key[1:]
+	} else {
+		key = key
+	}
+
 	return &kvdb.KVPair{
-		Key:   strings.TrimPrefix(pair.Key, kv.domain),
-		Value: []byte(pair.Value),
+		Key:           key,
+		Value:         []byte(pair.Value),
+		ModifiedIndex: pair.ModifyIndex,
 	}
 }
 
@@ -303,6 +315,15 @@ func (kv *consulKV) getLock(key string, ttl uint64) (*consulLock, error) {
 }
 
 func (kv *consulKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
+	r := rand.New(rand.NewSource(time.Now().UnixNano())).Int63()
+	bootStrapKey := bootstrap + strconv.FormatInt(r, 10) +
+		strconv.FormatInt(time.Now().UnixNano(), 10)
+	val, _ := common.ToBytes(time.Now().UnixNano())
+	if _, err := kv.Put(bootStrapKey, val, 0); err != nil {
+		return nil, 0, fmt.Errorf("Failed to create snap bootstrap key %v, "+
+			"err: %v", bootStrapKey, err)
+	}
+
 	options := &api.QueryOptions{
 		AllowStale:        false,
 		RequireConsistent: true,
@@ -325,5 +346,11 @@ func (kv *consulKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 		}
 	}
 
-	return snapDb, 0, nil
+	kvdbPair, err := kv.Delete(bootStrapKey)
+	if err != nil {
+		return nil, 0, fmt.Errorf("Failed to delete snap bootstrap key: %v, "+
+			"err: %v", bootStrapKey, err)
+	}
+
+	return snapDb, kvdbPair.ModifiedIndex, nil
 }

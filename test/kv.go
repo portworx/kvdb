@@ -85,7 +85,7 @@ func get(kv kvdb.Kvdb, t *testing.T) {
 	kvPair, err = kv.Get(key)
 	assert.NoError(t, err, "Failed in Get")
 
-	assert.Equal(t, kvPair.Key, key, "Key mismatch in Get")
+	assert.Equal(t, key, kvPair.Key, "Key mismatch in Get")
 	assert.Equal(t, string(kvPair.Value), val, "value mismatch in Get")
 }
 
@@ -293,7 +293,7 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 	go updateFn(50, newValue)
 
 	snap, snapVersion, err := kv.Snapshot(prefix)
-	assert.NoError(t, err, "Unexpected error on Enumerate")
+	assert.NoError(t, err, "Unexpected error on Snapshot")
 	<-doneUpdate
 
 	kvPairs, err := snap.Enumerate(prefix)
@@ -305,11 +305,11 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 
 	for i := range kvPairs {
 		currValue, ok1 := inputData[kvPairs[i].Key]
-		version, ok2 := inputDataVersion[kvPairs[i].Key]
+		mapVersion, ok2 := inputDataVersion[kvPairs[i].Key]
 		assert.True(t, ok1 && ok2, "unexpected kvpair (%s)->(%s)",
 			kvPairs[i].Key, kvPairs[i].Value)
 		expectedValue := value
-		if version <= snapVersion {
+		if mapVersion <= snapVersion {
 			expectedValue = currValue
 		}
 
@@ -317,7 +317,7 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 			"Invalid kvpair %v (%s)->(%s) expect value %s"+
 				" snap version: %v kvVersion: %v",
 			i, kvPairs[i].Key, kvPairs[i].Value, expectedValue,
-			snapVersion, version)
+			snapVersion, mapVersion)
 	}
 }
 
