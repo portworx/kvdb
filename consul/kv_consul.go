@@ -310,6 +310,11 @@ func (kv *consulKV) WatchTree(prefix string, waitIndex uint64, opaque interface{
 }
 
 func (kv *consulKV) Lock(key string, ttl uint64) (*kvdb.KVPair, error) {
+	// Strip of the leading slash or else consul throws error
+	if key[0] == '/' {
+		key = key[1:]
+	}
+
 	l, err := kv.getLock(key, ttl)
 	if err != nil {
 		return nil, err
