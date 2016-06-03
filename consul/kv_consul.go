@@ -3,6 +3,7 @@
 package consul
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -222,7 +223,16 @@ func (kv *consulKV) CompareAndSet(kvp *kvdb.KVPair, flags kvdb.KVFlags, prevValu
 	if (flags & kvdb.KVModifiedIndex) != 0 {
 		pair.ModifyIndex = kvp.ModifiedIndex
 	} else if (flags&kvdb.KVModifiedIndex) == 0 && prevValue != nil {
-		return nil, kvdb.ErrNotSupported
+		kvPair, err := kv.Get(kvp.Key)
+		if err != nil {
+			return nil, err
+		}
+
+		// Prev Value not equal to current value in etcd
+		if bytes.Compare(kvPair.Value, prevValue) != 0 {
+			return nil, kvdb.ErrValueMismatch
+		}
+		pair.ModifyIndex = kvPair.ModifiedIndex
 	} else {
 		pair.ModifyIndex = 0
 	}
@@ -234,7 +244,7 @@ func (kv *consulKV) CompareAndSet(kvp *kvdb.KVPair, flags kvdb.KVFlags, prevValu
 
 	if !ok {
 		if (flags & kvdb.KVModifiedIndex) == 0 {
-			return nil, kvdb.ErrExist
+			return nil, kvdb.ErrValueMismatch
 		}
 		return nil, kvdb.ErrModified
 	}

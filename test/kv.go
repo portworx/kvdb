@@ -615,6 +615,7 @@ func cas(kv kvdb.Kvdb, t *testing.T) {
 	fmt.Println("cas badval")
 	_, err = kv.CompareAndSet(kvPair, kvdb.KVFlags(0), []byte("badval"))
 	assert.Error(t, err, "CompareAndSet should fail on an incorrect previous value")
+	//assert.EqualError(t, err, kvdb.ErrValueMismatch.Error(), "CompareAndSet should return value mismatch error")
 
 	kvPair.ModifiedIndex++
 	_, err = kv.CompareAndSet(kvPair, kvdb.KVModifiedIndex, nil)
