@@ -596,12 +596,12 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 				if pair.ModifyIndex == meta.LastIndex {
 					if pair.CreateIndex == pair.ModifyIndex {
 						// Callback with a create action
-						cbErr = cb(pair.Key, opaque, kv.pairToKv("create", pair, meta), nil)
+						cbErr = cb(prefix, opaque, kv.pairToKv("create", pair, meta), nil)
 						prefixDeleted = false
 						prefixExisted = true
 					} else {
 						// Callback with an update action
-						cbErr = cb(pair.Key, opaque, kv.pairToKv("update", pair, meta), nil)
+						cbErr = cb(prefix, opaque, kv.pairToKv("update", pair, meta), nil)
 					}
 					found = true
 					break
