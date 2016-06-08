@@ -139,7 +139,7 @@ func (kv *memKV) Put(
 	}
 
 	kv.normalize(kvp)
-	go kv.fireCB(key, kvp, nil)
+	go kv.fireCB(key, *kvp, nil)
 	return kvp, nil
 }
 
@@ -199,7 +199,7 @@ func (kv *memKV) Delete(key string) (*kvdb.KVPair, error) {
 	kvp.KVDBIndex = atomic.AddUint64(&kv.index, 1)
 	kvp.ModifiedIndex = kvp.KVDBIndex
 	kvp.Action = kvdb.KVDelete
-	go kv.fireCB(kv.domain+key, kvp, nil)
+	go kv.fireCB(kv.domain+key, *kvp, nil)
 	delete(kv.m, kv.domain+key)
 	return kvp, nil
 }
@@ -324,7 +324,7 @@ func (kv *memKV) normalize(kvp *kvdb.KVPair) {
 	kvp.Key = strings.TrimPrefix(kvp.Key, kv.domain)
 }
 
-func (kv *memKV) fireCB(key string, kvp *kvdb.KVPair, err error) {
+func (kv *memKV) fireCB(key string, kvp kvdb.KVPair, err error) {
 	for k, v := range kv.w {
 		if k == key {
 			err := v.cb(key, v.opaque, kvp, err)
