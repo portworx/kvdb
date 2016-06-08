@@ -144,8 +144,15 @@ func createWithTTL(kv kvdb.Kvdb, t *testing.T) {
 	assert.NotNil(t, kv, "Default KVDB is not set")
 	_, err := kv.Create(key, []byte("bar"), 1)
 	if err != nil {
-		// Consul does not support ttl
+		// Consul does not support ttl less than 10
 		assert.EqualError(t, err, kvdb.ErrTTLNotSupported.Error(), "ttl not supported")
+		_, err := kv.Create(key, []byte("bar"), 20)
+		assert.NoError(t, err, "Error on create")
+		// Consul doubles the ttl value
+		time.Sleep(time.Second * 20)
+		_, err = kv.Get(key)
+		assert.Error(t, err, "Expecting error value for expired value")
+		
 	} else {
 		assert.NoError(t, err, "Error on create")
 		time.Sleep(time.Second * 2)
