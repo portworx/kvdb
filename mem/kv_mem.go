@@ -327,7 +327,7 @@ func (kv *memKV) normalize(kvp *kvdb.KVPair) {
 func (kv *memKV) fireCB(key string, kvp kvdb.KVPair, err error) {
 	for k, v := range kv.w {
 		if k == key {
-			err := v.cb(key, v.opaque, kvp, err)
+			err := v.cb(key, v.opaque, &kvp, err)
 			if err != nil {
 				// TODO: handle error
 				_ = v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)
@@ -339,7 +339,7 @@ func (kv *memKV) fireCB(key string, kvp kvdb.KVPair, err error) {
 	}
 	for k, v := range kv.wt {
 		if strings.HasPrefix(key, k) {
-			err := v.cb(key, v.opaque, kvp, err)
+			err := v.cb(key, v.opaque, &kvp, err)
 			if err != nil {
 				// TODO: handle error
 				_ = v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)
