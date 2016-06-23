@@ -152,7 +152,7 @@ func createWithTTL(kv kvdb.Kvdb, t *testing.T) {
 		time.Sleep(time.Second * 20)
 		_, err = kv.Get(key)
 		assert.Error(t, err, "Expecting error value for expired value")
-		
+
 	} else {
 		assert.NoError(t, err, "Error on create")
 		time.Sleep(time.Second * 2)
@@ -339,7 +339,7 @@ func lock(kv kvdb.Kvdb, t *testing.T) {
 	fmt.Println("lock")
 
 	key := "locktest"
-	kvPair, err := kv.Lock(key, 10)
+	kvPair, err := kv.Lock(key)
 	assert.NoError(t, err, "Unexpected error in lock")
 
 	if kvPair == nil {
@@ -360,7 +360,7 @@ func lock(kv kvdb.Kvdb, t *testing.T) {
 	assert.NoError(t, err, "Unexpected error from Unlock")
 
 	fmt.Println("relock")
-	kvPair, err = kv.Lock(key, 3)
+	kvPair, err = kv.Lock(key)
 	assert.NoError(t, err, "Failed to lock after unlock")
 
 	fmt.Println("reunlock")
@@ -368,7 +368,7 @@ func lock(kv kvdb.Kvdb, t *testing.T) {
 	assert.NoError(t, err, "Unexpected error from Unlock")
 
 	fmt.Println("repeat lock once")
-	kvPair, err = kv.Lock(key, 3)
+	kvPair, err = kv.Lock(key)
 	assert.NoError(t, err, "Failed to lock unlock")
 
 	done := 0
@@ -380,7 +380,7 @@ func lock(kv kvdb.Kvdb, t *testing.T) {
 		assert.NoError(t, err, "Unexpected error from Unlock")
 	}()
 	fmt.Println("repeat lock lock twice")
-	kvPair, err = kv.Lock(key, 3)
+	kvPair, err = kv.Lock(key)
 	assert.NoError(t, err, "Failed to lock")
 	assert.Equal(t, done, 1, "Locked before unlock")
 	fmt.Println("repeat lock unlock twice")
@@ -393,7 +393,7 @@ func lockBasic(kv kvdb.Kvdb, t *testing.T) {
 	fmt.Println("lock")
 
 	key := "locktest"
-	kvPair, err := kv.Lock(key, 100)
+	kvPair, err := kv.Lock(key)
 	assert.NoError(t, err, "Unexpected error in lock")
 
 	if kvPair == nil {
@@ -403,13 +403,12 @@ func lockBasic(kv kvdb.Kvdb, t *testing.T) {
 	err = kv.Unlock(kvPair)
 	assert.NoError(t, err, "Unexpected error from Unlock")
 
-	kvPair, err = kv.Lock(key, 20)
+	kvPair, err = kv.Lock(key)
 	assert.NoError(t, err, "Failed to lock after unlock")
 
 	err = kv.Unlock(kvPair)
 	assert.NoError(t, err, "Unexpected error from Unlock")
 }
-
 
 func watchFn(
 	prefix string,

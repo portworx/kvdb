@@ -25,7 +25,7 @@ const (
 	// Name is the name of this kvdb implementation.
 	Name      = "consul-kv"
 	bootstrap = "kvdb/bootstrap"
-
+	// MaxRenewRetries to renew TTL.
 	MaxRenewRetries = 5
 )
 
@@ -323,13 +323,13 @@ func (kv *consulKV) WatchTree(prefix string, waitIndex uint64, opaque interface{
 	return nil
 }
 
-func (kv *consulKV) Lock(key string, ttl uint64) (*kvdb.KVPair, error) {
+func (kv *consulKV) Lock(key string) (*kvdb.KVPair, error) {
 	// Strip of the leading slash or else consul throws error
 	if key[0] == '/' {
 		key = key[1:]
 	}
 
-	l, err := kv.getLock(key, ttl)
+	l, err := kv.getLock(key, 3)
 	if err != nil {
 		return nil, err
 	}
@@ -727,7 +727,7 @@ func (kv *consulKV) renewSession(pair *api.KVPair, ttl uint64) error {
 	entry := &api.SessionEntry{
 		Behavior:  api.SessionBehaviorDelete, // Delete the key when the session expires
 		TTL:       durationTTL.String(),
-		LockDelay: 1 * time.Millisecond,      // Virtually disable lock delay
+		LockDelay: 1 * time.Millisecond, // Virtually disable lock delay
 	}
 
 	// Create the key session
