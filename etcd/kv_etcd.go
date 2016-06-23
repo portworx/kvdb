@@ -574,12 +574,16 @@ func (kv *etcdKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 			ok := false
 
 			if err != nil {
+				if err == kvdb.ErrWatchStopped {
+					return nil
+				}
 				watchErr = err
 				sendErr = err
 				goto errordone
 			}
 
 			if kvp == nil {
+
 				watchErr = fmt.Errorf("kvp is nil")
 				sendErr = watchErr
 				goto errordone
@@ -596,8 +600,8 @@ func (kv *etcdKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 			m.Lock()
 			defer m.Unlock()
 
-			if kvp.ModifiedIndex > highestKvdbIndex {
-				// done applying changes, return
+			if kvp.ModifiedIndex >= highestKvdbIndex {
+				// Done applying changes.
 				watchErr = fmt.Errorf("done")
 				sendErr = nil
 				goto errordone
