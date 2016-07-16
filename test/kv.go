@@ -295,7 +295,7 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 			kv, err := kv.Put(inputKey, []byte(inputValue), 0)
 			assert.NoError(t, err, "Unexpected error on Put")
 			inputData[inputKey] = inputValue
-			inputDataVersion[inputKey] = kv.KVDBIndex
+			inputDataVersion[inputKey] = kv.ModifiedIndex
 		}
 		doneUpdate <- true
 	}
@@ -331,6 +331,12 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 				" snap version: %v kvVersion: %v",
 			i, kvPairs[i].Key, kvPairs[i].Value, expectedValue,
 			snapVersion, mapVersion)
+
+		assert.True(t, mapVersion > snapVersion || mapVersion == kvPairs[i].ModifiedIndex,
+			"Invalid kvpair %v (%s)->(%s) expect version %v"+
+				" snap version: %v kvVersion: %v",
+			i, kvPairs[i].Key, kvPairs[i].Value, mapVersion,
+			snapVersion, kvPairs[i].KVDBIndex)
 	}
 }
 

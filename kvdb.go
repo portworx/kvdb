@@ -152,12 +152,14 @@ type Kvdb interface {
 	// WatchTree is the same as WatchKey except that watchCB is triggered
 	// for updates on all keys that share the prefix.
 	WatchTree(prefix string, waitIndex uint64, opaque interface{}, watchCB WatchCB) error
+	// Snapshot returns a kvdb snapshot and its version.
+	Snapshot(prefix string) (Kvdb, uint64, error)
+	// SnapPut records the key value pair including the index.
+	SnapPut(kvp *KVPair) (*KVPair, error)
 	// Lock specfied key. The KVPair returned should be used to unlock.
 	Lock(key string) (*KVPair, error)
 	// Unlock kvp previously acquired through a call to lock.
 	Unlock(kvp *KVPair) error
 	// TxNew returns a new Tx coordinator object or ErrNotSupported
 	TxNew() (Tx, error)
-	// Snapshot returns a kvdb snapshot and its version.
-	Snapshot(prefix string) (Kvdb, uint64, error)
 }

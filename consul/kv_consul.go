@@ -765,3 +765,7 @@ func (kv *consulKV) getActiveSession(key string) (string, error) {
 	}
 	return "", nil
 }
+
+func (kv *consulKV) SnapPut(snapKvp *kvdb.KVPair) (*kvdb.KVPair, error) {
+	return nil, kvdb.ErrNotSupported
+}
