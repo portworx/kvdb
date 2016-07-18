@@ -468,8 +468,17 @@ func (kv *consulKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 		}
 	}
 
-	kv.Delete(bootStrapKeyLow)
-	kv.Delete(bootStrapKeyHigh)
+	_, err = kv.Delete(bootStrapKeyLow)
+	if err != nil {
+		return nil, 0, fmt.Errorf("Failed to delete snap bootstrap key: %v, "+
+			"err: %v", bootStrapKeyLow, err)
+	}
+	_, err = kv.Delete(bootStrapKeyHigh)
+	if err != nil {
+		return nil, 0, fmt.Errorf("Failed to delete snap bootstrap key: %v, "+
+			"err: %v", bootStrapKeyHigh, err)
+	}
+
 	return snapDb, highestKvdbIndex, nil
 }
 
@@ -746,7 +755,7 @@ func (kv *consulKV) renewSession(pair *api.KVPair, ttl uint64) error {
 	// ephemeral behavior
 	lock, _ := kv.client.LockOpts(lockOpts)
 	if lock != nil {
-		lock.Lock(nil)
+		_, _ = lock.Lock(nil)
 	}
 
 	_, _, err = kv.client.Session().Renew(session, nil)
