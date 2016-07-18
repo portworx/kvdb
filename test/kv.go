@@ -425,7 +425,6 @@ func watchFn(
 	data := opaque.(*watchData)
 
 	time.Sleep(100 * time.Millisecond)
-	atomic.AddInt32(&data.reader, 1)
 	if err != nil {
 		assert.Equal(data.t, err, kvdb.ErrWatchStopped)
 		data.watchStopped = true
@@ -470,6 +469,7 @@ func watchFn(
 		return errors.New(data.stop)
 	}
 
+	atomic.AddInt32(&data.reader, 1)
 	return nil
 }
 
@@ -498,6 +498,7 @@ func watchUpdate(kv kvdb.Kvdb, data *watchData) error {
 		assert.NoError(data.t, err, "Unexpected error in Put")
 	}
 
+	fmt.Printf("-")
 	for data.writer != data.reader {
 		time.Sleep(time.Millisecond * 100)
 	}
@@ -506,6 +507,7 @@ func watchUpdate(kv kvdb.Kvdb, data *watchData) error {
 	data.action = kvdb.KVDelete
 	kv.Delete(data.key)
 
+	fmt.Printf("-")
 	for data.writer != data.reader {
 		time.Sleep(time.Millisecond * 100)
 	}
@@ -516,6 +518,7 @@ func watchUpdate(kv kvdb.Kvdb, data *watchData) error {
 	// Delete otherKey
 	kv.Delete(data.otherKey)
 
+	fmt.Printf("-")
 	for data.writer != data.reader {
 		time.Sleep(time.Millisecond * 100)
 	}
@@ -543,6 +546,8 @@ func watchKey(kv kvdb.Kvdb, t *testing.T) {
 	kv.Delete(watchData.otherKey)
 	// First create a key. We should not get update for this create.
 	_, err := kv.Create(watchData.otherKey, []byte("bar"), 0)
+	// Let the create operation finish and then start the watch
+	time.Sleep(time.Millisecond * 100)
 
 	err = kv.WatchKey(watchData.otherKey, 0, &watchData, watchFn)
 	if err != nil {
@@ -592,6 +597,9 @@ func watchTree(kv kvdb.Kvdb, t *testing.T) {
 
 	// First create a tree to watch for. We should not get update for this create.
 	_, err = kv.Create(watchData.otherKey, []byte("bar"), 0)
+	// Let the create operation finish and then start the watch
+
+	time.Sleep(time.Millisecond * 100)
 	err = kv.WatchTree(tree, 0, &watchData, watchFn)
 	if err != nil {
 		fmt.Printf("Cannot test watchKey: %v\n", err)
@@ -624,17 +632,18 @@ func cas(kv kvdb.Kvdb, t *testing.T) {
 	kvPair, err = kv.Get(key)
 	assert.NoError(t, err, "Failed in Get")
 
-	fmt.Println("cas badval")
 	_, err = kv.CompareAndSet(kvPair, kvdb.KVFlags(0), []byte("badval"))
 	assert.Error(t, err, "CompareAndSet should fail on an incorrect previous value")
 	//assert.EqualError(t, err, kvdb.ErrValueMismatch.Error(), "CompareAndSet should return value mismatch error")
 
-	kvPair.ModifiedIndex++
-	_, err = kv.CompareAndSet(kvPair, kvdb.KVModifiedIndex, nil)
+	copyKVPair := *kvPair
+	copyKVPair.ModifiedIndex++
+	_, err = kv.CompareAndSet(&copyKVPair, kvdb.KVModifiedIndex, nil)
 	assert.Error(t, err, "CompareAndSet should fail on an incorrect modified index")
 
-	kvPair.ModifiedIndex--
-	kvPair, err = kv.CompareAndSet(kvPair, kvdb.KVModifiedIndex, nil)
+	//kvPair.ModifiedIndex--
+	copyKVPair.ModifiedIndex--
+	kvPair, err = kv.CompareAndSet(&copyKVPair, kvdb.KVModifiedIndex, nil)
 	assert.NoError(t, err, "CompareAndSet should succeed on an correct modified index")
 
 	kvPairNew, err := kv.CompareAndSet(kvPair, kvdb.KVFlags(0), []byte(val))
