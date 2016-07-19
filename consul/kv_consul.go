@@ -373,13 +373,17 @@ func (kv *consulKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 	}
 
 	kvPairs := kv.pairToKvs("enumerate", pairs, nil)
-	snapDb, err := mem.New(kv.domain, nil, nil)
+	snapDb, err := mem.New(
+		kv.domain,
+		nil,
+		map[string]string{mem.KvSnap: "true"},
+	)
 	if err != nil {
 		return nil, 0, err
 	}
 
 	for _, kvPair := range kvPairs {
-		_, err := snapDb.Put(kvPair.Key, kvPair.Value, 0)
+		_, err := snapDb.SnapPut(kvPair)
 		if err != nil {
 			return nil, 0, fmt.Errorf("Failed creating snap: %v", err)
 		}
@@ -445,7 +449,7 @@ func (kv *consulKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 				goto errordone
 			}
 
-			_, err = snapDb.Put(kvp.Key, kvp.Value, 0)
+			_, err = snapDb.SnapPut(kvp)
 			if err != nil {
 				watchErr = fmt.Errorf("Failed to apply update to snap: %v", err)
 				sendErr = watchErr
