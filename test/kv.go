@@ -28,6 +28,11 @@ type watchData struct {
 	whichKey     int32
 }
 
+type lockTag struct {
+	nodeID   string
+	funcName string
+}
+
 // Run runs the test suite.
 func Run(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	kv, err := datastoreInit("pwx/test", nil, nil)
@@ -340,80 +345,98 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 	}
 }
 
-func lock(kv kvdb.Kvdb, t *testing.T) {
-
-	fmt.Println("lock")
-
-	key := "locktest"
-	kvPair, err := kv.Lock(key)
-	assert.NoError(t, err, "Unexpected error in lock")
-
-	if kvPair == nil {
-		return
+func getLockMethods(kv kvdb.Kvdb) []func(string) (*kvdb.KVPair, error) {
+	lockMethods := make([]func(string) (*kvdb.KVPair, error), 2)
+	lockMethods[0] = func(key string) (*kvdb.KVPair, error) {
+		return kv.Lock(key)
 	}
+	lockMethods[1] = func(key string) (*kvdb.KVPair, error) {
+		tag := lockTag{nodeID: "node_1", funcName: "testfunc"}
+		return kv.LockWithTag(key, tag)
+	}
+	return lockMethods
+}
 
-	// For consul unlock does not deal with the value part of the kvPair
-	/*
-		stash := *kvPair
-		stash.Value = []byte("hoohah")
-		fmt.Println("bad unlock")
-		err = kv.Unlock(&stash)
-		assert.Error(t, err, "Unlock should fail for bad KVPair")
-	*/
+func lock(kv kvdb.Kvdb, t *testing.T) {
+	lockMethods := getLockMethods(kv)
 
-	fmt.Println("unlock")
-	err = kv.Unlock(kvPair)
-	assert.NoError(t, err, "Unexpected error from Unlock")
+	for _, lockMethod := range lockMethods {
+		fmt.Println("lock")
 
-	fmt.Println("relock")
-	kvPair, err = kv.Lock(key)
-	assert.NoError(t, err, "Failed to lock after unlock")
+		key := "locktest"
+		kvPair, err := lockMethod(key)
+		assert.NoError(t, err, "Unexpected error in lock")
 
-	fmt.Println("reunlock")
-	err = kv.Unlock(kvPair)
-	assert.NoError(t, err, "Unexpected error from Unlock")
+		if kvPair == nil {
+			return
+		}
 
-	fmt.Println("repeat lock once")
-	kvPair, err = kv.Lock(key)
-	assert.NoError(t, err, "Failed to lock unlock")
+		// For consul unlock does not deal with the value part of the kvPair
+		/*
+			stash := *kvPair
+			stash.Value = []byte("hoohah")
+			fmt.Println("bad unlock")
+			err = kv.Unlock(&stash)
+			assert.Error(t, err, "Unlock should fail for bad KVPair")
+		*/
 
-	done := 0
-	go func() {
-		time.Sleep(time.Second * 10)
-		done = 1
+		fmt.Println("unlock")
 		err = kv.Unlock(kvPair)
-		fmt.Println("repeat lock unlock once")
 		assert.NoError(t, err, "Unexpected error from Unlock")
-	}()
-	fmt.Println("repeat lock lock twice")
-	kvPair, err = kv.Lock(key)
-	assert.NoError(t, err, "Failed to lock")
-	assert.Equal(t, done, 1, "Locked before unlock")
-	fmt.Println("repeat lock unlock twice")
-	err = kv.Unlock(kvPair)
-	assert.NoError(t, err, "Unexpected error from Unlock")
+
+		fmt.Println("relock")
+		kvPair, err = lockMethod(key)
+		assert.NoError(t, err, "Failed to lock after unlock")
+
+		fmt.Println("reunlock")
+		err = kv.Unlock(kvPair)
+		assert.NoError(t, err, "Unexpected error from Unlock")
+
+		fmt.Println("repeat lock once")
+		kvPair, err = lockMethod(key)
+		assert.NoError(t, err, "Failed to lock unlock")
+
+		done := 0
+		go func() {
+			time.Sleep(time.Second * 10)
+			done = 1
+			err = kv.Unlock(kvPair)
+			fmt.Println("repeat lock unlock once")
+			assert.NoError(t, err, "Unexpected error from Unlock")
+		}()
+		fmt.Println("repeat lock lock twice")
+		kvPair, err = lockMethod(key)
+		assert.NoError(t, err, "Failed to lock")
+		assert.Equal(t, done, 1, "Locked before unlock")
+		fmt.Println("repeat lock unlock twice")
+		err = kv.Unlock(kvPair)
+		assert.NoError(t, err, "Unexpected error from Unlock")
+	}
 }
 
 func lockBasic(kv kvdb.Kvdb, t *testing.T) {
+	lockMethods := getLockMethods(kv)
 
-	fmt.Println("lock")
+	for _, lockMethod := range lockMethods {
+		fmt.Println("lock")
 
-	key := "locktest"
-	kvPair, err := kv.Lock(key)
-	assert.NoError(t, err, "Unexpected error in lock")
+		key := "locktest"
+		kvPair, err := lockMethod(key)
+		assert.NoError(t, err, "Unexpected error in lock")
 
-	if kvPair == nil {
-		return
+		if kvPair == nil {
+			return
+		}
+
+		err = kv.Unlock(kvPair)
+		assert.NoError(t, err, "Unexpected error from Unlock")
+
+		kvPair, err = lockMethod(key)
+		assert.NoError(t, err, "Failed to lock after unlock")
+
+		err = kv.Unlock(kvPair)
+		assert.NoError(t, err, "Unexpected error from Unlock")
 	}
-
-	err = kv.Unlock(kvPair)
-	assert.NoError(t, err, "Unexpected error from Unlock")
-
-	kvPair, err = kv.Lock(key)
-	assert.NoError(t, err, "Failed to lock after unlock")
-
-	err = kv.Unlock(kvPair)
-	assert.NoError(t, err, "Unexpected error from Unlock")
 }
 
 func watchFn(

@@ -314,13 +314,24 @@ func (kv *memKV) WatchTree(
 }
 
 func (kv *memKV) Lock(key string) (*kvdb.KVPair, error) {
+	return kv.LockWithTag(key, "locked")
+}
+
+func (kv *memKV) LockWithTag(key string, tag interface{}) (
+	*kvdb.KVPair,
+	error,
+) {
 	key = kv.domain + key
 	duration := time.Second
 
-	result, err := kv.Create(key, []byte("locked"), uint64(duration*3))
+	value, err := common.ToBytes(tag)
+	if err != nil {
+		return nil, err
+	}
+	result, err := kv.Create(key, value, uint64(duration*3))
 	for err != nil {
 		time.Sleep(duration)
-		result, err = kv.Create(key, []byte("locked"), uint64(duration*3))
+		result, err = kv.Create(key, value, uint64(duration*3))
 	}
 
 	if err != nil {

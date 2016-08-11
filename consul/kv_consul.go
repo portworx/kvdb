@@ -48,6 +48,7 @@ type consulKV struct {
 type consulLock struct {
 	lock    *api.Lock
 	renewCh chan struct{}
+	tag     interface{}
 }
 
 // New constructs a new kvdb.Kvdb.
@@ -324,12 +325,19 @@ func (kv *consulKV) WatchTree(prefix string, waitIndex uint64, opaque interface{
 }
 
 func (kv *consulKV) Lock(key string) (*kvdb.KVPair, error) {
+	return kv.LockWithTag(key, "locked")
+}
+
+func (kv *consulKV) LockWithTag(key string, tag interface{}) (
+	*kvdb.KVPair,
+	error,
+) {
 	// Strip of the leading slash or else consul throws error
 	if key[0] == '/' {
 		key = key[1:]
 	}
 
-	l, err := kv.getLock(key, 3)
+	l, err := kv.getLock(key, tag, 3)
 	if err != nil {
 		return nil, err
 	}
@@ -533,10 +541,19 @@ func (kv *consulKV) pairToKvs(action string, pair []*api.KVPair, meta *api.Query
 	return kvs
 }
 
-func (kv *consulKV) getLock(key string, ttl uint64) (*consulLock, error) {
+func (kv *consulKV) getLock(key string, tag interface{}, ttl uint64) (
+	*consulLock,
+	error,
+) {
 	key = kv.domain + key
+	tagValue, err := common.ToBytes(tag)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to convert tag: %v, error: %v", tag,
+			err)
+	}
 	lockOpts := &api.LockOptions{
-		Key: key,
+		Key:   key,
+		Value: tagValue,
 	}
 	lock := &consulLock{}
 	if ttl != 0 {

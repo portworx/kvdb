@@ -272,19 +272,26 @@ func (kv *etcdKV) WatchTree(
 }
 
 func (kv *etcdKV) Lock(key string) (*kvdb.KVPair, error) {
+	return kv.LockWithTag(key, "locked")
+}
+
+func (kv *etcdKV) LockWithTag(key string, tag interface{}) (
+	*kvdb.KVPair,
+	error,
+) {
 	key = kv.domain + key
 	duration := time.Second
 	ttl := uint64(4)
 	count := 0
-	kvPair, err := kv.Create(key, "locked", ttl)
+	kvPair, err := kv.Create(key, tag, ttl)
 	for maxCount := 300; err != nil && count < maxCount; count++ {
 		time.Sleep(duration)
-		kvPair, err = kv.Create(key, "locked", ttl)
+		kvPair, err = kv.Create(key, tag, ttl)
 	}
 	if err != nil {
 		return nil, err
 	}
-	if count > 10 {
+	if count >= 10 {
 		logrus.Warnf("ETCD: spent %v iterations locking %v\n", count, key)
 	}
 	kvPair.TTL = int64(time.Duration(ttl) * time.Second)

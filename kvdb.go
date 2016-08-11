@@ -156,6 +156,9 @@ type Kvdb interface {
 	Snapshot(prefix string) (Kvdb, uint64, error)
 	// SnapPut records the key value pair including the index.
 	SnapPut(kvp *KVPair) (*KVPair, error)
+	// Lock specfied key and associate a value with it, probably to identify
+	// who acquired the lock. The KVPair returned should be used to unlock.
+	LockWithTag(key string, value interface{}) (*KVPair, error)
 	// Lock specfied key. The KVPair returned should be used to unlock.
 	Lock(key string) (*KVPair, error)
 	// Unlock kvp previously acquired through a call to lock.
