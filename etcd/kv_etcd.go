@@ -51,6 +51,11 @@ type etcdLock struct {
 	sync.Mutex
 }
 
+// LockerIDInfo id of locker
+type LockerIDInfo struct {
+	LockerID string
+}
+
 // New constructs a new kvdb.Kvdb.
 func New(
 	domain string,
@@ -272,10 +277,10 @@ func (kv *etcdKV) WatchTree(
 }
 
 func (kv *etcdKV) Lock(key string) (*kvdb.KVPair, error) {
-	return kv.LockWithTag(key, "locked")
+	return kv.LockWithID(key, "locked")
 }
 
-func (kv *etcdKV) LockWithTag(key string, tag interface{}) (
+func (kv *etcdKV) LockWithID(key string, lockerID string) (
 	*kvdb.KVPair,
 	error,
 ) {
@@ -283,10 +288,18 @@ func (kv *etcdKV) LockWithTag(key string, tag interface{}) (
 	duration := time.Second
 	ttl := uint64(4)
 	count := 0
-	kvPair, err := kv.Create(key, tag, ttl)
+	lockTag := LockerIDInfo{LockerID: lockerID}
+	kvPair, err := kv.Create(key, lockTag, ttl)
 	for maxCount := 300; err != nil && count < maxCount; count++ {
 		time.Sleep(duration)
-		kvPair, err = kv.Create(key, tag, ttl)
+		kvPair, err = kv.Create(key, lockTag, ttl)
+		if count > 0 && count%15 == 0 && err != nil {
+			currLockerTag := LockerIDInfo{LockerID: ""}
+			if _, errGet := kv.GetVal(key, &currLockerTag); errGet == nil {
+				logrus.Warnf("Lock %v locked for %v seconds, tag: %v",
+					key, count, currLockerTag)
+			}
+		}
 	}
 	if err != nil {
 		return nil, err

@@ -325,10 +325,10 @@ func (kv *consulKV) WatchTree(prefix string, waitIndex uint64, opaque interface{
 }
 
 func (kv *consulKV) Lock(key string) (*kvdb.KVPair, error) {
-	return kv.LockWithTag(key, "locked")
+	return kv.LockWithID(key, "locked")
 }
 
-func (kv *consulKV) LockWithTag(key string, tag interface{}) (
+func (kv *consulKV) LockWithID(key string, lockerID string) (
 	*kvdb.KVPair,
 	error,
 ) {
@@ -337,7 +337,7 @@ func (kv *consulKV) LockWithTag(key string, tag interface{}) (
 		key = key[1:]
 	}
 
-	l, err := kv.getLock(key, tag, 3)
+	l, err := kv.getLock(key, lockerID, 3)
 	if err != nil {
 		return nil, err
 	}

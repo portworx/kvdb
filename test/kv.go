@@ -351,8 +351,8 @@ func getLockMethods(kv kvdb.Kvdb) []func(string) (*kvdb.KVPair, error) {
 		return kv.Lock(key)
 	}
 	lockMethods[1] = func(key string) (*kvdb.KVPair, error) {
-		tag := lockTag{nodeID: "node_1", funcName: "testfunc"}
-		return kv.LockWithTag(key, tag)
+		tag := "node:node_1,func:testfunc"
+		return kv.LockWithID(key, tag)
 	}
 	return lockMethods
 }
@@ -411,6 +411,20 @@ func lock(kv kvdb.Kvdb, t *testing.T) {
 		fmt.Println("repeat lock unlock twice")
 		err = kv.Unlock(kvPair)
 		assert.NoError(t, err, "Unexpected error from Unlock")
+
+		key = "doubleLock"
+		kvPair, err = lockMethod(key)
+		assert.NoError(t, err, "Unexpected error in lock")
+		go func() {
+			time.Sleep(30 * time.Second)
+			err = kv.Unlock(kvPair)
+			assert.NoError(t, err, "Unexpected error from Unlock")
+		}()
+		kvPair2, err := lockMethod(key)
+		assert.NoError(t, err, "Double lock")
+		err = kv.Unlock(kvPair2)
+		assert.NoError(t, err, "Unexpected error from Unlock")
+
 	}
 }
 

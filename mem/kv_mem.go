@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/Sirupsen/logrus"
+	"github.com/portworx/kvdb"
+	"github.com/portworx/kvdb/common"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/portworx/kvdb"
-	"github.com/portworx/kvdb/common"
 )
 
 const (
@@ -314,24 +314,28 @@ func (kv *memKV) WatchTree(
 }
 
 func (kv *memKV) Lock(key string) (*kvdb.KVPair, error) {
-	return kv.LockWithTag(key, "locked")
+	return kv.LockWithID(key, "locked")
 }
 
-func (kv *memKV) LockWithTag(key string, tag interface{}) (
+func (kv *memKV) LockWithID(key string, lockerID string) (
 	*kvdb.KVPair,
 	error,
 ) {
 	key = kv.domain + key
 	duration := time.Second
 
-	value, err := common.ToBytes(tag)
-	if err != nil {
-		return nil, err
-	}
-	result, err := kv.Create(key, value, uint64(duration*3))
+	result, err := kv.Create(key, lockerID, uint64(duration*3))
+	count := 0
 	for err != nil {
 		time.Sleep(duration)
-		result, err = kv.Create(key, value, uint64(duration*3))
+		result, err = kv.Create(key, lockerID, uint64(duration*3))
+		if err != nil && count > 0 && count%15 == 0 {
+			var currLockerID string
+			if _, errGet := kv.GetVal(key, currLockerID); errGet == nil {
+				logrus.Infof("Lock %v locked for %v seconds, tag: %v",
+					key, count, currLockerID)
+			}
+		}
 	}
 
 	if err != nil {
