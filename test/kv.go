@@ -74,6 +74,37 @@ func RunBasic(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	// cas(kv, t)
 }
 
+// RunAuth runs the authentication test suite for kvdb
+func RunAuth(datastoreInit kvdb.DatastoreInit, t *testing.T) {
+	options := make(map[string]string)
+	// In order to run these tests, either configure your local etcd
+	// to use these options (username/password/ca-file) or modify them here.
+	options[kvdb.UsernameKey] = "root"
+	kv, err := datastoreInit("pwx/test", nil, options)
+	if err == nil {
+		t.Fatalf("Expected an error when no password provided")
+	}
+	options[kvdb.PasswordKey] = "test123"
+	kv, err = datastoreInit("pwx/test", nil, options)
+	if err == nil {
+		t.Fatalf("Expected an error when no certificate provided")
+	}
+	options[kvdb.CAFileKey] = "/tmp/self-signed.cert"
+
+	machines := []string{}
+	kv, err = datastoreInit("pwx/test", machines, options)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	if kv == nil {
+		t.Fatalf("Expected kv to be not nil")
+	}
+	// Run the basic put get update tests using auth
+	get(kv, t)
+	create(kv, t)
+	update(kv, t)
+}
+
 func get(kv kvdb.Kvdb, t *testing.T) {
 	fmt.Println("get")
 

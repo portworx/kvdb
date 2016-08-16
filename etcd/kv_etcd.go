@@ -15,6 +15,7 @@ import (
 	"golang.org/x/net/context"
 
 	e "github.com/coreos/etcd/client"
+	"github.com/coreos/etcd/pkg/transport"
 	"github.com/portworx/kvdb"
 	"github.com/portworx/kvdb/common"
 	"github.com/portworx/kvdb/mem"
@@ -27,6 +28,9 @@ const (
 	defaultRetryCount             = 60
 	defaultIntervalBetweenRetries = time.Millisecond * 500
 	bootstrap                     = "kvdb/bootstrap"
+	// the maximum amount of time a dial will wait for a connection to setup.
+	// 30s is long enough for most of the network conditions.
+	defaultDialTimeout = 30 * time.Second
 )
 
 var (
@@ -65,9 +69,37 @@ func New(
 	if len(machines) == 0 {
 		machines = defaultMachines
 	}
+	var username, password, caFile string
+	// options provided. Probably auth options
+	if options != nil || len(options) > 0 {
+		var ok bool
+		// Check if username provided
+		username, ok = options[kvdb.UsernameKey]
+		if ok {
+			// Check if password provided
+			password, ok = options[kvdb.PasswordKey]
+			if !ok {
+				return nil, kvdb.ErrNoPassword
+			}
+			// Check if certificate provided
+			caFile, ok = options[kvdb.CAFileKey]
+			if !ok {
+				return nil, kvdb.ErrNoCertificate
+			}
+		}
+	}
+	tls := transport.TLSInfo{
+		CAFile: caFile,
+	}
+	tr, err := transport.NewTransport(tls, defaultDialTimeout)
+	if err != nil {
+		return nil, err
+	}
 	cfg := e.Config{
 		Endpoints: machines,
-		Transport: e.DefaultTransport,
+		Transport: tr,
+		Username:  username,
+		Password:  password,
 		// The time required for a request to fail - 30 sec
 		HeaderTimeoutPerRequest: time.Duration(10) * time.Second,
 	}

@@ -66,6 +66,27 @@ func New(
 			machines[0] = strings.TrimPrefix(machines[0], "https://")
 		}
 	}
+
+	// options provided. Probably auth options
+	if options != nil || len(options) > 0 {
+		var ok bool
+		// Check if username provided
+		_, ok = options[kvdb.UsernameKey]
+		if ok {
+			return nil, kvdb.ErrAuthNotSupported
+		}
+		// Check if password provided
+		_, ok = options[kvdb.PasswordKey]
+		if ok {
+			return nil, kvdb.ErrAuthNotSupported
+		}
+		// Check if certificate provided
+		_, ok = options[kvdb.CAFileKey]
+		if ok {
+			return nil, kvdb.ErrAuthNotSupported
+		}
+	}
+
 	config := api.DefaultConfig()
 	config.HttpClient = http.DefaultClient
 	config.Address = machines[0]

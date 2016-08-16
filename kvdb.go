@@ -30,6 +30,15 @@ const (
 	KVTTL
 )
 
+const (
+	// Username for an authenticated kvdb endpoint
+	UsernameKey = "Username"
+	// Password for an authenticated kvdb endpoint
+	PasswordKey = "Password"
+	// Certificate File Path for an authenticated kvdb endpoint
+	CAFileKey   = "CAFile"
+)
+
 var (
 	// ErrNotSupported implemenation of a specific function is not supported.
 	ErrNotSupported = errors.New("implementation not supported")
@@ -53,6 +62,12 @@ var (
 	ErrTTLNotSupported = errors.New("TTL value not supported")
 	// ErrInvalidLock Lock and unlock operations don't match.
 	ErrInvalidLock = errors.New("Invalid lock/unlock operation")
+	// ErrNoPassword provided
+	ErrNoPassword = errors.New("Username provided without any password")
+	// ErrAuthNotSupported authentication not supported for this kvdb implementation
+	ErrAuthNotSupported = errors.New("Kvdb authentication not supported")
+	// ErrNoCertificate no certificate provided for authentication
+	ErrNoCertificate = errors.New("Certificate File Path not provided")
 )
 
 // KVAction specifies the action on a KV pair. This is useful to make decisions
