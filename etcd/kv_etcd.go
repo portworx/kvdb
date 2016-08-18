@@ -199,6 +199,7 @@ func (kv *etcdKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 		result, err := kv.client.Get(context.Background(), prefix, &e.GetOptions{
 			Recursive: true,
 			Sort:      true,
+			Quorum:    true,
 		})
 		if err == nil {
 			return kv.resultToKvs(result), nil
@@ -423,6 +424,7 @@ func (kv *etcdKV) get(key string, recursive, sort bool) (*kvdb.KVPair, error) {
 		result, err = kv.client.Get(context.Background(), key, &e.GetOptions{
 			Recursive: recursive,
 			Sort:      sort,
+			Quorum:    true,
 		})
 		if err == nil {
 			return kv.resultToKv(result), nil
