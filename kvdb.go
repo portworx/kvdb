@@ -31,11 +31,11 @@ const (
 )
 
 const (
-	// Username for an authenticated kvdb endpoint
+	// UsernameKey for an authenticated kvdb endpoint
 	UsernameKey = "Username"
-	// Password for an authenticated kvdb endpoint
+	// PasswordKey for an authenticated kvdb endpoint
 	PasswordKey = "Password"
-	// Certificate File Path for an authenticated kvdb endpoint
+	// CAFileKey is the certicficate path for an authenticated kvdb endpoint
 	CAFileKey   = "CAFile"
 )
 
