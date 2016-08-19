@@ -89,7 +89,7 @@ func RunAuth(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	if err == nil {
 		t.Fatalf("Expected an error when no certificate provided")
 	}
-	options[kvdb.CAFileKey] = "/tmp/self-signed.cert"
+	options[kvdb.CAFileKey] = "/.ssh/self-signed.crt"
 
 	machines := []string{}
 	kv, err = datastoreInit("pwx/test", machines, options)
@@ -103,6 +103,10 @@ func RunAuth(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	get(kv, t)
 	create(kv, t)
 	update(kv, t)
+	// Run the auth tests
+	addUser(kv, t)
+	grantRevokeUser(kv, datastoreInit, t)
+	removeUser(kv, t)
 }
 
 func get(kv kvdb.Kvdb, t *testing.T) {
@@ -728,4 +732,68 @@ func cas(kv kvdb.Kvdb, t *testing.T) {
 
 	kvPair, err = kv.CompareAndSet(kvPair, kvdb.KVModifiedIndex, []byte(val))
 	assert.NoError(t, err, "CompareAndSet should succeed on an correct value and modified index")
+}
+
+func addUser(kv kvdb.Kvdb, t *testing.T) {
+	fmt.Println("addUser")
+
+	err := kv.AddUser("test", "test123")
+	assert.NoError(t, err, "Error in Adding User")
+}
+
+func removeUser(kv kvdb.Kvdb, t *testing.T) {
+	fmt.Println("removeUser")
+
+	err := kv.RemoveUser("test")
+	assert.NoError(t, err, "Error in Removing User")
+}
+
+func grantRevokeUser(kvRootUser kvdb.Kvdb, datastoreInit kvdb.DatastoreInit, t *testing.T) {
+	fmt.Println("grantRevokeUser")
+
+	kvRootUser.Create("allow1/foo", []byte("bar"), 0)
+	kvRootUser.Create("allow2/foo", []byte("bar"), 0)
+	kvRootUser.Create("disallow/foo", []byte("bar"), 0)
+	err := kvRootUser.GrantUserAccess("test", kvdb.ReadWritePermission, "allow1/*")
+	assert.NoError(t, err, "Error in Grant User")
+	err = kvRootUser.GrantUserAccess("test", kvdb.ReadWritePermission, "allow2/*")
+	assert.NoError(t, err, "Error in Grant User")
+	err = kvRootUser.GrantUserAccess("test", kvdb.ReadWritePermission, "disallow/*")
+	assert.NoError(t, err, "Error in Grant User")
+	err = kvRootUser.RevokeUsersAccess("test", kvdb.ReadWritePermission, "disallow/*")
+	assert.NoError(t, err, "Error in Revoke User")
+
+	options := make(map[string]string)
+	options[kvdb.UsernameKey] = "test"
+	options[kvdb.PasswordKey] = "test123"
+	options[kvdb.CAFileKey] = "/.ssh/self-signed.crt"
+	machines := []string{}
+	kvTestUser, _ := datastoreInit("pwx/test", machines, options)
+
+	actual := "actual"
+	_, err = kvTestUser.Put("allow1/foo", []byte(actual), 0)
+	assert.NoError(t, err, "Error in writing to allowed tree")
+	kvPair, err := kvTestUser.Get("allow1/foo")
+	assert.NoError(t, err, "Error in accessing allowed values")
+	if err == nil {
+		assert.Equal(t, string(kvPair.Value), "actual")
+	}
+
+	_, err = kvTestUser.Put("allow2/foo", []byte(actual), 0)
+	assert.NoError(t, err, "Error in writing to allowed tree")
+	kvPair, err = kvTestUser.Get("allow2/foo")
+	assert.NoError(t, err, "Error in accessing allowed values")
+	if err == nil {
+		assert.Equal(t, string(kvPair.Value), "actual")
+	}
+
+	actual2 := "actual2"
+	_, err = kvTestUser.Put("disallow/foo", []byte(actual2), 0)
+	assert.Error(t, err, "Expected error in writing to disallowed tree")
+	kvPair, err = kvTestUser.Get("disallow/foo")
+	assert.Error(t, err, "Expected error in accessing disallowed values")
+
+	kvRootUser.DeleteTree("allow1")
+	kvRootUser.DeleteTree("allow2")
+	kvRootUser.DeleteTree("disallow")
 }

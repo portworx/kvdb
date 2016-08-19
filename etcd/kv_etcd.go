@@ -44,8 +44,10 @@ func init() {
 }
 
 type etcdKV struct {
-	client e.KeysAPI
-	domain string
+	client   e.KeysAPI
+	authUser e.AuthUserAPI
+	authRole e.AuthRoleAPI
+	domain   string
 }
 
 type etcdLock struct {
@@ -112,6 +114,8 @@ func New(
 	}
 	return &etcdKV{
 		e.NewKeysAPI(c),
+		e.NewAuthUserAPI(c),
+		e.NewAuthRoleAPI(c),
 		domain,
 	}, nil
 }
@@ -693,4 +697,88 @@ func (kv *etcdKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 
 func (kv *etcdKV) SnapPut(snapKvp *kvdb.KVPair) (*kvdb.KVPair, error) {
 	return nil, kvdb.ErrNotSupported
+}
+
+func (kv *etcdKV) AddUser(username string, password string) error {
+	// Create a role for this user
+	roleName := username
+	err := kv.authRole.AddRole(context.Background(), roleName)
+	if err != nil {
+		return err
+	}
+	// Create the user
+	err = kv.authUser.AddUser(context.Background(), username, password)
+	if err != nil {
+		return err
+	}
+	// Assign role to user
+	_, err = kv.authUser.GrantUser(context.Background(), username, []string{roleName})
+	return err
+}
+
+func (kv *etcdKV) RemoveUser(username string) error {
+	// Revoke user from this role
+	roleName := username
+	_, err := kv.authUser.RevokeUser(context.Background(), username, []string{roleName})
+	if err != nil {
+		return err
+	}
+	// Remove the role defined for this user
+	err = kv.authRole.RemoveRole(context.Background(), roleName)
+	if err != nil {
+		return err
+	}
+	// Remove the user
+	return kv.authUser.RemoveUser(context.Background(), username)
+}
+
+func (kv *etcdKV) GrantUserAccess(username string, permType kvdb.PermissionType, subtree string) error {
+	var domain string
+	if kv.domain[0] == '/' {
+		domain = kv.domain
+	} else {
+		domain = "/"+kv.domain
+	}
+	subtree = domain + subtree
+	etcdPermType, err := getEtcdPermType(permType)
+	if err != nil {
+		return err
+	}
+	// A role for this user has already been created
+	// Just assign the subtree to this role
+	roleName := username
+	_, err = kv.authRole.GrantRoleKV(context.Background(), roleName, []string{subtree}, etcdPermType)
+	return err
+}
+
+func (kv *etcdKV) RevokeUsersAccess(username string, permType kvdb.PermissionType, subtree string) error {
+	var domain string
+	if kv.domain[0] == '/' {
+		domain = kv.domain
+	} else {
+		domain = "/"+kv.domain
+	}
+	subtree = domain + subtree
+	etcdPermType, err := getEtcdPermType(permType)
+	if err != nil {
+		return err
+	}
+	roleName := username
+	// A role for this user should ideally exist
+	// Revoke the specfied permission for that subtree
+	_, err = kv.authRole.RevokeRoleKV(context.Background(), roleName, []string{subtree}, etcdPermType)
+	return err
+}
+
+func getEtcdPermType(permType kvdb.PermissionType) (e.PermissionType, error) {
+	switch permType {
+	case kvdb.ReadPermission:
+		return e.ReadPermission, nil
+	case kvdb.WritePermission:
+		return e.WritePermission, nil
+	case kvdb.ReadWritePermission:
+		return e.ReadWritePermission, nil
+	default:
+		return -1, kvdb.ErrUnknownPermission
+	}
 }

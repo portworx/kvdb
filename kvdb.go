@@ -31,6 +31,14 @@ const (
 )
 
 const (
+	// ReadPermission for read only access
+	ReadPermission = iota
+	// WritePermission for write only access
+	WritePermission
+	// ReadWritePermission for read-write access
+	ReadWritePermission
+)
+const (
 	// UsernameKey for an authenticated kvdb endpoint
 	UsernameKey = "Username"
 	// PasswordKey for an authenticated kvdb endpoint
@@ -38,6 +46,8 @@ const (
 	// CAFileKey is the certicficate path for an authenticated kvdb endpoint
 	CAFileKey   = "CAFile"
 )
+
+
 
 var (
 	// ErrNotSupported implemenation of a specific function is not supported.
@@ -68,6 +78,8 @@ var (
 	ErrAuthNotSupported = errors.New("Kvdb authentication not supported")
 	// ErrNoCertificate no certificate provided for authentication
 	ErrNoCertificate = errors.New("Certificate File Path not provided")
+	// ErrUnknownPermission raised if unknown permission type
+	ErrUnknownPermission = errors.New("Unknown Permission Type")
 )
 
 // KVAction specifies the action on a KV pair. This is useful to make decisions
@@ -76,6 +88,9 @@ type KVAction int
 
 // KVFlags options for operations on KVDB
 type KVFlags uint64
+
+// PermissionType for user access
+type PermissionType int
 
 // WatchCB is called when a watched key or tree is modified. If the callback
 // returns an error, then watch stops and the cb is called one last time
@@ -180,4 +195,12 @@ type Kvdb interface {
 	Unlock(kvp *KVPair) error
 	// TxNew returns a new Tx coordinator object or ErrNotSupported
 	TxNew() (Tx, error)
+	// AddUser adds a new user to kvdb
+	AddUser(username string, password string) error
+	// RemoveUser removes a user from kvdb
+	RemoveUser(username string) error
+	// GrantUserAccess grants user access to a subtree/prefix based on the permission
+	GrantUserAccess(username string, permType PermissionType, subtree string) (error)
+	// RevokeUsersAccess revokes user's access to a subtree/prefix based on the permission
+	RevokeUsersAccess(username string, permType PermissionType, subtree string) (error)
 }

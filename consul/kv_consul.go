@@ -820,3 +820,19 @@ func (kv *consulKV) getActiveSession(key string) (string, error) {
 func (kv *consulKV) SnapPut(snapKvp *kvdb.KVPair) (*kvdb.KVPair, error) {
 	return nil, kvdb.ErrNotSupported
 }
+
+func (kv *consulKV) AddUser(username string, password string) error {
+	return kvdb.ErrNotSupported
+}
+
+func (kv *consulKV) RemoveUser(username string) error {
+	return kvdb.ErrNotSupported
+}
+
+func (kv *consulKV) GrantUserAccess(username string, permType kvdb.PermissionType, subtree string) error {
+	return kvdb.ErrNotSupported
+}
+
+func (kv *consulKV) RevokeUsersAccess(username string, permType kvdb.PermissionType, subtree string) error {
+	return kvdb.ErrNotSupported
+}

@@ -482,3 +482,20 @@ func (kv *snapMem) WatchTree(
 ) error {
 	return ErrSnap
 }
+
+
+func (kv *memKV) AddUser(username string, password string) error {
+	return kvdb.ErrNotSupported
+}
+
+func (kv *memKV) RemoveUser(username string) error {
+	return kvdb.ErrNotSupported
+}
+
+func (kv *memKV) GrantUserAccess(username string, permType kvdb.PermissionType, subtree string) error {
+	return kvdb.ErrNotSupported
+}
+
+func (kv *memKV) RevokeUsersAccess(username string, permType kvdb.PermissionType,  subtree string) error {
+	return kvdb.ErrNotSupported
+}
