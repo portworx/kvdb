@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,6 +38,12 @@ func init() {
 	if err := kvdb.Register(Name, New); err != nil {
 		panic(err.Error())
 	}
+}
+
+func stripConsecutiveForwardslash(key string) string {
+	// Replace consecutive occurences of forward slash with single occurrence
+	re := regexp.MustCompile("(//*)")
+	return re.ReplaceAllString(key, "/")
 }
 
 type consulKV struct {
@@ -118,6 +125,7 @@ func (kv *consulKV) Get(key string) (*kvdb.KVPair, error) {
 		RequireConsistent: true,
 	}
 	key = kv.domain + key
+	key = stripConsecutiveForwardslash(key)
 	pair, meta, err := kv.client.KV().Get(key, options)
 	if err != nil {
 		return nil, err
@@ -138,6 +146,7 @@ func (kv *consulKV) GetVal(key string, val interface{}) (*kvdb.KVPair, error) {
 
 func (kv *consulKV) Put(key string, val interface{}, ttl uint64) (*kvdb.KVPair, error) {
 	pathKey := kv.domain + key
+	pathKey = stripConsecutiveForwardslash(pathKey)
 	b, err := common.ToBytes(val)
 	if err != nil {
 		return nil, err
@@ -206,6 +215,7 @@ func (kv *consulKV) Update(key string, val interface{}, ttl uint64) (*kvdb.KVPai
 
 func (kv *consulKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 	prefix = kv.domain + prefix
+	prefix = stripConsecutiveForwardslash(prefix)
 	pairs, meta, err := kv.client.KV().List(prefix, nil)
 	if err != nil {
 		return nil, err
@@ -222,6 +232,7 @@ func (kv *consulKV) Delete(key string) (*kvdb.KVPair, error) {
 		return nil, err
 	}
 	key = kv.domain + key
+	key = stripConsecutiveForwardslash(key)
 	if _, err := kv.client.KV().Delete(key, nil); err != nil {
 		return nil, err
 	}
@@ -230,6 +241,7 @@ func (kv *consulKV) Delete(key string) (*kvdb.KVPair, error) {
 
 func (kv *consulKV) DeleteTree(key string) error {
 	key = kv.domain + key
+	key = stripConsecutiveForwardslash(key)
 	if _, err := kv.client.KV().DeleteTree(key, nil); err != nil {
 		return err
 	}
@@ -241,8 +253,10 @@ func (kv *consulKV) Keys(prefix, key string) ([]string, error) {
 }
 
 func (kv *consulKV) CompareAndSet(kvp *kvdb.KVPair, flags kvdb.KVFlags, prevValue []byte) (*kvdb.KVPair, error) {
+	key := kv.domain + kvp.Key
+	key = stripConsecutiveForwardslash(key)
 	pair := &api.KVPair{
-		Key:   kv.domain + kvp.Key,
+		Key:   key,
 		Value: kvp.Value,
 		Flags: api.LockFlagValue,
 	}
@@ -283,8 +297,10 @@ func (kv *consulKV) CompareAndSet(kvp *kvdb.KVPair, flags kvdb.KVFlags, prevValu
 }
 
 func (kv *consulKV) CompareAndDelete(kvp *kvdb.KVPair, flags kvdb.KVFlags) (*kvdb.KVPair, error) {
+	key := kv.domain + kvp.Key
+	key = stripConsecutiveForwardslash(key)
 	pair := &api.KVPair{
-		Key:   kv.domain + kvp.Key,
+		Key:   key,
 		Value: kvp.Value,
 		Flags: api.LockFlagValue,
 	}
@@ -353,6 +369,7 @@ func (kv *consulKV) LockWithID(key string, lockerID string) (
 	*kvdb.KVPair,
 	error,
 ) {
+	key = stripConsecutiveForwardslash(key)
 	// Strip of the leading slash or else consul throws error
 	if key[0] == '/' {
 		key = key[1:]
@@ -396,7 +413,10 @@ func (kv *consulKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 		AllowStale:        false,
 		RequireConsistent: true,
 	}
-	pairs, _, err := kv.client.KV().List(kv.domain+prefix, options)
+
+	listKey := kv.domain + prefix
+	listKey = stripConsecutiveForwardslash(listKey)
+	pairs, _, err := kv.client.KV().List(listKey, options)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -610,6 +630,7 @@ func (kv *consulKV) getLock(key string, tag interface{}, ttl uint64) (
 }
 
 func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex uint64, opaque interface{}, cb kvdb.WatchCB) {
+	prefix = stripConsecutiveForwardslash(prefix)
 	opts := &api.QueryOptions{
 		WaitIndex: waitIndex,
 	}
@@ -691,6 +712,7 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 }
 
 func (kv *consulKV) watchKeyStart(key string, keyExisted bool, waitIndex uint64, opaque interface{}, cb kvdb.WatchCB) {
+	key = stripConsecutiveForwardslash(key)
 	opts := &api.QueryOptions{
 		WaitIndex: waitIndex,
 	}

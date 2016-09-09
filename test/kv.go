@@ -161,7 +161,7 @@ func getInterface(kv kvdb.Kvdb, t *testing.T) {
 func create(kv kvdb.Kvdb, t *testing.T) {
 	fmt.Println("create")
 
-	key := "create/foo"
+	key := "//create//foo"
 	kv.Delete(key)
 
 	kvp, err := kv.Create(key, []byte("bar"), 0)
