@@ -571,13 +571,24 @@ func (kv *consulKV) pairToKv(action string, pair *api.KVPair, meta *api.QueryMet
 	return kvp
 }
 
-func (kv *consulKV) pairToKvs(action string, pair []*api.KVPair, meta *api.QueryMeta) kvdb.KVPairs {
-	kvs := make([]*kvdb.KVPair, len(pair))
-	for i := range pair {
-		kvs[i] = kv.pairToKv(action, pair[i], meta)
-		if meta != nil {
-			kvs[i].KVDBIndex = meta.LastIndex
+func isHidden(key string) bool {
+	tokens := strings.Split(key, "/")
+	keySuffix := tokens[len(tokens)-1]
+	if keySuffix[0] == '_' {
+		return true
+	} else {
+		return false
+	}
+}
+
+func (kv *consulKV) pairToKvs(action string, pairs []*api.KVPair, meta *api.QueryMeta) kvdb.KVPairs {
+	kvs := []*kvdb.KVPair{}
+	for _, pair := range pairs {
+		// Ignore hidden keys.
+		if isHidden(pair.Key) {
+			continue
 		}
+		kvs = append(kvs, kv.pairToKv(action, pair, meta))
 	}
 	return kvs
 }
