@@ -89,9 +89,10 @@ func RunAuth(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	if err == nil {
 		t.Fatalf("Expected an error when no certificate provided")
 	}
-	options[kvdb.CAFileKey] = "/.ssh/self-signed.crt"
+	//options[kvdb.CAFileKey] = "/.ssh/self-signed.crt"
 
-	machines := []string{}
+	machines := []string{"https://localhost:2379"}
+	fmt.Println("Last one")
 	kv, err = datastoreInit("pwx/test", machines, options)
 	if err != nil {
 		t.Fatalf(err.Error())
@@ -182,7 +183,7 @@ func createWithTTL(kv kvdb.Kvdb, t *testing.T) {
 	key := "create/foo"
 	kv.Delete(key)
 	assert.NotNil(t, kv, "Default KVDB is not set")
-	_, err := kv.Create(key, []byte("bar"), 1)
+	_, err := kv.Create(key, []byte("bar"), 6)
 	if err != nil {
 		// Consul does not support ttl less than 10
 		assert.EqualError(t, err, kvdb.ErrTTLNotSupported.Error(), "ttl not supported")
@@ -195,7 +196,7 @@ func createWithTTL(kv kvdb.Kvdb, t *testing.T) {
 
 	} else {
 		assert.NoError(t, err, "Error on create")
-		time.Sleep(time.Second * 2)
+		time.Sleep(time.Second * 7)
 		_, err = kv.Get(key)
 		assert.Error(t, err, "Expecting error value for expired value")
 	}
@@ -555,6 +556,7 @@ func watchUpdate(kv kvdb.Kvdb, data *watchData) error {
 	// whichKey = 0 : otherKey
 	atomic.SwapInt32(&data.whichKey, 1)
 	data.action = kvdb.KVCreate
+	fmt.Printf("-")
 	kvp, err = kv.Create(data.key, []byte("bar"), 0)
 	for i := 0; i < data.iterations && err == nil; i++ {
 		fmt.Printf("-")
