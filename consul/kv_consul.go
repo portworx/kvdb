@@ -54,7 +54,7 @@ type consulKV struct {
 
 type consulLock struct {
 	lock    *api.Lock
-	renewCh chan struct{}
+	done chan struct{}
 	tag     interface{}
 }
 
@@ -389,7 +389,20 @@ func (kv *consulKV) LockWithID(key string, lockerID string) (
 }
 
 func (kv *consulKV) Unlock(kvp *kvdb.KVPair) error {
-	return kvp.Lock.(*consulLock).lock.Unlock()
+	l, ok := kvp.Lock.(*consulLock)
+	if !ok {
+		return fmt.Errorf("Invalid lock structure for key: %v", string(kvp.Key))
+	}
+	getKvp, err := kv.Get(kvp.Key)
+	if err != nil {
+		return err
+	}
+	_, err = kv.CompareAndDelete(getKvp, kvdb.KVModifiedIndex)
+	if err == nil {
+		l.lock.Unlock()
+		return nil
+	}
+	return err
 }
 
 func (kv *consulKV) TxNew() (kvdb.Tx, error) {
@@ -627,7 +640,6 @@ func (kv *consulKV) getLock(key string, tag interface{}, ttl uint64) (
 
 		// Renew the session ttl lock periodically
 		go func() {
-			// TODO: do something with the error
 			_ = kv.client.Session().RenewPeriodic(entry.TTL, session, nil, nil)
 		}()
 	}
@@ -684,13 +696,10 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 			if opts.WaitIndex == meta.LastIndex {
 				continue
 			}
-			// Set the waitIndex so that we block on the next List call
-			opts.WaitIndex = meta.LastIndex
-
 			// Find the key value pair that was added/modified/deleted
 			found := false
 			for _, pair := range pairs {
-				if pair.ModifyIndex == meta.LastIndex {
+				if (pair.ModifyIndex > opts.WaitIndex) && (pair.ModifyIndex <= meta.LastIndex) {
 					if pair.CreateIndex == pair.ModifyIndex {
 						// Callback with a create action
 						cbErr = cb(prefix, opaque, kv.pairToKv("create", pair, meta), nil)
@@ -701,7 +710,6 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 						cbErr = cb(prefix, opaque, kv.pairToKv("update", pair, meta), nil)
 					}
 					found = true
-					break
 				}
 			}
 			if found != true {
@@ -714,6 +722,8 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 				kvPair.ModifiedIndex = meta.LastIndex
 				cbErr = cb(prefix, opaque, kvPair, nil)
 			}
+			// Set the waitIndex so that we block on the next List call
+			opts.WaitIndex = meta.LastIndex
 		}
 		if cbErr != nil {
 			_ = cb(prefix, opaque, nil, kvdb.ErrWatchStopped)
