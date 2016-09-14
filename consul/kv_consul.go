@@ -53,9 +53,9 @@ type consulKV struct {
 }
 
 type consulLock struct {
-	lock *api.Lock
-	done chan struct{}
-	tag  interface{}
+	lock   *api.Lock
+	doneCh chan struct{}
+	tag    interface{}
 }
 
 // New constructs a new kvdb.Kvdb.
@@ -375,7 +375,7 @@ func (kv *consulKV) LockWithID(key string, lockerID string) (
 		key = key[1:]
 	}
 
-	l, err := kv.getLock(key, lockerID, 3)
+	l, err := kv.getLock(key, lockerID, 20*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -393,11 +393,10 @@ func (kv *consulKV) Unlock(kvp *kvdb.KVPair) error {
 	if !ok {
 		return fmt.Errorf("Invalid lock structure for key: %v", string(kvp.Key))
 	}
-	getKvp, err := kv.Get(kvp.Key)
-	if err != nil {
-		return err
+	if l.doneCh != nil {
+		close(l.doneCh)
 	}
-	_, err = kv.CompareAndDelete(getKvp, kvdb.KVModifiedIndex)
+	_, err := kv.Delete(kvp.Key)
 	if err == nil {
 		l.lock.Unlock()
 		return nil
@@ -606,7 +605,13 @@ func (kv *consulKV) pairToKvs(action string, pairs []*api.KVPair, meta *api.Quer
 	return kvs
 }
 
-func (kv *consulKV) getLock(key string, tag interface{}, ttl uint64) (
+func (kv *consulKV) renewLockSession(initialTTL string, session string, doneCh chan struct{}) {
+	go func() {
+		_ = kv.client.Session().RenewPeriodic(initialTTL, session, nil, doneCh)	
+	}()
+}
+
+func (kv *consulKV) getLock(key string, tag interface{}, ttl time.Duration) (
 	*consulLock,
 	error,
 ) {
@@ -621,33 +626,28 @@ func (kv *consulKV) getLock(key string, tag interface{}, ttl uint64) (
 		Value: tagValue,
 	}
 	lock := &consulLock{}
-	if ttl != 0 {
-		TTL := time.Duration(0)
-		entry := &api.SessionEntry{
-			Behavior:  api.SessionBehaviorRelease, // Release the lock when the session expires
-			TTL:       (TTL / 2).String(),         // Consul multiplies the TTL by 2x
-			LockDelay: 1 * time.Millisecond,       // Virtually disable lock delay
-		}
-
-		// Create the key session
-		session, _, err := kv.client.Session().Create(entry, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		// Place the session on lock
-		lockOpts.Session = session
-
-		// Renew the session ttl lock periodically
-		go func() {
-			_ = kv.client.Session().RenewPeriodic(entry.TTL, session, nil, nil)
-		}()
+	entry := &api.SessionEntry{
+		Behavior:  api.SessionBehaviorRelease, // Release the lock when the session expires
+		TTL:       (ttl / 2).String(),         // Consul multiplies the TTL by 2x
+		LockDelay: 1 * time.Millisecond,       // Virtually disable lock delay
 	}
+
+	// Create the key session
+	session, _, err := kv.client.Session().Create(entry, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Place the session on lock
+	lockOpts.Session = session
+	lock.doneCh = make(chan struct{})
 
 	l, err := kv.client.LockOpts(lockOpts)
 	if err != nil {
 		return nil, err
 	}
+
+	kv.renewLockSession(entry.TTL, session, lock.doneCh)
 	lock.lock = l
 	return lock, nil
 }
