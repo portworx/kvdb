@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"sort"
 
 	"github.com/Sirupsen/logrus"
 
@@ -33,6 +34,21 @@ const (
 var (
 	defaultMachines = []string{"127.0.0.1:8500"}
 )
+
+type CKVPairs api.KVPairs
+
+func (c CKVPairs) Len() int {
+	return len(c)
+}
+
+func (c CKVPairs) Less(i, j int) bool {
+	return c[i].ModifyIndex < c[j].ModifyIndex
+}
+
+func (c CKVPairs) Swap(i, j int) {
+	c[i], c[j] = c[j], c[i]
+}
+
 
 func init() {
 	if err := kvdb.Register(Name, New); err != nil {
@@ -661,7 +677,9 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 	var cbCreateErr, cbUpdateErr error
 	for {
 		// Make a blocking List query
-		pairs, meta, err := kv.client.KV().List(prefix, opts)
+		kvPairs, meta, err := kv.client.KV().List(prefix, opts)
+		pairs := CKVPairs(kvPairs)
+		sort.Sort(pairs)
 		if pairs == nil && prefixExisted && !prefixDeleted {
 			// Got a delete on the prefix of the tree (Last Key under the tree being deleted)
 			pair := &api.KVPair{
