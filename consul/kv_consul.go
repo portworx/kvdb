@@ -35,6 +35,7 @@ var (
 	defaultMachines = []string{"127.0.0.1:8500"}
 )
 
+// CKVPairs sortable KVPairs
 type CKVPairs api.KVPairs
 
 func (c CKVPairs) Len() int {
@@ -417,7 +418,7 @@ func (kv *consulKV) Unlock(kvp *kvdb.KVPair) error {
 	}
 	_, err := kv.Delete(kvp.Key)
 	if err == nil {
-		l.lock.Unlock()
+		_ = l.lock.Unlock()
 		return nil
 	}
 	return err
@@ -605,11 +606,7 @@ func (kv *consulKV) pairToKv(action string, pair *api.KVPair, meta *api.QueryMet
 func isHidden(key string) bool {
 	tokens := strings.Split(key, "/")
 	keySuffix := tokens[len(tokens)-1]
-	if keySuffix[0] == '_' {
-		return true
-	} else {
-		return false
-	}
+	return keySuffix[0] == '_'
 }
 
 func (kv *consulKV) pairToKvs(action string, pairs []*api.KVPair, meta *api.QueryMeta) kvdb.KVPairs {
@@ -680,9 +677,7 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 	var cbCreateErr, cbUpdateErr error
 	for {
 		// Make a blocking List query
-		logrus.Infof("Watch Wait [Wait Index: %v] [Prefix: %v]", waitIndex, prefix)
 		kvPairs, meta, err := kv.client.KV().List(prefix, opts)
-		logrus.Infof("Watch Return [Last Index: %v] [Prefix: %v]", waitIndex, prefix)
 		pairs := CKVPairs(kvPairs)
 		sort.Sort(pairs)
 		if pairs == nil && prefixExisted && !prefixDeleted {
@@ -726,14 +721,12 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 				if (pair.ModifyIndex > opts.WaitIndex) && (pair.ModifyIndex <= meta.LastIndex) {
 					if pair.CreateIndex == pair.ModifyIndex {
 						// Callback with a create action
-						logrus.Infof("Watch CB Create [MI: %v] [Key: %v]", pair.ModifyIndex, pair.Key)
 						cbCreateErr = cb(prefix, opaque, kv.pairToKv("create", pair, meta), nil)
 						prefixDeleted = false
 						prefixExisted = true
 					} else if (pair.CreateIndex > opts.WaitIndex) && (pair.CreateIndex < pair.ModifyIndex) {
 						// In this single update from consul we have got both a create action and
 						// update action for this kvpair. Calling two callback functions with different actions
-						logrus.Infof("Watch combined CB Create & Update [CI: %v] [MI: %v] [Key: %v]", pair.CreateIndex, pair.ModifyIndex, pair.Key)
 						cbCreateErr = cb(prefix, opaque, kv.pairToKv("create", pair, meta), nil)
 						prefixDeleted = false
 						prefixExisted = true
@@ -741,7 +734,6 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 						cbUpdateErr = cb(prefix, opaque, kv.pairToKv("update", pair, meta), nil)
 					} else {
 						// Callback with an update action
-						logrus.Infof("Watch CB Update [MI: %v] [Key: %v]", pair.ModifyIndex, pair.Key)
 						cbUpdateErr = cb(prefix, opaque, kv.pairToKv("update", pair, meta), nil)
 					}
 					found = true
