@@ -20,6 +20,12 @@ const (
 )
 
 const (
+	// KVCapabilityOrderedUpdates support requires watch to send an watch update
+	// for every put - instead of coalescing multiple puts in one update.
+	KVCapabilityOrderedUpdates = 1 << iota
+)
+
+const (
 	// KVPrevExists flag to check key already exists
 	KVPrevExists KVFlags = 1 << iota
 	// KVCreatedIndex flag compares with passed in index (possibly in KVPair)
@@ -44,10 +50,8 @@ const (
 	// PasswordKey for an authenticated kvdb endpoint
 	PasswordKey = "Password"
 	// CAFileKey is the certicficate path for an authenticated kvdb endpoint
-	CAFileKey   = "CAFile"
+	CAFileKey = "CAFile"
 )
-
-
 
 var (
 	// ErrNotSupported implemenation of a specific function is not supported.
@@ -146,6 +150,8 @@ type Tx interface {
 type Kvdb interface {
 	// String representation of backend datastore.
 	String() string
+	// Capbilities - see KVCapabilityXXX
+	Capabilities() int
 	// Get returns KVPair that maps to specified key or ErrNotFound.
 	Get(key string) (*KVPair, error)
 	// Get returns KVPair that maps to specified key or ErrNotFound. If found
@@ -200,7 +206,7 @@ type Kvdb interface {
 	// RemoveUser removes a user from kvdb
 	RemoveUser(username string) error
 	// GrantUserAccess grants user access to a subtree/prefix based on the permission
-	GrantUserAccess(username string, permType PermissionType, subtree string) (error)
+	GrantUserAccess(username string, permType PermissionType, subtree string) error
 	// RevokeUsersAccess revokes user's access to a subtree/prefix based on the permission
-	RevokeUsersAccess(username string, permType PermissionType, subtree string) (error)
+	RevokeUsersAccess(username string, permType PermissionType, subtree string) error
 }

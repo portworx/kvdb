@@ -77,6 +77,10 @@ func (kv *memKV) String() string {
 	return Name
 }
 
+func (kv *memKV) Capabilities() int {
+	return kvdb.KVCapabilityOrderedUpdates
+}
+
 func (kv *memKV) Get(key string) (*kvdb.KVPair, error) {
 
 	key = kv.domain + key

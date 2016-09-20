@@ -9,11 +9,11 @@ import (
 	"math/rand"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"sort"
 
 	"github.com/Sirupsen/logrus"
 
@@ -48,7 +48,6 @@ func (c CKVPairs) Less(i, j int) bool {
 func (c CKVPairs) Swap(i, j int) {
 	c[i], c[j] = c[j], c[i]
 }
-
 
 func init() {
 	if err := kvdb.Register(Name, New); err != nil {
@@ -133,6 +132,10 @@ func New(
 
 func (kv *consulKV) String() string {
 	return Name
+}
+
+func (kv *consulKV) Capabilities() int {
+	return 0
 }
 
 func (kv *consulKV) Get(key string) (*kvdb.KVPair, error) {
@@ -623,7 +626,7 @@ func (kv *consulKV) pairToKvs(action string, pairs []*api.KVPair, meta *api.Quer
 
 func (kv *consulKV) renewLockSession(initialTTL string, session string, doneCh chan struct{}) {
 	go func() {
-		_ = kv.client.Session().RenewPeriodic(initialTTL, session, nil, doneCh)	
+		_ = kv.client.Session().RenewPeriodic(initialTTL, session, nil, doneCh)
 	}()
 }
 
@@ -677,7 +680,7 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 	var cbCreateErr, cbUpdateErr error
 	for {
 		// Make a blocking List query
-		logrus.Infof("Watch Wait [Wait Index: %v] [Prefix: %v]",waitIndex, prefix)
+		logrus.Infof("Watch Wait [Wait Index: %v] [Prefix: %v]", waitIndex, prefix)
 		kvPairs, meta, err := kv.client.KV().List(prefix, opts)
 		logrus.Infof("Watch Return [Last Index: %v] [Prefix: %v]", waitIndex, prefix)
 		pairs := CKVPairs(kvPairs)

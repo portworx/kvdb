@@ -124,6 +124,10 @@ func (kv *etcdKV) String() string {
 	return Name
 }
 
+func (kv *etcdKV) Capabilities() int {
+	return kvdb.KVCapabilityOrderedUpdates
+}
+
 func (kv *etcdKV) Get(key string) (*kvdb.KVPair, error) {
 	key = kv.domain + key
 	return kv.get(key, false, false)
