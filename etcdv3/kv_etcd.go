@@ -222,9 +222,9 @@ func (et *etcdKV) Create(
 	b, _ := common.ToBytes(val)
 	ctx, cancel := et.Context()
 	// Txn
-	// If key exist before (txnResponse.Succeeded == true)
-	// Then do nothing (txnResponse.Succeeded == false)
-	// Else put/create the key
+	// If key exist before
+	// Then do nothing (txnResponse.Succeeded == true)
+	// Else put/create the key (txnResponse.Succeeded == false)
 	txnResponse, txnErr := et.kvClient.Txn(ctx).If(
 		e.Compare(e.CreateRevision(pathKey), ">", 0),
 	).Then().Else(
@@ -250,16 +250,44 @@ func (et *etcdKV) Update(
 	val interface{},
 	ttl uint64,
 ) (*kvdb.KVPair, error) {
+	pathKey := et.domain + key
+	opts := []e.OpOption{}
+	if ttl > 0 {
+		if ttl < 5 {
+			return nil, kvdb.ErrTTLNotSupported
+		}
+		leaseCtx, leaseCancel := et.Context()
+		leaseResult, err := et.kvClient.Grant(leaseCtx, int64(ttl))
+		leaseCancel()
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, e.WithLease(leaseResult.ID))
 
-	if _, err := et.Get(key); err != nil {
+	}
+	b, _ := common.ToBytes(val)
+	ctx, cancel := et.Context()
+	// Txn
+	// If key exist before
+	// Then update key (txnResponse.Succeeded == true)
+	// Else put/create the key (txnResponse.Succeeded == false)
+	txnResponse, txnErr := et.kvClient.Txn(ctx).If(
+		e.Compare(e.CreateRevision(pathKey), ">", 0),
+	).Then(
+		e.OpPut(pathKey, string(b), opts...),
+		e.OpGet(pathKey),
+	).Else().Commit()
+	cancel()
+	if txnErr != nil {
+		return nil, txnErr
+	}
+	if txnResponse.Succeeded == false {
+		// The key did not exist before
 		return nil, kvdb.ErrNotFound
 	}
 
-	kvPair, err := et.Put(key, val, ttl)
-	if err != nil {
-		return nil, err
-	}
-	kvPair.Action = kvdb.KVSet
+	rangeResponse := txnResponse.Responses[1].GetResponseRange()
+	kvPair := et.resultToKv(rangeResponse.Kvs[0], "update")
 	return kvPair, nil
 }
 
