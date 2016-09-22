@@ -10,6 +10,7 @@ import (
 
 	"github.com/portworx/kvdb"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type watchData struct {
@@ -51,6 +52,7 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	lock(kv, t)
 	watchKey(kv, t)
 	watchTree(kv, t)
+	watchWithIndex(kv, t)
 	cas(kv, t)
 }
 
@@ -162,11 +164,11 @@ func getInterface(kv kvdb.Kvdb, t *testing.T) {
 func create(kv kvdb.Kvdb, t *testing.T) {
 	fmt.Println("create")
 
-	key := "//create//foo"
+	key := "///create/foo"
 	kv.Delete(key)
 
 	kvp, err := kv.Create(key, []byte("bar"), 0)
-	assert.NoError(t, err, "Error on create")
+	require.NoError(t, err, "Error on create")
 
 	defer func() {
 		kv.Delete(key)
@@ -703,6 +705,73 @@ func watchTree(kv kvdb.Kvdb, t *testing.T) {
 	for watchData.watchStopped == false {
 		time.Sleep(time.Millisecond * 100)
 	}
+}
+
+func watchWithIndexCb(
+	prefix string,
+	opaque interface{},
+	kvp *kvdb.KVPair,
+	err error,
+) error {
+
+	data, ok := opaque.(*watchData)
+	if !ok {
+		data.t.Fatalf ("Unable to parse waitIndex in watch callback")
+	}
+	assert.True(data.t, kvp.ModifiedIndex >= data.localIndex,
+		"For key: %v. ModifiedIndex (%v) should be > than waitIndex (%v)",
+		kvp.Key, kvp.ModifiedIndex, data.localIndex,
+	)
+	assert.True(data.t, kvp.ModifiedIndex <= data.localIndex+3,
+		"For key: %v. Got extra updates. Current ModifiedIndex: %v. Expected last update index: %v",
+		kvp.Key, kvp.ModifiedIndex, data.localIndex+2,
+	)
+	if kvp.ModifiedIndex == data.localIndex+3 {
+		assert.True(data.t, kvp.Action == kvdb.KVDelete,
+			"Expected action: %v, action action: %v",
+			kvdb.KVDelete, kvp.Action,
+		)
+	}
+	return nil
+}
+
+
+
+func watchWithIndex(kv kvdb.Kvdb, t *testing.T) {
+	fmt.Println("watchWithIndex")
+	
+	tree := "tree"
+	subtree := tree + "/subtree"
+	key := subtree+"/watchWithIndex"
+	key1 := subtree+"/watchWithIndex21"
+	
+	_, err := kv.Delete(key)
+
+	kvp, err := kv.Create(key, []byte("bar"), 0)
+	assert.NoError(t, err, "Unexpected error in create: %v", err)
+
+	time.Sleep(time.Millisecond * 100)
+
+	waitIndex := kvp.ModifiedIndex+2
+	watchData := watchData{
+		t:          t,
+		key:        key,
+		localIndex: waitIndex,
+	}
+
+
+	err = kv.WatchTree(tree, waitIndex, &watchData, watchWithIndexCb) 
+	if err != nil {
+		fmt.Printf("Cannot test watchTree: %v", err)
+		return
+	}
+	// Should not get updates for these
+	kv.Put(key, []byte("bar1"), 0)
+	kv.Put(key, []byte("bar1"), 0)
+	// Should get updates for these
+	kv.Put(key, []byte("bar2"), 0)
+	kv.Create(key1, []byte("bar"), 0)
+	kv.Delete(key)
 }
 
 func cas(kv kvdb.Kvdb, t *testing.T) {
