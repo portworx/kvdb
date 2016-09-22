@@ -606,7 +606,7 @@ func (kv *consulKV) pairToKv(action string, pair *api.KVPair, meta *api.QueryMet
 func isHidden(key string) bool {
 	tokens := strings.Split(key, "/")
 	keySuffix := tokens[len(tokens)-1]
-	return keySuffix[0] == '_'
+	return keySuffix != "" && keySuffix[0] == '_'
 }
 
 func (kv *consulKV) pairToKvs(action string, pairs []*api.KVPair, meta *api.QueryMeta) kvdb.KVPairs {
