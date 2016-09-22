@@ -130,6 +130,10 @@ func (et *etcdKV) String() string {
 	return Name
 }
 
+func (et *etcdKV) Capabilities() int {
+	return kvdb.KVCapabilityOrderedUpdates
+}
+
 func (et *etcdKV) Context() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), defaultRequestTimeout)
 }
@@ -145,7 +149,7 @@ func (et *etcdKV) Get(key string) (*kvdb.KVPair, error) {
 		result, err = et.kvClient.Get(ctx, key)
 		cancel()
 		if err == nil && result != nil {
-			kvs := et.handleGetResponse(result)
+			kvs := et.handleGetResponse(result, false)
 			if len(kvs) == 0 {
 				return nil, kvdb.ErrNotFound
 			}
@@ -200,16 +204,44 @@ func (et *etcdKV) Create(
 	val interface{},
 	ttl uint64,
 ) (*kvdb.KVPair, error) {
-	_, err := et.Get(key)
-	if err == nil {
+	pathKey := et.domain + key
+	opts := []e.OpOption{}
+	if ttl > 0 {
+		if ttl < 5 {
+			return nil, kvdb.ErrTTLNotSupported
+		}
+		leaseCtx, leaseCancel := et.Context()
+		leaseResult, err := et.kvClient.Grant(leaseCtx, int64(ttl))
+		leaseCancel()
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, e.WithLease(leaseResult.ID))
+
+	}
+	b, _ := common.ToBytes(val)
+	ctx, cancel := et.Context()
+	// Txn
+	// If key exist before (txnResponse.Succeeded == true)
+	// Then do nothing (txnResponse.Succeeded == false)
+	// Else put/create the key
+	txnResponse, txnErr := et.kvClient.Txn(ctx).If(
+		e.Compare(e.CreateRevision(pathKey), ">", 0),
+	).Then().Else(
+		e.OpPut(pathKey, string(b), opts...),
+		e.OpGet(pathKey),
+	).Commit()
+	cancel()
+	if txnErr != nil {
+		return nil, txnErr
+	}
+	if txnResponse.Succeeded == true {
+		// The key did exist before
 		return nil, kvdb.ErrExist
 	}
 
-	kvPair, err := et.Put(key, val, ttl)
-	if err != nil {
-		return nil, err
-	}
-	kvPair.Action = kvdb.KVCreate
+	rangeResponse := txnResponse.Responses[1].GetResponseRange()
+	kvPair := et.resultToKv(rangeResponse.Kvs[0], "create")
 	return kvPair, nil
 }
 
@@ -245,7 +277,7 @@ func (et *etcdKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 		)
 		cancel()
 		if err == nil && result != nil {
-			kvs := et.handleGetResponse(result)
+			kvs := et.handleGetResponse(result, true)
 			if len(kvs) == 0 {
 				return nil, kvdb.ErrNotFound
 			}
@@ -443,6 +475,7 @@ func (et *etcdKV) LockWithID(key string, lockerID string) (
 	count := 0
 	lockTag := LockerIDInfo{LockerID: lockerID}
 	kvPair, err := et.Create(key, lockTag, ttl)
+
 	for maxCount := 300; err != nil && count < maxCount; count++ {
 		time.Sleep(duration)
 		kvPair, err = et.Create(key, lockTag, ttl)
@@ -517,10 +550,19 @@ func (et *etcdKV) resultToKv(resultKv *mvccpb.KeyValue, action string) *kvdb.KVP
 	return kvp
 }
 
-func (et *etcdKV) handleGetResponse(result *e.GetResponse) kvdb.KVPairs {
-	kvs := make([]*kvdb.KVPair, len(result.Kvs))
+func isHidden(key string) bool {
+	tokens := strings.Split(key, "/")
+	keySuffix := tokens[len(tokens)-1]
+	return keySuffix != "" && keySuffix[0] == '_'
+}
+
+func (et *etcdKV) handleGetResponse(result *e.GetResponse, removeHidden bool) kvdb.KVPairs {
+	kvs := []*kvdb.KVPair{}
 	for i := range result.Kvs {
-		kvs[i] = et.resultToKv(result.Kvs[i], "get")
+		if removeHidden && isHidden(string(result.Kvs[i].Key[:])) {
+			continue
+		}
+		kvs = append(kvs, et.resultToKv(result.Kvs[i], "get"))
 	}
 	return kvs
 }
@@ -611,7 +653,7 @@ out:
 func (et *etcdKV) refreshLock(kvPair *kvdb.KVPair) {
 	l := kvPair.Lock.(*etcdLock)
 	ttl := kvPair.TTL
-	refresh := time.NewTicker(time.Duration(kvPair.TTL) / 4)
+	refresh := time.NewTicker(time.Duration(kvPair.TTL) / 5)
 	var keyString string
 	if kvPair != nil {
 		keyString = kvPair.Key
@@ -630,7 +672,7 @@ func (et *etcdKV) refreshLock(kvPair *kvdb.KVPair) {
 				)
 				if err != nil {
 					logrus.Errorf(
-						"Error refreshing lock for key %v: %v\n",
+						"Error refreshing lock for key %v: %v",
 						keyString, err,
 					)
 					l.err = err
@@ -655,15 +697,12 @@ func (et *etcdKV) watchStart(
 	cb kvdb.WatchCB,
 ) {
 	opts := []e.OpOption{}
-	ctx, cancel := et.Context()
-	defer cancel()
 	opts = append(opts, e.WithCreatedNotify())
-	opts = append(opts, e.WithRev(int64(waitIndex)))
 	if recursive {
 		opts = append(opts, e.WithPrefix())
 	}
 	watcher := e.NewWatcher(et.kvClient)
-	watchChan := watcher.Watch(ctx, key, opts...)
+	watchChan := watcher.Watch(context.Background(), key, opts...)
 	for wresp := range watchChan {
 		if wresp.Created == true {
 			continue
@@ -674,6 +713,12 @@ func (et *etcdKV) watchStart(
 			_ = cb(key, opaque, nil, kvdb.ErrWatchStopped)
 		} else {
 			for _, ev := range wresp.Events {
+				if waitIndex != 0 {
+					if ev.Kv.ModRevision < int64(waitIndex) {
+						// Skip this updte
+						continue
+					}
+				}
 				var action string
 				if ev.Type == mvccpb.PUT {
 					if ev.Kv.Version == 1 {
