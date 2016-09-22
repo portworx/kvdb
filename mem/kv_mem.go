@@ -211,6 +211,10 @@ func (kv *memKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 		}
 	}
 
+	if len(kvp) == 0 {
+		return nil, kvdb.ErrNotFound
+	}
+
 	return kvp, nil
 }
 
