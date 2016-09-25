@@ -501,6 +501,9 @@ func (kv *consulKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 			ok := false
 
 			if err != nil {
+				if err == kvdb.ErrWatchStopped {
+					return nil
+				}
 				watchErr = err
 				sendErr = err
 				goto errordone
@@ -524,17 +527,29 @@ func (kv *consulKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 			defer m.Unlock()
 
 			if kvp.ModifiedIndex > highestKvdbIndex {
-				// done applying changes, return
+				// done applying changes, just return
 				watchErr = fmt.Errorf("done")
 				sendErr = nil
 				goto errordone
-			}
-
-			_, err = snapDb.SnapPut(kvp)
-			if err != nil {
-				watchErr = fmt.Errorf("Failed to apply update to snap: %v", err)
-				sendErr = watchErr
+			} else if kvp.ModifiedIndex == highestKvdbIndex {
+				// last update that we needed. Put it inside snap db
+				// and return
+				_, err = snapDb.SnapPut(kvp)
+				if err != nil {
+					watchErr = fmt.Errorf("Failed to apply update to snap: %v", err)
+					sendErr = watchErr
+				} else {
+					watchErr = fmt.Errorf("done")
+					sendErr = nil
+				}
 				goto errordone
+			} else {
+				_, err = snapDb.SnapPut(kvp)
+				if err != nil {
+					watchErr = fmt.Errorf("Failed to apply update to snap: %v", err)
+					sendErr = watchErr
+					goto errordone
+				}
 			}
 
 			return nil
@@ -563,7 +578,6 @@ func (kv *consulKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 		return nil, 0, fmt.Errorf("Failed to delete snap bootstrap key: %v, "+
 			"err: %v", bootStrapKeyHigh, err)
 	}
-
 	return snapDb, highestKvdbIndex, nil
 }
 
