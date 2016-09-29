@@ -26,7 +26,7 @@ var (
 )
 
 func init() {
-	if err := kvdb.Register(Name, New); err != nil {
+	if err := kvdb.Register(Name, New, Version); err != nil {
 		panic(err.Error())
 	}
 }
@@ -71,6 +71,10 @@ func New(
 	}
 	return mem, nil
 
+}
+
+func Version(url string) (string, error) {
+	return kvdb.MemVersion1, nil
 }
 
 func (kv *memKV) String() string {

@@ -51,7 +51,7 @@ func (c CKVPairs) Swap(i, j int) {
 }
 
 func init() {
-	if err := kvdb.Register(Name, New); err != nil {
+	if err := kvdb.Register(Name, New, Version); err != nil {
 		panic(err.Error())
 	}
 }
@@ -129,6 +129,11 @@ func New(
 		config,
 		domain,
 	}, nil
+}
+
+func Version(url string) (string, error) {
+	// Currently we support only v1
+	return kvdb.ConsulVersion1, nil
 }
 
 func (kv *consulKV) String() string {

@@ -9,12 +9,15 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"net/http"
+	"io/ioutil"
 
 	"github.com/Sirupsen/logrus"
 
 	"golang.org/x/net/context"
 
 	e "github.com/coreos/etcd/client"
+	"github.com/coreos/etcd/version"
 	"github.com/coreos/etcd/pkg/transport"
 	"github.com/portworx/kvdb"
 	"github.com/portworx/kvdb/common"
@@ -38,7 +41,7 @@ var (
 )
 
 func init() {
-	if err := kvdb.Register(Name, New); err != nil {
+	if err := kvdb.Register(Name, New, Version); err != nil {
 		panic(err.Error())
 	}
 }
@@ -118,6 +121,29 @@ func New(
 		e.NewAuthRoleAPI(c),
 		domain,
 	}, nil
+}
+
+func Version(url string) (string, error) {
+	response, err := http.Get(url+"/version")
+	if err != nil {
+		return "", err
+	}
+
+	defer response.Body.Close()
+	contents, _ := ioutil.ReadAll(response.Body)
+
+	var version version.Versions
+	err = json.Unmarshal(contents, &version)
+	if err != nil {
+		return "", err
+	}
+	if version.Server[0] == '2' || version.Server[0] == '1' {
+		return kvdb.EtcdBaseVersion, nil
+	} else if version.Server[0] == '3' {
+		return kvdb.EtcdVersion3, nil
+	} else {
+		return "", fmt.Errorf("Unsupported etcd version: %v", version.Server)
+	}
 }
 
 func (kv *etcdKV) String() string {

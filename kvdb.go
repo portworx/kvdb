@@ -53,6 +53,17 @@ const (
 	CAFileKey = "CAFile"
 )
 
+// List of kvdb endpoints supported versions
+const (
+	// ConsulVersion1 key
+	ConsulVersion1 = "consulv1"
+	// EtcdBaseVersion key
+	EtcdBaseVersion = "etcd"
+	// EtcdVersion3 key
+	EtcdVersion3 = "etcdv3"
+	// MemVersion1 key
+	MemVersion1 = "memv1"
+)
 var (
 	// ErrNotSupported implemenation of a specific function is not supported.
 	ErrNotSupported = errors.New("implementation not supported")
@@ -103,6 +114,9 @@ type WatchCB func(prefix string, opaque interface{}, kvp *KVPair, err error) err
 
 // DatastoreInit is called to activate a backend KV store.
 type DatastoreInit func(domain string, machines []string, options map[string]string) (Kvdb, error)
+
+// DatastoreVersion is called to get the version of a backend KV store
+type DatastoreVersion func(url string) (string, error)
 
 // KVPair represents the results of an operation on KVDB.
 type KVPair struct {
