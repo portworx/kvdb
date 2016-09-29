@@ -73,6 +73,7 @@ func New(
 
 }
 
+// Version returns the supported version of the mem implementation
 func Version(url string) (string, error) {
 	return kvdb.MemVersion1, nil
 }

@@ -131,6 +131,7 @@ func New(
 	}, nil
 }
 
+// Version returns the supported version for consul api
 func Version(url string) (string, error) {
 	// Currently we support only v1
 	return kvdb.ConsulVersion1, nil

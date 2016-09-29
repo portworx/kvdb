@@ -1,4 +1,4 @@
-package etcd
+package etcdv3
 
 import (
 	"bytes"
@@ -9,15 +9,12 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"net/http"
-	"io/ioutil"
 
 	"github.com/Sirupsen/logrus"
 
 	"golang.org/x/net/context"
 
 	e "github.com/coreos/etcd/clientv3"
-	"github.com/coreos/etcd/version"
 	"github.com/coreos/etcd/etcdserver"
 	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	"github.com/coreos/etcd/mvcc/mvccpb"
@@ -26,6 +23,7 @@ import (
 
 	"github.com/portworx/kvdb"
 	"github.com/portworx/kvdb/common"
+	ec "github.com/portworx/kvdb/etcd/common"
 	"github.com/portworx/kvdb/mem"
 )
 
@@ -47,7 +45,7 @@ var (
 )
 
 func init() {
-	if err := kvdb.Register(Name, New, Version); err != nil {
+	if err := kvdb.Register(Name, New, ec.Version); err != nil {
 		panic(err.Error())
 	}
 }
@@ -127,29 +125,6 @@ func New(
 		e.NewAuth(c),
 		domain,
 	}, nil
-}
-
-func Version(url string) (string, error) {
-	response, err := http.Get(url+"/version")
-	if err != nil {
-		return "", err
-	}
-
-	defer response.Body.Close()
-	contents, _ := ioutil.ReadAll(response.Body)
-
-	var version version.Versions
-	err = json.Unmarshal(contents, &version)
-	if err != nil {
-		return "", err
-	}
-	if version.Server[0] == '2' || version.Server[0] == '1' {
-		return kvdb.EtcdBaseVersion, nil
-	} else if version.Server[0] == '3' {
-		return kvdb.EtcdVersion3, nil
-	} else {
-		return "", fmt.Errorf("Unsupported etcd version: %v", version.Server)
-	}
 }
 
 func (et *etcdKV) String() string {
@@ -787,7 +762,10 @@ func (et *etcdKV) watchStart(
 				}
 				err := cb(key, opaque, et.resultToKv(ev.Kv, action), nil)
 				if err != nil {
-					watcher.Close()
+					err := watcher.Close()
+					if err != nil {
+						logrus.Errorf("Unable to close the watcher channel: %v", err)
+					}
 					// Indicate the caller that watch has been canceled
 					_ = cb(key, opaque, nil, kvdb.ErrWatchStopped)
 					break

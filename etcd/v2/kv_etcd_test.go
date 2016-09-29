@@ -1,4 +1,4 @@
-package etcd
+package etcdv2
 
 import (
 	"testing"
