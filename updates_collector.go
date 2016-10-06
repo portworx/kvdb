@@ -48,6 +48,9 @@ func (c *updatesCollectorImpl) watchCb(
 	}
 	update := &kvdbUpdate{prefix: prefix, kvp: kvp, err: err}
 	c.updates = append(c.updates, update)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -59,7 +62,8 @@ func (c *updatesCollectorImpl) ReplayUpdates(cbList []ReplayCb) error {
 	updates := c.updates
 	for _, update := range updates {
 		for _, cbInfo := range cbList {
-			if strings.HasPrefix(update.kvp.Key, cbInfo.Prefix) {
+			if update.kvp == nil ||
+				strings.HasPrefix(update.kvp.Key, cbInfo.Prefix) {
 				err := cbInfo.WatchCB(update.prefix, cbInfo.Opaque, update.kvp,
 					update.err)
 				if err != nil {

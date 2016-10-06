@@ -948,11 +948,14 @@ func collect(kv kvdb.Kvdb, t *testing.T) {
 		lastLeafIndex)
 
 	// Test with kvdb returning error because update index was too old.
-	for i := 0; i < 2000; i++ {
-		kv.Update(secondLevel, []byte(strconv.Itoa(i)), 0)
-	}
 	fourthLevel := root + "/fourth"
+	kv.Create(fourthLevel, []byte(strconv.Itoa(0)), 0)
+	for i := 1; i < 2000; i++ {
+		kv.Update(fourthLevel, []byte(strconv.Itoa(i)), 0)
+	}
 	collector, _ = kvdb.GetUpdatesCollector(kv, fourthLevel, kvp.ModifiedIndex)
+	kv.Update(fourthLevel, []byte(strconv.Itoa(2000)), 0)
+	time.Sleep(500 * time.Millisecond)
 	cb = func(prefix string, opaque interface{}, kvp *kvdb.KVPair,
 		err error) error {
 		fmt.Printf("Error is %v", err)

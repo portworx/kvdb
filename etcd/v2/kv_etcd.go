@@ -34,7 +34,7 @@ const (
 )
 
 var (
-	defaultMachines = []string{"http://127.0.0.1:2379"}
+	defaultMachines = []string{"http://192.168.56.101:4001"}
 )
 
 func init() {
@@ -559,8 +559,9 @@ func (kv *etcdKV) watchStart(
 			} else {
 				logrus.Errorf("Etcd returned an error : %s\n", watchErr.Error())
 			}
-			// TODO: handle error
 			_ = cb(key, opaque, nil, watchErr)
+			cancel()
+			isCancelSent = true
 		} else if watchErr == nil && !isCancelSent {
 			err := cb(key, opaque, kv.resultToKv(r), nil)
 			if err != nil {
@@ -569,7 +570,7 @@ func (kv *etcdKV) watchStart(
 				isCancelSent = true
 			}
 		} else {
-			// TODO: handle error
+			// Ignore return values since the watch is stopping
 			_ = cb(key, opaque, nil, kvdb.ErrWatchStopped)
 			break
 		}
@@ -745,7 +746,7 @@ func (kv *etcdKV) GrantUserAccess(username string, permType kvdb.PermissionType,
 	if kv.domain[0] == '/' {
 		domain = kv.domain
 	} else {
-		domain = "/"+kv.domain
+		domain = "/" + kv.domain
 	}
 	subtree = domain + subtree
 	etcdPermType, err := getEtcdPermType(permType)
@@ -764,7 +765,7 @@ func (kv *etcdKV) RevokeUsersAccess(username string, permType kvdb.PermissionTyp
 	if kv.domain[0] == '/' {
 		domain = kv.domain
 	} else {
-		domain = "/"+kv.domain
+		domain = "/" + kv.domain
 	}
 	subtree = domain + subtree
 	etcdPermType, err := getEtcdPermType(permType)
