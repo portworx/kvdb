@@ -41,22 +41,20 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	/*
-		snapshot(kv, t)
-		get(kv, t)
-		getInterface(kv, t)
-		create(kv, t)
-		createWithTTL(kv, t)
-		update(kv, t)
-		deleteKey(kv, t)
-		deleteTree(kv, t)
-		enumerate(kv, t)
-		lock(kv, t)
-		watchKey(kv, t)
-		watchTree(kv, t)
-		watchWithIndex(kv, t)
-		cas(kv, t)
-	*/
+	snapshot(kv, t)
+	get(kv, t)
+	getInterface(kv, t)
+	create(kv, t)
+	createWithTTL(kv, t)
+	update(kv, t)
+	deleteKey(kv, t)
+	deleteTree(kv, t)
+	enumerate(kv, t)
+	lock(kv, t)
+	watchKey(kv, t)
+	watchTree(kv, t)
+	watchWithIndex(kv, t)
+	cas(kv, t)
 	collect(kv, t)
 }
 
