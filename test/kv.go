@@ -528,16 +528,15 @@ func watchFn(
 
 	// Doesn't work for ETCD because HTTP header contains Etcd-Index
 	/*
-			assert.True(data.t, kvp.KVDBIndex >= data.updateIndex,
-				"KVDBIndex %v must be >= than updateIndex %v",
-				kvp.KVDBIndex, data.updateIndex)
-
+		assert.True(data.t, kvp.KVDBIndex >= data.updateIndex,
+			"KVDBIndex %v must be >= than updateIndex %v",
+			kvp.KVDBIndex, data.updateIndex)
 
 		assert.True(data.t, kvp.KVDBIndex > data.localIndex,
 			"For Key (%v) : KVDBIndex %v must be > than localIndex %v action %v %v",
 			kvp.Key, kvp.KVDBIndex, data.localIndex, kvp.Action, kvdb.KVCreate)
-
 	*/
+
 	assert.True(data.t, kvp.ModifiedIndex > data.localIndex,
 		"For Key (%v) : ModifiedIndex %v must be > than localIndex %v",
 		kvp.Key, kvp.ModifiedIndex, data.localIndex)
@@ -641,7 +640,7 @@ func watchKey(kv kvdb.Kvdb, t *testing.T) {
 	// First create a key. We should not get update for this create.
 	_, err := kv.Create(watchData.otherKey, []byte("bar"), 0)
 	// Let the create operation finish and then start the watch
-	time.Sleep(time.Millisecond * 100)
+	time.Sleep(time.Second)
 
 	err = kv.WatchKey(watchData.otherKey, 0, &watchData, watchFn)
 	if err != nil {
@@ -693,7 +692,7 @@ func watchTree(kv kvdb.Kvdb, t *testing.T) {
 	_, err = kv.Create(watchData.otherKey, []byte("bar"), 0)
 	// Let the create operation finish and then start the watch
 
-	time.Sleep(time.Millisecond * 100)
+	time.Sleep(time.Second)
 	err = kv.WatchTree(tree, 0, &watchData, watchFn)
 	if err != nil {
 		fmt.Printf("Cannot test watchKey: %v\n", err)
