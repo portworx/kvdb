@@ -892,7 +892,7 @@ func collect(kv kvdb.Kvdb, t *testing.T) {
 	kv.DeleteTree(root)
 	kvp, _ := kv.Create(firstLevel, []byte("bar"), 0)
 	fmt.Printf("KVP is %v", kvp)
-	collector, _ := kvdb.GetUpdateCollector(kv, secondLevel, kvp.CreatedIndex)
+	collector, _ := kvdb.GetUpdatesCollector(kv, secondLevel, kvp.CreatedIndex)
 	time.Sleep(time.Second)
 	var updates []*kvdb.KVPair
 	updateFn := func(start, end int) {
@@ -913,6 +913,7 @@ func collect(kv kvdb.Kvdb, t *testing.T) {
 	lastLeafIndex := -1
 	cb := func(prefix string, opaque interface{}, kvp *kvdb.KVPair,
 		err error) error {
+		assert.True(t, err == nil, "Error is nil %v", err)
 		assert.True(t, kvp.ModifiedIndex > lastKVIndex,
 			"Modified index %v lower than last index %v",
 			kvp.ModifiedIndex, lastKVIndex)
@@ -936,4 +937,5 @@ func collect(kv kvdb.Kvdb, t *testing.T) {
 	collector.ReplayUpdates(replayCb)
 	assert.True(t, lastLeafIndex == 9, "Last leaf index %v, expected : 9",
 		lastLeafIndex)
+
 }
