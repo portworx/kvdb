@@ -464,6 +464,10 @@ func lock(kv kvdb.Kvdb, t *testing.T) {
 		err = kv.Unlock(kvPair)
 		assert.NoError(t, err, "Unexpected error from Unlock")
 
+		for done == 0 {
+			time.Sleep(time.Second)
+		}
+
 		key = "doubleLock"
 		kvPair, err = lockMethod(key)
 		assert.NoError(t, err, "Unexpected error in lock")
@@ -622,7 +626,7 @@ func watchUpdate(kv kvdb.Kvdb, data *watchData) error {
 }
 
 func watchKey(kv kvdb.Kvdb, t *testing.T) {
-	fmt.Println("watchKey")
+	fmt.Println("\nwatchKey")
 
 	watchData := watchData{
 		t:          t,
@@ -671,7 +675,7 @@ func randomUpdate(kv kvdb.Kvdb, w *watchData) {
 }
 
 func watchTree(kv kvdb.Kvdb, t *testing.T) {
-	fmt.Println("watchTree")
+	fmt.Println("\nwatchTree")
 
 	tree := "tree"
 
@@ -736,14 +740,14 @@ func watchWithIndexCb(
 }
 
 func watchWithIndex(kv kvdb.Kvdb, t *testing.T) {
-	fmt.Println("watchWithIndex")
+	fmt.Println("\nwatchWithIndex")
 
-	tree := "tree"
+	tree := "indexTree"
 	subtree := tree + "/subtree"
 	key := subtree + "/watchWithIndex"
 	key1 := subtree + "/watchWithIndex21"
 
-	_, err := kv.Delete(key)
+	kv.DeleteTree(tree)
 
 	kvp, err := kv.Create(key, []byte("bar"), 0)
 	assert.NoError(t, err, "Unexpected error in create: %v", err)
@@ -759,7 +763,7 @@ func watchWithIndex(kv kvdb.Kvdb, t *testing.T) {
 
 	err = kv.WatchTree(tree, waitIndex, &watchData, watchWithIndexCb)
 	if err != nil {
-		fmt.Printf("Cannot test watchTree: %v", err)
+		fmt.Printf("Cannot test watchTree for watchWithIndex: %v", err)
 		return
 	}
 	// Should not get updates for these
@@ -772,7 +776,7 @@ func watchWithIndex(kv kvdb.Kvdb, t *testing.T) {
 }
 
 func cas(kv kvdb.Kvdb, t *testing.T) {
-	fmt.Println("cas")
+	fmt.Println("\ncas")
 
 	key := "foo/docker"
 	val := "great"
