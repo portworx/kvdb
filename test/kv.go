@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -54,6 +55,7 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	watchTree(kv, t)
 	watchWithIndex(kv, t)
 	cas(kv, t)
+	collect(kv, t)
 }
 
 // RunBasic runs the basic test suite.
@@ -716,7 +718,7 @@ func watchWithIndexCb(
 
 	data, ok := opaque.(*watchData)
 	if !ok {
-		data.t.Fatalf ("Unable to parse waitIndex in watch callback")
+		data.t.Fatalf("Unable to parse waitIndex in watch callback")
 	}
 	assert.True(data.t, kvp.ModifiedIndex >= data.localIndex,
 		"For key: %v. ModifiedIndex (%v) should be > than waitIndex (%v)",
@@ -735,16 +737,14 @@ func watchWithIndexCb(
 	return nil
 }
 
-
-
 func watchWithIndex(kv kvdb.Kvdb, t *testing.T) {
 	fmt.Println("watchWithIndex")
-	
+
 	tree := "tree"
 	subtree := tree + "/subtree"
-	key := subtree+"/watchWithIndex"
-	key1 := subtree+"/watchWithIndex21"
-	
+	key := subtree + "/watchWithIndex"
+	key1 := subtree + "/watchWithIndex21"
+
 	_, err := kv.Delete(key)
 
 	kvp, err := kv.Create(key, []byte("bar"), 0)
@@ -752,15 +752,14 @@ func watchWithIndex(kv kvdb.Kvdb, t *testing.T) {
 
 	time.Sleep(time.Millisecond * 100)
 
-	waitIndex := kvp.ModifiedIndex+2
+	waitIndex := kvp.ModifiedIndex + 2
 	watchData := watchData{
 		t:          t,
 		key:        key,
 		localIndex: waitIndex,
 	}
 
-
-	err = kv.WatchTree(tree, waitIndex, &watchData, watchWithIndexCb) 
+	err = kv.WatchTree(tree, waitIndex, &watchData, watchWithIndexCb)
 	if err != nil {
 		fmt.Printf("Cannot test watchTree: %v", err)
 		return
@@ -881,4 +880,60 @@ func grantRevokeUser(kvRootUser kvdb.Kvdb, datastoreInit kvdb.DatastoreInit, t *
 	kvRootUser.DeleteTree("allow1")
 	kvRootUser.DeleteTree("allow2")
 	kvRootUser.DeleteTree("disallow")
+}
+
+func collect(kv kvdb.Kvdb, t *testing.T) {
+	fmt.Println("collect")
+
+	root := "pwx/test/collect"
+	firstLevel := root + "/first"
+	secondLevel := root + "/second"
+
+	kv.DeleteTree(root)
+	kvp, _ := kv.Create(firstLevel, []byte("bar"), 0)
+	fmt.Printf("KVP is %v", kvp)
+	collector, _ := kvdb.GetUpdateCollector(kv, secondLevel, kvp.CreatedIndex)
+	time.Sleep(time.Second)
+	var updates []*kvdb.KVPair
+	updateFn := func(start, end int) {
+		for i := start; i < end; i++ {
+			newLeaf := strconv.Itoa(i)
+			kvp1, _ := kv.Create(secondLevel+"/"+newLeaf, []byte(newLeaf), 0)
+			kv.Update(firstLevel, []byte(newLeaf), 0)
+			updates = append(updates, kvp1)
+		}
+	}
+	updateFn(0, 10)
+	// Allow watch updates to come back.
+	time.Sleep(time.Millisecond * 100)
+	collector.Stop()
+
+	updateFn(10, 20)
+	lastKVIndex := kvp.CreatedIndex
+	lastLeafIndex := -1
+	cb := func(prefix string, opaque interface{}, kvp *kvdb.KVPair,
+		err error) error {
+		assert.True(t, kvp.ModifiedIndex > lastKVIndex,
+			"Modified index %v lower than last index %v",
+			kvp.ModifiedIndex, lastKVIndex)
+		lastKVIndex = kvp.ModifiedIndex
+		strValue := string(kvp.Value)
+		value := secondLevel + "/" + strValue
+		assert.True(t, strings.Compare(kvp.Key, value) == 0,
+			"Key: %v, Value: %v", kvp.Key, value)
+		leafIndex, _ := strconv.Atoi(strValue)
+		assert.True(t, leafIndex == lastLeafIndex+1,
+			"Last leaf: %v, leaf: %v", kvp.Key,
+			value)
+		lastLeafIndex = leafIndex
+		return nil
+	}
+
+	replayCb := make([]kvdb.ReplayCb, 1)
+	replayCb[0].Prefix = secondLevel
+	replayCb[0].WatchCB = cb
+
+	collector.ReplayUpdates(replayCb)
+	assert.True(t, lastLeafIndex == 9, "Last leaf index %v, expected : 9",
+		lastLeafIndex)
 }

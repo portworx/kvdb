@@ -64,6 +64,7 @@ const (
 	// MemVersion1 key
 	MemVersion1 = "memv1"
 )
+
 var (
 	// ErrNotSupported implemenation of a specific function is not supported.
 	ErrNotSupported = errors.New("implementation not supported")
@@ -223,4 +224,20 @@ type Kvdb interface {
 	GrantUserAccess(username string, permType PermissionType, subtree string) error
 	// RevokeUsersAccess revokes user's access to a subtree/prefix based on the permission
 	RevokeUsersAccess(username string, permType PermissionType, subtree string) error
+}
+
+// ReplayCb provides info required for replay
+type ReplayCb struct {
+	Prefix    string
+	WaitIndex uint64
+	Opaque    interface{}
+	WatchCB   WatchCB
+}
+
+// UpdatesCollector collects updates from kvdb.
+type UpdatesCollector interface {
+	// Stop collecting updates
+	Stop()
+	// ReplayUpdates replays the collected updates
+	ReplayUpdates(updateCb []ReplayCb) error
 }
