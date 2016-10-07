@@ -893,20 +893,23 @@ func collect(kv kvdb.Kvdb, t *testing.T) {
 	kv.DeleteTree(root)
 	kvp, _ := kv.Create(firstLevel, []byte("bar"), 0)
 	fmt.Printf("KVP is %v", kvp)
-	collector, _ := kvdb.GetUpdatesCollector(kv, secondLevel, kvp.CreatedIndex)
+	collector, _ := kvdb.NewUpdatesCollector(kv, secondLevel, kvp.CreatedIndex)
 	time.Sleep(time.Second)
 	var updates []*kvdb.KVPair
-	updateFn := func(start, end int) {
+	updateFn := func(start, end int) uint64 {
+		maxVersion := uint64(0)
 		for i := start; i < end; i++ {
 			newLeaf := strconv.Itoa(i)
 			kvp1, _ := kv.Create(secondLevel+"/"+newLeaf, []byte(newLeaf), 0)
-			kv.Update(firstLevel, []byte(newLeaf), 0)
+			kvp2, _ := kv.Update(firstLevel, []byte(newLeaf), 0)
 			updates = append(updates, kvp1)
+			maxVersion = kvp2.ModifiedIndex
 		}
+		return maxVersion
 	}
 	updateFn(0, 10)
 	// Allow watch updates to come back.
-	time.Sleep(time.Millisecond * 100)
+	time.Sleep(time.Millisecond * 500)
 	collector.Stop()
 
 	updateFn(10, 20)
@@ -935,16 +938,18 @@ func collect(kv kvdb.Kvdb, t *testing.T) {
 	replayCb[0].Prefix = secondLevel
 	replayCb[0].WatchCB = cb
 
-	collector.ReplayUpdates(replayCb)
+	_, err := collector.ReplayUpdates(replayCb)
+	assert.True(t, err == nil, "Replay encountered error %v", err)
 	assert.True(t, lastLeafIndex == 9, "Last leaf index %v, expected : 9",
 		lastLeafIndex)
 
 	// Test with no updates.
 	thirdLevel := root + "/third"
 	kvp, _ = kv.Create(thirdLevel, []byte("bar_update"), 0)
-	collector, _ = kvdb.GetUpdatesCollector(kv, thirdLevel, kvp.ModifiedIndex)
+	collector, _ = kvdb.NewUpdatesCollector(kv, thirdLevel, kvp.ModifiedIndex)
 	time.Sleep(2 * time.Second)
-	collector.ReplayUpdates(replayCb)
+	_, err = collector.ReplayUpdates(replayCb)
+	assert.True(t, err == nil, "Replay encountered error %v", err)
 	assert.True(t, lastLeafIndex == 9, "Last leaf index %v, expected : 9",
 		lastLeafIndex)
 
@@ -954,7 +959,7 @@ func collect(kv kvdb.Kvdb, t *testing.T) {
 	for i := 1; i < 2000; i++ {
 		kv.Update(fourthLevel, []byte(strconv.Itoa(i)), 0)
 	}
-	collector, _ = kvdb.GetUpdatesCollector(kv, fourthLevel, kvp.ModifiedIndex)
+	collector, _ = kvdb.NewUpdatesCollector(kv, fourthLevel, kvp.ModifiedIndex)
 	kv.Update(fourthLevel, []byte(strconv.Itoa(2000)), 0)
 	time.Sleep(500 * time.Millisecond)
 	cb = func(prefix string, opaque interface{}, kvp *kvdb.KVPair,
