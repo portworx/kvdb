@@ -730,6 +730,9 @@ func (et *etcdKV) watchStart(
 	if recursive {
 		opts = append(opts, e.WithPrefix())
 	}
+	if waitIndex != 0 {
+		opts = append(opts, e.WithRev(int64(waitIndex)))
+	}
 	watcher := e.NewWatcher(et.kvClient)
 	watchChan := watcher.Watch(context.Background(), key, opts...)
 	for wresp := range watchChan {
@@ -762,9 +765,10 @@ func (et *etcdKV) watchStart(
 				}
 				err := cb(key, opaque, et.resultToKv(ev.Kv, action), nil)
 				if err != nil {
-					err := watcher.Close()
-					if err != nil {
-						logrus.Errorf("Unable to close the watcher channel: %v", err)
+					closeErr := watcher.Close()
+					// etcd server might close the context before us.
+					if closeErr != context.Canceled {
+						logrus.Errorf("Unable to close the watcher channel for key %v : %v", key, closeErr)
 					}
 					// Indicate the caller that watch has been canceled
 					_ = cb(key, opaque, nil, kvdb.ErrWatchStopped)
