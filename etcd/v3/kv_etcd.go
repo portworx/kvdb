@@ -767,7 +767,7 @@ func (et *etcdKV) watchStart(
 				if err != nil {
 					closeErr := watcher.Close()
 					// etcd server might close the context before us.
-					if closeErr != context.Canceled {
+					if closeErr != context.Canceled && closeErr != nil {
 						logrus.Errorf("Unable to close the watcher channel for key %v : %v", key, closeErr)
 					}
 					// Indicate the caller that watch has been canceled
