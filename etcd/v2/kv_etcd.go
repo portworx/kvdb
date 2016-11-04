@@ -370,9 +370,7 @@ func (kv *etcdKV) Unlock(kvp *kvdb.KVPair) error {
 	if err == nil {
 		l.unlocked = true
 		l.Unlock()
-		if l.err == nil {
-			l.done <- struct{}{}
-		}
+		l.done <- struct{}{}
 		return nil
 	}
 	l.Unlock()
