@@ -520,7 +520,7 @@ func (kv *etcdKV) refreshLock(kvPair *kvdb.KVPair) {
 					kvPair.Value,
 				)
 				if err != nil {
-					logrus.Errorf(
+					common.Panicf(
 						"Error refreshing lock for key %v: %v\n",
 						keyString, err,
 					)
