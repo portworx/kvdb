@@ -2,12 +2,7 @@ package common
 
 import (
 	"encoding/json"
-	"io/ioutil"
-	"os"
-	"runtime"
-	"time"
-
-	"github.com/Sirupsen/logrus"
+	"github.com/portworx/kvdb"
 )
 
 var (
@@ -28,13 +23,8 @@ func ToBytes(val interface{}) ([]byte, error) {
 	}
 }
 
-func Panicf(format string, args ...interface{}) {
-	logrus.Warnf(format, args)
-	trace := make([]byte, 1024*1024)
-	runtime.Stack(trace, true)
-	err := ioutil.WriteFile(path+time.Now().String()+".stack", trace, 0644)
-	if err != nil {
-		logrus.Fatal(err)
-	}
-	os.Exit(1)
+// BaseKvdb provides common functionality across kvdb types
+type BaseKvdb struct {
+	// FatalCb invoked for fatal errors
+	FatalCb kvdb.FatalErrorCB
 }

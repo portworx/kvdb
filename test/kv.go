@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/portworx/kvdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,9 +36,15 @@ type lockTag struct {
 	funcName string
 }
 
+func fatalErrorCb() kvdb.FatalErrorCB {
+	return func(format string, args ...interface{}) {
+		logrus.Panicf(format, args)
+	}
+}
+
 // Run runs the test suite.
 func Run(datastoreInit kvdb.DatastoreInit, t *testing.T) {
-	kv, err := datastoreInit("pwx/test", nil, nil)
+	kv, err := datastoreInit("pwx/test", nil, nil, fatalErrorCb())
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
@@ -60,7 +67,7 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 
 // RunBasic runs the basic test suite.
 func RunBasic(datastoreInit kvdb.DatastoreInit, t *testing.T) {
-	kv, err := datastoreInit("pwx/test", nil, nil)
+	kv, err := datastoreInit("pwx/test", nil, nil, fatalErrorCb())
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
@@ -84,12 +91,12 @@ func RunAuth(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	// In order to run these tests, either configure your local etcd
 	// to use these options (username/password/ca-file) or modify them here.
 	options[kvdb.UsernameKey] = "root"
-	kv, err := datastoreInit("pwx/test", nil, options)
+	kv, err := datastoreInit("pwx/test", nil, options, fatalErrorCb())
 	if err == nil {
 		t.Fatalf("Expected an error when no password provided")
 	}
 	options[kvdb.PasswordKey] = "test123"
-	kv, err = datastoreInit("pwx/test", nil, options)
+	kv, err = datastoreInit("pwx/test", nil, options, fatalErrorCb())
 	if err == nil {
 		t.Fatalf("Expected an error when no certificate provided")
 	}
@@ -97,7 +104,7 @@ func RunAuth(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 
 	machines := []string{"https://localhost:2379"}
 	fmt.Println("Last one")
-	kv, err = datastoreInit("pwx/test", machines, options)
+	kv, err = datastoreInit("pwx/test", machines, options, fatalErrorCb())
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
@@ -852,7 +859,7 @@ func grantRevokeUser(kvRootUser kvdb.Kvdb, datastoreInit kvdb.DatastoreInit, t *
 	options[kvdb.PasswordKey] = "test123"
 	options[kvdb.CAFileKey] = "/.ssh/self-signed.crt"
 	machines := []string{}
-	kvTestUser, _ := datastoreInit("pwx/test", machines, options)
+	kvTestUser, _ := datastoreInit("pwx/test", machines, options, fatalErrorCb())
 
 	actual := "actual"
 	_, err = kvTestUser.Put("allow1/foo", []byte(actual), 0)
