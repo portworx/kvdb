@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/Sirupsen/logrus"
 	"strings"
+	"sync"
 )
 
 type kvdbUpdate struct {
@@ -16,12 +17,14 @@ type kvdbUpdate struct {
 }
 
 type updatesCollectorImpl struct {
-	// updates stores the updates in order
-	updates []*kvdbUpdate
 	// stopped is true if collection is stopped
 	stopped bool
 	// start index
 	startIndex uint64
+	// updatesMutex protects updates and start index
+	updatesMutex sync.Mutex
+	// updates stores the updates in order
+	updates []*kvdbUpdate
 }
 
 func (c *updatesCollectorImpl) watchCb(
@@ -38,7 +41,9 @@ func (c *updatesCollectorImpl) watchCb(
 		return err
 	}
 	update := &kvdbUpdate{prefix: prefix, kvp: kvp, err: err}
+	c.updatesMutex.Lock()
 	c.updates = append(c.updates, update)
+	c.updatesMutex.Unlock()
 	return nil
 }
 
@@ -47,7 +52,10 @@ func (c *updatesCollectorImpl) Stop() {
 }
 
 func (c *updatesCollectorImpl) ReplayUpdates(cbList []ReplayCb) (uint64, error) {
-	updates := c.updates
+	c.updatesMutex.Lock()
+	updates := make([]*kvdbUpdate, len(c.updates))
+	copy(updates, c.updates)
+	c.updatesMutex.Unlock()
 	index := c.startIndex
 	for _, update := range updates {
 		if update.kvp != nil {
