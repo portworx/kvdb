@@ -19,8 +19,6 @@ import (
 	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	"github.com/coreos/etcd/mvcc/mvccpb"
 
-	"github.com/coreos/etcd/pkg/transport"
-
 	"github.com/portworx/kvdb"
 	"github.com/portworx/kvdb/common"
 	ec "github.com/portworx/kvdb/etcd/common"
@@ -48,6 +46,7 @@ type etcdKV struct {
 	kvClient   *e.Client
 	authClient e.Auth
 	domain     string
+	ec.EtcdCommon
 }
 
 type etcdLock struct {
@@ -72,28 +71,13 @@ func New(
 	if len(machines) == 0 {
 		machines = defaultMachines
 	}
-	var username, password, caFile string
-	// options provided. Probably auth options
-	if options != nil || len(options) > 0 {
-		var ok bool
-		// Check if username provided
-		username, ok = options[kvdb.UsernameKey]
-		if ok {
-			// Check if password provided
-			password, ok = options[kvdb.PasswordKey]
-			if !ok {
-				return nil, kvdb.ErrNoPassword
-			}
-			// Check if certificate provided
-			caFile, ok = options[kvdb.CAFileKey]
-			if !ok {
-				//return nil, kvdb.ErrNoCertificate
-			}
-		}
+
+	etcdCommon := ec.NewEtcdCommon()
+	tls, username, password, err := etcdCommon.GetAuthInfoFromOptions(options)
+	if err != nil {
+		return nil, err
 	}
-	tls := transport.TLSInfo{
-		CAFile: caFile,
-	}
+
 	tlsCfg, err := tls.ClientConfig()
 	if err != nil {
 		return nil, err
@@ -120,6 +104,7 @@ func New(
 		c,
 		e.NewAuth(c),
 		domain,
+		etcdCommon,
 	}, nil
 }
 

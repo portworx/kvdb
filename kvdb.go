@@ -50,8 +50,16 @@ const (
 	UsernameKey = "Username"
 	// PasswordKey for an authenticated kvdb endpoint
 	PasswordKey = "Password"
-	// CAFileKey is the certicficate path for an authenticated kvdb endpoint
+	// CAFileKey is the CA file path for an authenticated kvdb endpoint
 	CAFileKey = "CAFile"
+	// CertFileKey is the certificate file path for an authenticated kvdb endpoint
+	CertFileKey = "CertFile"
+	// CertKeyFileKey is the key to the certificate
+	CertKeyFileKey = "CertKeyFile"
+	// TrustedCAFileKey is the key for the trusted CA.
+	TrustedCAFileKey = "TrustedCAFile"
+	// ClientCertAuthKey is the boolean value indicating client authenticated certificate.
+	ClientCertAuthKey = "ClientCertAuth"
 )
 
 // List of kvdb endpoints supported versions

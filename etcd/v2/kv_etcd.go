@@ -27,7 +27,7 @@ const (
 )
 
 var (
-	defaultMachines = []string{"http://127.0.0.1:2379"}
+	defaultMachines = []string{"http://localhost:2379"}
 )
 
 func init() {
@@ -42,6 +42,7 @@ type etcdKV struct {
 	authUser e.AuthUserAPI
 	authRole e.AuthRoleAPI
 	domain   string
+	ec.EtcdCommon
 }
 
 type etcdLock struct {
@@ -66,27 +67,11 @@ func New(
 	if len(machines) == 0 {
 		machines = defaultMachines
 	}
-	var username, password, caFile string
-	// options provided. Probably auth options
-	if options != nil || len(options) > 0 {
-		var ok bool
-		// Check if username provided
-		username, ok = options[kvdb.UsernameKey]
-		if ok {
-			// Check if password provided
-			password, ok = options[kvdb.PasswordKey]
-			if !ok {
-				return nil, kvdb.ErrNoPassword
-			}
-			// Check if certificate provided
-			caFile, ok = options[kvdb.CAFileKey]
-			if !ok {
-				return nil, kvdb.ErrNoCertificate
-			}
-		}
-	}
-	tls := transport.TLSInfo{
-		CAFile: caFile,
+
+	etcdCommon := ec.NewEtcdCommon()
+	tls, username, password, err := etcdCommon.GetAuthInfoFromOptions(options)
+	if err != nil {
+		return nil, err
 	}
 	tr, err := transport.NewTransport(tls, ec.DefaultDialTimeout)
 	if err != nil {
@@ -113,6 +98,7 @@ func New(
 		e.NewAuthUserAPI(c),
 		e.NewAuthRoleAPI(c),
 		domain,
+		etcdCommon,
 	}, nil
 }
 
