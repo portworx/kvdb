@@ -15,13 +15,19 @@ import (
 )
 
 const (
+	// DefaultRetryCount for etcd operations
 	DefaultRetryCount             = 60
+	// DefaultIntervalBetweenRetries for etcd failed operations
 	DefaultIntervalBetweenRetries = time.Millisecond * 500
+	// Bootstrap key
 	Bootstrap                     = "kvdb/bootstrap"
+	// DefaultDialTimeout in etcd http requests
 	// the maximum amount of time a dial will wait for a connection to setup.
 	// 30s is long enough for most of the network conditions.
 	DefaultDialTimeout         = 30 * time.Second
+	// DefaultLockTTL is the ttl for an etcd lock
 	DefaultLockTTL             = 8
+	// DefaultLockRefreshDuration is the time interval for refreshing an etcd lock
 	DefaultLockRefreshDuration = 2 * time.Second
 )
 
