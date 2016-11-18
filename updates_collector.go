@@ -57,13 +57,15 @@ func (c *updatesCollectorImpl) ReplayUpdates(cbList []ReplayCb) (uint64, error) 
 	copy(updates, c.updates)
 	c.updatesMutex.Unlock()
 	index := c.startIndex
+	logrus.Infof("collect: replaying %d update(s) for %d callback(s)",
+		len(updates), len(cbList))
 	for _, update := range updates {
-		if update.kvp != nil {
-			index = update.kvp.KVDBIndex
+		if update.kvp == nil {
+			continue
 		}
+		index = update.kvp.KVDBIndex
 		for _, cbInfo := range cbList {
-			if update.kvp != nil &&
-				strings.HasPrefix(update.kvp.Key, cbInfo.Prefix) {
+			if strings.HasPrefix(update.kvp.Key, cbInfo.Prefix) {
 				err := cbInfo.WatchCB(update.prefix, cbInfo.Opaque, update.kvp,
 					update.err)
 				if err != nil {
@@ -71,6 +73,10 @@ func (c *updatesCollectorImpl) ReplayUpdates(cbList []ReplayCb) (uint64, error) 
 						err)
 					return index, err
 				}
+			} else {
+				logrus.Infof("collect: ignoring update with key %v (%d) "+
+					"for prefix %v", update.kvp.Key, update.kvp.KVDBIndex,
+					cbInfo.Prefix)
 			}
 		}
 	}
