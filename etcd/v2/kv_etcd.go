@@ -27,7 +27,7 @@ const (
 )
 
 var (
-	defaultMachines = []string{"http://localhost:2379"}
+	defaultMachines = []string{"http://127.0.0.1:2379"}
 )
 
 func init() {
@@ -201,7 +201,8 @@ func (kv *etcdKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 		default:
 			etcdErr := err.(e.Error)
 			if etcdErr.Code == e.ErrorCodeKeyNotFound {
-				return nil, kvdb.ErrNotFound
+				// Return an empty array
+				return kvdb.KVPairs{}, nil
 			}
 			return nil, err
 		}

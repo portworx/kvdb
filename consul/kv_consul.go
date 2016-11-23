@@ -249,9 +249,6 @@ func (kv *consulKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 	if err != nil {
 		return nil, err
 	}
-	if pairs == nil {
-		return nil, kvdb.ErrNotFound
-	}
 	return kv.pairToKvs("enumerate", pairs, meta), nil
 }
 
