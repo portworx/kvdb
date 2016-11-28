@@ -704,7 +704,10 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 		kvPairs, meta, err := kv.client.KV().List(prefix, opts)
 		pairs := CKVPairs(kvPairs)
 		sort.Sort(pairs)
-		if pairs == nil && prefixExisted && !prefixDeleted {
+		if err != nil {
+			logrus.Errorf("Consul returned an error : %s\n", err.Error())
+			cbUpdateErr = cb(prefix, opaque, nil, err)
+		} else if pairs == nil && prefixExisted && !prefixDeleted {
 			// Got a delete on the prefix of the tree (Last Key under the tree being deleted)
 			pair := &api.KVPair{
 				Key:   prefix,
@@ -729,9 +732,6 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 			// Set the waitIndex so that we block on the next Get call
 			opts.WaitIndex = meta.LastIndex
 			continue
-		} else if err != nil {
-			logrus.Errorf("Consul returned an error : %s\n", err.Error())
-			cbUpdateErr = cb(prefix, opaque, nil, err)
 		} else {
 			// Same waitIndex as previous. Out of blocking call because
 			// waitTime timeouted. (This should not happen)
@@ -795,7 +795,10 @@ func (kv *consulKV) watchKeyStart(key string, keyExisted bool, waitIndex uint64,
 	for {
 		// Make a blocking Get query
 		pair, meta, err := kv.client.KV().Get(key, opts)
-		if pair == nil && keyExisted && !keyDeleted {
+		if err != nil {
+			logrus.Errorf("Consul returned an error : %s\n", err.Error())
+			cbErr = cb(key, opaque, nil, err)
+		} else if pair == nil && keyExisted && !keyDeleted {
 			// Key being Deleted for the first time after its creation
 			pair = &api.KVPair{
 				Key:   key,
@@ -821,9 +824,6 @@ func (kv *consulKV) watchKeyStart(key string, keyExisted bool, waitIndex uint64,
 			// Set the waitIndex so that we block on the next Get call
 			opts.WaitIndex = meta.LastIndex
 			continue
-		} else if err != nil {
-			logrus.Errorf("Consul returned an error : %s\n", err.Error())
-			cbErr = cb(key, opaque, nil, err)
 		} else {
 			// If LastIndex didn't change it means Get returned because
 			// of Wait timeout
