@@ -1,6 +1,8 @@
 package common
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -16,17 +18,17 @@ import (
 
 const (
 	// DefaultRetryCount for etcd operations
-	DefaultRetryCount             = 60
+	DefaultRetryCount = 60
 	// DefaultIntervalBetweenRetries for etcd failed operations
 	DefaultIntervalBetweenRetries = time.Millisecond * 500
 	// Bootstrap key
-	Bootstrap                     = "kvdb/bootstrap"
+	Bootstrap = "kvdb/bootstrap"
 	// DefaultDialTimeout in etcd http requests
 	// the maximum amount of time a dial will wait for a connection to setup.
 	// 30s is long enough for most of the network conditions.
-	DefaultDialTimeout         = 30 * time.Second
+	DefaultDialTimeout = 30 * time.Second
 	// DefaultLockTTL is the ttl for an etcd lock
-	DefaultLockTTL             = 8
+	DefaultLockTTL = 8
 	// DefaultLockRefreshDuration is the time interval for refreshing an etcd lock
 	DefaultLockRefreshDuration = 2 * time.Second
 )
@@ -110,19 +112,54 @@ func (ec *etcdCommon) GetAuthInfoFromOptions(options map[string]string) (transpo
 }
 
 // Version returns the version of the provided etcd server
-func Version(url string) (string, error) {
-	response, err := http.Get(url + "/version")
-	if err != nil {
-		return "", err
+func Version(url string, options map[string]string) (string, error) {
+	tlsConfig := &tls.Config{}
+	// Check if CA file provided
+	caFile, ok := options[kvdb.CAFileKey]
+	if ok {
+		// Load CA cert
+		caCert, err := ioutil.ReadFile(caFile)
+		if err != nil {
+			return "", err
+		}
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caCert)
+		tlsConfig.RootCAs = caCertPool
+	}
+	// Check if certificate file provided
+	certFile, certOk := options[kvdb.CertFileKey]
+	// Check if certificate key is provided
+	keyFile, keyOk := options[kvdb.CertKeyFileKey]
+	if certOk && keyOk {
+		// Load client cert
+		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			return "", err
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
 	}
 
-	defer response.Body.Close()
-	contents, _ := ioutil.ReadAll(response.Body)
+	tlsConfig.BuildNameToCertificate()
+	transport := &http.Transport{TLSClientConfig: tlsConfig}
+	client := &http.Client{Transport: transport}
+
+	// Do GET something
+	resp, err := client.Get(url + "/version")
+	if err != nil {
+		return "", fmt.Errorf("Error in obtaining etcd version: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Dump response
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("Error in obtaining etcd version: %v", err)
+	}
 
 	var version version.Versions
-	err = json.Unmarshal(contents, &version)
+	err = json.Unmarshal(data, &version)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("Error in obtaining etcd version: %v", string(data))
 	}
 	if version.Server[0] == '2' || version.Server[0] == '1' {
 		return kvdb.EtcdBaseVersion, nil

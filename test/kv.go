@@ -100,9 +100,11 @@ func RunAuth(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	if err == nil {
 		t.Fatalf("Expected an error when no certificate provided")
 	}
-	//options[kvdb.CAFileKey] = "/.ssh/self-signed.crt"
+	options[kvdb.CAFileKey] = "/etc/pwx/pwx-ca.crt"
+	options[kvdb.CertFileKey] = "/etc/pwx/pwx-user-cert.crt"
+	options[kvdb.CertKeyFileKey] = "/etc/pwx/pwx-user-key.key"
 
-	machines := []string{"https://localhost:2379"}
+	machines := []string{"https://192.168.56.101:2379"}
 	fmt.Println("Last one")
 	kv, err = datastoreInit("pwx/test", machines, options, fatalErrorCb())
 	if err != nil {
@@ -857,8 +859,10 @@ func grantRevokeUser(kvRootUser kvdb.Kvdb, datastoreInit kvdb.DatastoreInit, t *
 	options := make(map[string]string)
 	options[kvdb.UsernameKey] = "test"
 	options[kvdb.PasswordKey] = "test123"
-	options[kvdb.CAFileKey] = "/.ssh/self-signed.crt"
-	machines := []string{}
+	options[kvdb.CAFileKey] = "/etc/pwx/pwx-ca.crt"
+	options[kvdb.CertFileKey] = "/etc/pwx/pwx-user-cert.crt"
+	options[kvdb.CertKeyFileKey] = "/etc/pwx/pwx-user-key.key"
+	machines := []string{"https://192.168.56.101:2379"}
 	kvTestUser, _ := datastoreInit("pwx/test", machines, options, fatalErrorCb())
 
 	actual := "actual"

@@ -130,7 +130,7 @@ type DatastoreInit func(domain string, machines []string, options map[string]str
 	cb FatalErrorCB) (Kvdb, error)
 
 // DatastoreVersion is called to get the version of a backend KV store
-type DatastoreVersion func(url string) (string, error)
+type DatastoreVersion func(url string, kvdbOptions map[string]string) (string, error)
 
 // KVPair represents the results of an operation on KVDB.
 type KVPair struct {
