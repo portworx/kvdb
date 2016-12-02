@@ -304,7 +304,6 @@ func enumerate(kv kvdb.Kvdb, t *testing.T) {
 
 	errPairs, err := kv.Enumerate(prefix)
 	assert.Equal(t, 0, len(errPairs), "Expected 0 pairs")
-	assert.Equal(t, kvdb.ErrNotFound, err, "ErrNotFound expected")
 
 	folderKey := prefix + "/folder/"
 	_, err = kv.Put(folderKey, []byte(""), 0)
