@@ -36,17 +36,37 @@ const (
 // EtcdCommon defined the common functions between v2 and v3 etcd implementations.
 type EtcdCommon interface {
 	// GetAuthInfoFromOptions
-	GetAuthInfoFromOptions(map[string]string) (transport.TLSInfo, string, string, error)
+	GetAuthInfoFromOptions() (transport.TLSInfo, string, string, error)
+
+	// GetRetryCount
+	GetRetryCount() int
 }
 
-type etcdCommon struct{}
+type etcdCommon struct{
+	options map[string]string
+}
 
 // NewEtcdCommon returns the EtcdCommon interface
-func NewEtcdCommon() EtcdCommon {
-	return &etcdCommon{}
+func NewEtcdCommon(options map[string]string) EtcdCommon {
+	return &etcdCommon{
+		options: options,
+	}
 }
 
-func (ec *etcdCommon) GetAuthInfoFromOptions(options map[string]string) (transport.TLSInfo, string, string, error) {
+func (ec *etcdCommon) GetRetryCount() int {
+	retryCount, ok := ec.options[kvdb.RetryCountKey]
+	if !ok {
+		return DefaultRetryCount
+	}
+	retry, err := strconv.ParseInt(retryCount, 10, 0)
+	if err != nil {
+		// use default value
+		return DefaultRetryCount
+	}
+	return int(retry)
+}
+
+func (ec *etcdCommon) GetAuthInfoFromOptions() (transport.TLSInfo, string, string, error) {
 	var (
 		username       string
 		password       string
@@ -58,38 +78,38 @@ func (ec *etcdCommon) GetAuthInfoFromOptions(options map[string]string) (transpo
 		err            error
 	)
 	// options provided. Probably auth options
-	if options != nil || len(options) > 0 {
+	if ec.options != nil || len(ec.options) > 0 {
 		var ok bool
 		// Check if username provided
-		username, ok = options[kvdb.UsernameKey]
+		username, ok = ec.options[kvdb.UsernameKey]
 		if ok {
 			// Check if password provided
-			password, ok = options[kvdb.PasswordKey]
+			password, ok = ec.options[kvdb.PasswordKey]
 			if !ok {
 				return transport.TLSInfo{}, "", "", kvdb.ErrNoPassword
 			}
 			// Check if CA file provided
-			caFile, ok = options[kvdb.CAFileKey]
+			caFile, ok = ec.options[kvdb.CAFileKey]
 			if !ok {
 				return transport.TLSInfo{}, "", "", kvdb.ErrNoCertificate
 			}
 			// Check if certificate file provided
-			certFile, ok = options[kvdb.CertFileKey]
+			certFile, ok = ec.options[kvdb.CertFileKey]
 			if !ok {
 				certFile = ""
 			}
 			// Check if certificate key is provided
-			keyFile, ok = options[kvdb.CertKeyFileKey]
+			keyFile, ok = ec.options[kvdb.CertKeyFileKey]
 			if !ok {
 				keyFile = ""
 			}
 			// Check if trusted ca file is provided
-			trustedCAFile, ok = options[kvdb.TrustedCAFileKey]
+			trustedCAFile, ok = ec.options[kvdb.TrustedCAFileKey]
 			if !ok {
 				trustedCAFile = ""
 			}
 			// Check if client cert auth is provided
-			clientCertAuthStr, ok := options[kvdb.ClientCertAuthKey]
+			clientCertAuthStr, ok :=ec.options[kvdb.ClientCertAuthKey]
 			if !ok {
 				clientCertAuth = false
 			} else {

@@ -68,8 +68,8 @@ func New(
 		machines = defaultMachines
 	}
 
-	etcdCommon := ec.NewEtcdCommon()
-	tls, username, password, err := etcdCommon.GetAuthInfoFromOptions(options)
+	etcdCommon := ec.NewEtcdCommon(options)
+	tls, username, password, err := etcdCommon.GetAuthInfoFromOptions()
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +185,7 @@ func (kv *etcdKV) Update(
 func (kv *etcdKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 	prefix = kv.domain + prefix
 	var err error
-	for i := 0; i < ec.DefaultRetryCount; i++ {
+	for i := 0; i < kv.GetRetryCount(); i++ {
 		result, err := kv.client.Get(context.Background(), prefix, &e.GetOptions{
 			Recursive: true,
 			Sort:      true,
@@ -415,7 +415,7 @@ func (kv *etcdKV) resultToKvs(result *e.Response) kvdb.KVPairs {
 func (kv *etcdKV) get(key string, recursive, sort bool) (*kvdb.KVPair, error) {
 	var err error
 	var result *e.Response
-	for i := 0; i < ec.DefaultRetryCount; i++ {
+	for i := 0; i < kv.GetRetryCount(); i++ {
 		result, err = kv.client.Get(context.Background(), key, &e.GetOptions{
 			Recursive: recursive,
 			Sort:      sort,
@@ -447,7 +447,7 @@ func (kv *etcdKV) setWithRetry(ctx context.Context, key, value string,
 		i      int
 		result *e.Response
 	)
-	for i = 0; i < ec.DefaultRetryCount; i++ {
+	for i = 0; i < kv.GetRetryCount(); i++ {
 		result, err = kv.client.Set(ctx, key, value, opts)
 		if err == nil {
 			return kv.resultToKv(result), nil
@@ -465,7 +465,7 @@ func (kv *etcdKV) setWithRetry(ctx context.Context, key, value string,
 
 out:
 	// It's possible that update succeeded but the re-update failed.
-	if i > 0 && i < ec.DefaultRetryCount && err != nil {
+	if i > 0 && i < kv.GetRetryCount() && err != nil {
 		kvp, err := kv.get(key, false, false)
 		if err == nil && bytes.Equal(kvp.Value, []byte(value)) {
 			if opts.PrevExist == e.PrevNoExist {

@@ -72,8 +72,8 @@ func New(
 		machines = defaultMachines
 	}
 
-	etcdCommon := ec.NewEtcdCommon()
-	tls, username, password, err := etcdCommon.GetAuthInfoFromOptions(options)
+	etcdCommon := ec.NewEtcdCommon(options)
+	tls, username, password, err := etcdCommon.GetAuthInfoFromOptions()
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func (et *etcdKV) Get(key string) (*kvdb.KVPair, error) {
 		result *e.GetResponse
 	)
 	key = et.domain + key
-	for i := 0; i < ec.DefaultRetryCount; i++ {
+	for i := 0; i < et.GetRetryCount(); i++ {
 		ctx, cancel := et.Context()
 		result, err = et.kvClient.Get(ctx, key)
 		cancel()
@@ -277,7 +277,7 @@ func (et *etcdKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 	prefix = et.domain + prefix
 	var err error
 
-	for i := 0; i < ec.DefaultRetryCount; i++ {
+	for i := 0; i < et.GetRetryCount(); i++ {
 		ctx, cancel := et.Context()
 		result, err := et.kvClient.Get(
 			ctx,
@@ -593,7 +593,7 @@ func (et *etcdKV) setWithRetry(key, value string, ttl uint64) (*kvdb.KVPair, err
 	if ttl > 0 && ttl < 5 {
 		return nil, kvdb.ErrTTLNotSupported
 	}
-	for i = 0; i < ec.DefaultRetryCount; i++ {
+	for i = 0; i < et.GetRetryCount(); i++ {
 		if ttl > 0 {
 			var leaseResult *e.LeaseGrantResponse
 			leaseCtx, leaseCancel := et.Context()
@@ -647,7 +647,7 @@ func (et *etcdKV) setWithRetry(key, value string, ttl uint64) (*kvdb.KVPair, err
 
 out:
 	// It's possible that update succeeded but the re-update failed.
-	if i > 0 && i < ec.DefaultRetryCount && err != nil {
+	if i > 0 && i < et.GetRetryCount() && err != nil {
 		kvp, err := et.Get(key)
 		if err == nil && bytes.Equal(kvp.Value, []byte(value)) {
 			return kvp, nil

@@ -60,6 +60,8 @@ const (
 	TrustedCAFileKey = "TrustedCAFile"
 	// ClientCertAuthKey is the boolean value indicating client authenticated certificate.
 	ClientCertAuthKey = "ClientCertAuth"
+	// RetryCountKey is the integer value indicating the retry count of etcd operations
+	RetryCountKey = "RetryCount"
 )
 
 // List of kvdb endpoints supported versions
