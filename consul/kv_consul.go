@@ -92,6 +92,7 @@ func New(
 		}
 	}
 
+	var token string
 	// options provided. Probably auth options
 	if options != nil || len(options) > 0 {
 		var ok bool
@@ -110,12 +111,16 @@ func New(
 		if ok {
 			return nil, kvdb.ErrAuthNotSupported
 		}
+		// Get the ACL token if provided
+		token, ok = options[kvdb.ACLTokenKey]
+
 	}
 
 	config := api.DefaultConfig()
 	config.HttpClient = http.DefaultClient
 	config.Address = machines[0]
 	config.Scheme = "http"
+	config.Token = token
 
 	client, err := api.NewClient(config)
 	if err != nil {

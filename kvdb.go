@@ -62,6 +62,8 @@ const (
 	ClientCertAuthKey = "ClientCertAuth"
 	// RetryCountKey is the integer value indicating the retry count of etcd operations
 	RetryCountKey = "RetryCount"
+	// ACLTokenKey is the token value for ACL based KV stores
+	ACLTokenKey = "ACLToken"
 )
 
 // List of kvdb endpoints supported versions
