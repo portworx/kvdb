@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"time"
-
 	"strconv"
 
 	"github.com/coreos/etcd/pkg/transport"
@@ -179,7 +178,8 @@ func Version(url string, options map[string]string) (string, error) {
 	var version version.Versions
 	err = json.Unmarshal(data, &version)
 	if err != nil {
-		return "", fmt.Errorf("Error in obtaining etcd version: %v", string(data))
+		// Probably a version less than 2.3. Default to using v2 apis
+		return kvdb.EtcdBaseVersion, nil
 	}
 	if version.Server[0] == '2' || version.Server[0] == '1' {
 		return kvdb.EtcdBaseVersion, nil
