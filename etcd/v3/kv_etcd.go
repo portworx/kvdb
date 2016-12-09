@@ -389,6 +389,13 @@ func (et *etcdKV) CompareAndSet(
 			return nil, txnErr
 		}
 		if txnResponse.Succeeded == false {
+			if len(txnResponse.Responses) == 0 {
+				logrus.Infof("Etcd did not return any transaction responses")
+			} else {
+				for i, responseOp := range txnResponse.Responses {
+					logrus.Infof("Etcd transaction Response: %v %v", i, responseOp.String())
+				}
+			}
 			return nil, kvdb.ErrModified
 		}
 
@@ -402,6 +409,13 @@ func (et *etcdKV) CompareAndSet(
 			return nil, txnErr
 		}
 		if txnResponse.Succeeded == false {
+			if len(txnResponse.Responses) == 0 {
+				logrus.Infof("Etcd did not return any transaction responses")
+			} else {
+				for i, responseOp := range txnResponse.Responses {
+					logrus.Infof("Etcd transaction Response: %v %v", i, responseOp.String())
+				}
+			}
 			return nil, kvdb.ErrValueMismatch
 		}
 	}
@@ -428,6 +442,13 @@ func (et *etcdKV) CompareAndDelete(
 			return nil, txnErr
 		}
 		if txnResponse.Succeeded == false {
+			if len(txnResponse.Responses) == 0 {
+				logrus.Infof("Etcd did not return any transaction responses")
+			} else {
+				for i, responseOp := range txnResponse.Responses {
+					logrus.Infof("Etcd transaction Response: %v %v", i, responseOp.String())
+				}
+			}
 			return nil, kvdb.ErrModified
 		}
 	} else {
@@ -440,6 +461,13 @@ func (et *etcdKV) CompareAndDelete(
 			return nil, txnErr
 		}
 		if txnResponse.Succeeded == false {
+			if len(txnResponse.Responses) == 0 {
+				logrus.Infof("Etcd did not return any transaction responses")
+			} else {
+				for i, responseOp := range txnResponse.Responses {
+					logrus.Infof("Etcd transaction Response: %v %v", i, responseOp.String())
+				}
+			}
 			return nil, kvdb.ErrValueMismatch
 		}
 	}
