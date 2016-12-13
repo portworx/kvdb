@@ -73,11 +73,7 @@ func (c *updatesCollectorImpl) ReplayUpdates(cbList []ReplayCb) (uint64, error) 
 						err)
 					return index, err
 				}
-			} else {
-				logrus.Infof("collect: ignoring update with key %v (%d) "+
-					"for prefix %v", update.kvp.Key, update.kvp.KVDBIndex,
-					cbInfo.Prefix)
-			}
+			} // else ignore the update
 		}
 	}
 	return index, nil
