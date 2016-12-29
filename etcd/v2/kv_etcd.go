@@ -537,7 +537,7 @@ func (kv *etcdKV) watchStart(
 		if watchErr != nil && !isCancelSent {
 			e, ok := watchErr.(e.Error)
 			if ok {
-				logrus.Errorf("Etcd error code %d Message %s Cause %s Index %d\n",
+				logrus.Errorf("Etcd error code: [%d] Message: [%s] Cause: [%s] Index: [%d]\n",
 					e.Code, e.Message, e.Cause, e.Index)
 			} else {
 				logrus.Errorf("Etcd returned an error : %s\n", watchErr.Error())
