@@ -680,7 +680,7 @@ out:
 		return kvp, nil
 	}
 
-	return nil, outErr
+	return nil, err
 }
 
 func (et *etcdKV) refreshLock(kvPair *kvdb.KVPair) {
