@@ -674,7 +674,9 @@ func (et *etcdKV) setWithRetry(key, value string, ttl uint64) (*kvdb.KVPair, err
 	}
 
 out:
+	outErr := err
 	// It's possible that update succeeded but the re-update failed.
+	// Check only if the original error was a cluster error.
 	if i > 0 && i < et.GetRetryCount() && err != nil {
 		kvp, err := et.Get(key)
 		if err == nil && bytes.Equal(kvp.Value, []byte(value)) {
@@ -682,7 +684,7 @@ out:
 		}
 	}
 
-	return nil, err
+	return nil, outErr
 }
 
 func (et *etcdKV) refreshLock(kvPair *kvdb.KVPair) {

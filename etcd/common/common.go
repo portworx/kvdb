@@ -113,12 +113,12 @@ func (ec *etcdCommon) GetAuthInfoFromOptions() (transport.TLSInfo, string, strin
 
 // Version returns the version of the provided etcd server
 func Version(url string, options map[string]string) (string, error) {
-	useTls := false
+	useTLS := false
 	tlsConfig := &tls.Config{}
 	// Check if CA file provided
 	caFile, ok := options[kvdb.CAFileKey]
 	if ok && caFile != "" {
-		useTls = true
+		useTLS = true
 		// Load CA cert
 		caCert, err := ioutil.ReadFile(caFile)
 		if err != nil {
@@ -133,7 +133,7 @@ func Version(url string, options map[string]string) (string, error) {
 	// Check if certificate key is provided
 	keyFile, keyOk := options[kvdb.CertKeyFileKey]
 	if certOk && keyOk && certFile != "" && keyFile != "" {
-		useTls = true
+		useTLS = true
 		// Load client cert
 		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
@@ -143,7 +143,7 @@ func Version(url string, options map[string]string) (string, error) {
 	}
 
 	var client *http.Client
-	if useTls {
+	if useTLS {
 		tlsConfig.BuildNameToCertificate()
 		transport := &http.Transport{TLSClientConfig: tlsConfig}
 		client = &http.Client{Transport: transport}
