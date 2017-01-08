@@ -464,19 +464,20 @@ func (kv *etcdKV) setWithRetry(ctx context.Context, key, value string,
 	}
 
 out:
-	outErr := err
 	// It's possible that update succeeded but the re-update failed.
-	kvp, err := kv.get(key, false, false)
-	if err == nil && bytes.Equal(kvp.Value, []byte(value)) {
-		if opts.PrevExist == e.PrevNoExist {
-			kvp.Action = kvdb.KVCreate
-		} else {
-			kvp.Action = kvdb.KVSet
+	if i > 0 && i < kv.GetRetryCount() && err != nil {
+		kvp, err := kv.get(key, false, false)
+		if err == nil && bytes.Equal(kvp.Value, []byte(value)) {
+			if opts.PrevExist == e.PrevNoExist {
+				kvp.Action = kvdb.KVCreate
+			} else {
+				kvp.Action = kvdb.KVSet
+			}
+			return kvp, nil
 		}
-		return kvp, nil
 	}
 
-	return nil, outErr
+	return nil, err
 }
 
 func (kv *etcdKV) refreshLock(kvPair *kvdb.KVPair) {

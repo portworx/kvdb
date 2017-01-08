@@ -674,10 +674,12 @@ func (et *etcdKV) setWithRetry(key, value string, ttl uint64) (*kvdb.KVPair, err
 	}
 
 out:
-	outErr := err
-	kvp, err := et.Get(key)
-	if err == nil && bytes.Equal(kvp.Value, []byte(value)) {
-		return kvp, nil
+	// It's possible that update succeeded but the re-update failed.
+	if i > 0 && i < et.GetRetryCount() && err != nil {
+		kvp, err := et.Get(key)
+		if err == nil && bytes.Equal(kvp.Value, []byte(value)) {
+			return kvp, nil
+		}
 	}
 
 	return nil, err
