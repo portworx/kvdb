@@ -691,7 +691,11 @@ func (et *etcdKV) refreshLock(kvPair *kvdb.KVPair) {
 	l := kvPair.Lock.(*etcdLock)
 	ttl := kvPair.TTL
 	refresh := time.NewTicker(ec.DefaultLockRefreshDuration)
-	var keyString string
+	var (
+		keyString      string
+		currentRefresh time.Time
+		prevRefresh    time.Time
+	)
 	if kvPair != nil {
 		keyString = kvPair.Key
 	}
@@ -707,15 +711,18 @@ func (et *etcdKV) refreshLock(kvPair *kvdb.KVPair) {
 					kvdb.KVTTL|kvdb.KVModifiedIndex,
 					kvPair.Value,
 				)
+				currentRefresh = time.Now()
 				if err != nil {
 					et.FatalCb(
-						"Error refreshing lock for key %v: %v",
-						keyString, err,
+						"Error refreshing lock. [Key %v] [Err: %v]"+
+							" [Current Refresh: %v] [Previous Refresh: %v]",
+						keyString, err, currentRefresh, prevRefresh,
 					)
 					l.err = err
 					l.Unlock()
 					return
 				}
+				prevRefresh = currentRefresh
 				kvPair.ModifiedIndex = kvp.ModifiedIndex
 				break
 			}
