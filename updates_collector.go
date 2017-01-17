@@ -63,7 +63,7 @@ func (c *updatesCollectorImpl) ReplayUpdates(cbList []ReplayCb) (uint64, error) 
 		if update.kvp == nil {
 			continue
 		}
-		index = update.kvp.KVDBIndex
+		index = update.kvp.ModifiedIndex
 		for _, cbInfo := range cbList {
 			if strings.HasPrefix(update.kvp.Key, cbInfo.Prefix) {
 				err := cbInfo.WatchCB(update.prefix, cbInfo.Opaque, update.kvp,

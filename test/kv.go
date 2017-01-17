@@ -900,23 +900,27 @@ func collect(kv kvdb.Kvdb, t *testing.T) {
 	secondLevel := root + "/second"
 
 	kv.DeleteTree(root)
+
 	kvp, _ := kv.Create(firstLevel, []byte("bar"), 0)
 	fmt.Printf("KVP is %v", kvp)
 	collector, _ := kvdb.NewUpdatesCollector(kv, secondLevel, kvp.CreatedIndex)
 	time.Sleep(time.Second)
 	var updates []*kvdb.KVPair
 	updateFn := func(start, end int) uint64 {
-		maxVersion := uint64(0)
+		lastUpdateVersion := uint64(0)
 		for i := start; i < end; i++ {
 			newLeaf := strconv.Itoa(i)
+			// First update the tree being watched.
 			kvp1, _ := kv.Create(secondLevel+"/"+newLeaf, []byte(newLeaf), 0)
-			kvp2, _ := kv.Update(firstLevel, []byte(newLeaf), 0)
+			// Next update another value in kvdb which is not being
+			// watched, this update will cause kvdb index to move forward.
+			kv.Update(firstLevel, []byte(newLeaf), 0)
 			updates = append(updates, kvp1)
-			maxVersion = kvp2.ModifiedIndex
+			lastUpdateVersion = kvp1.ModifiedIndex
 		}
-		return maxVersion
+		return lastUpdateVersion
 	}
-	updateFn(0, 10)
+	lastUpdateVersion := updateFn(0, 10)
 	// Allow watch updates to come back.
 	time.Sleep(time.Millisecond * 500)
 	collector.Stop()
@@ -926,6 +930,7 @@ func collect(kv kvdb.Kvdb, t *testing.T) {
 	lastLeafIndex := -1
 	cb := func(prefix string, opaque interface{}, kvp *kvdb.KVPair,
 		err error) error {
+		fmt.Printf("\nReplaying KVP: %v", *kvp)
 		assert.True(t, err == nil, "Error is nil %v", err)
 		assert.True(t, kvp.ModifiedIndex > lastKVIndex,
 			"Modified index %v lower than last index %v",
@@ -947,10 +952,13 @@ func collect(kv kvdb.Kvdb, t *testing.T) {
 	replayCb[0].Prefix = secondLevel
 	replayCb[0].WatchCB = cb
 
-	_, err := collector.ReplayUpdates(replayCb)
+	lastVersion, err := collector.ReplayUpdates(replayCb)
 	assert.True(t, err == nil, "Replay encountered error %v", err)
 	assert.True(t, lastLeafIndex == 9, "Last leaf index %v, expected : 9",
 		lastLeafIndex)
+	assert.True(t, lastVersion == lastUpdateVersion,
+		"Last update %d and last replay %d version mismatch",
+		lastVersion, lastUpdateVersion)
 
 	// Test with no updates.
 	thirdLevel := root + "/third"
