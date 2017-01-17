@@ -424,12 +424,12 @@ func (kv *consulKV) Unlock(kvp *kvdb.KVPair) error {
 	if !ok {
 		return fmt.Errorf("Invalid lock structure for key: %v", string(kvp.Key))
 	}
-	if l.doneCh != nil {
-		close(l.doneCh)
-	}
 	_, err := kv.Delete(kvp.Key)
 	if err == nil {
 		_ = l.lock.Unlock()
+		if l.doneCh != nil {
+			close(l.doneCh)
+		}
 		return nil
 	}
 	return err
