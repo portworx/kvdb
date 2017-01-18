@@ -334,41 +334,40 @@ func enumerate(kv kvdb.Kvdb, t *testing.T) {
 }
 
 func snapshot(kv kvdb.Kvdb, t *testing.T) {
-
 	fmt.Println("snapshot")
-
 	prefix := "snapshot/"
-
 	kv.DeleteTree(prefix)
-	defer func() {
-		kv.DeleteTree(prefix)
-	}()
+	defer kv.DeleteTree(prefix)
 
+	preSnapData := make(map[string]string)
+	preSnapDataVersion := make(map[string]uint64)
 	inputData := make(map[string]string)
 	inputDataVersion := make(map[string]uint64)
+
 	key := "key"
 	value := "bar"
 	count := 100
-
 	doneUpdate := make(chan bool, 2)
-	updateFn := func(count int, v string) {
+	updateFn := func(count int, v string, dataMap map[string]string,
+		versionMap map[string]uint64) {
 		for i := 0; i < count; i++ {
 			suffix := strconv.Itoa(i)
 			inputKey := prefix + key + suffix
 			inputValue := v
 			kv, err := kv.Put(inputKey, []byte(inputValue), 0)
 			assert.NoError(t, err, "Unexpected error on Put")
-			inputData[inputKey] = inputValue
-			inputDataVersion[inputKey] = kv.ModifiedIndex
+			dataMap[inputKey] = inputValue
+			versionMap[inputKey] = kv.ModifiedIndex
 		}
 		doneUpdate <- true
 	}
 
-	updateFn(count, value)
+	updateFn(count, value, preSnapData, preSnapDataVersion)
 	<-doneUpdate
 	newValue := "bar2"
-	go updateFn(50, newValue)
+	go updateFn(count, newValue, inputData, inputDataVersion)
 
+	time.Sleep(20 * time.Millisecond)
 	snap, snapVersion, err := kv.Snapshot(prefix)
 	assert.NoError(t, err, "Unexpected error on Snapshot")
 	<-doneUpdate
@@ -382,25 +381,28 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 
 	for i := range kvPairs {
 		currValue, ok1 := inputData[kvPairs[i].Key]
-		mapVersion, ok2 := inputDataVersion[kvPairs[i].Key]
-		assert.True(t, ok1 && ok2, "unexpected kvpair (%s)->(%s)",
+		currVersion, ok2 := inputDataVersion[kvPairs[i].Key]
+		preSnapValue, ok3 := preSnapData[kvPairs[i].Key]
+		preSnapKeyVersion, ok4 := preSnapDataVersion[kvPairs[i].Key]
+		assert.True(t, ok1 && ok2 && ok3 && ok4, "unexpected kvpair (%s)->(%s)",
 			kvPairs[i].Key, kvPairs[i].Value)
-		expectedValue := value
-		if mapVersion <= snapVersion {
-			expectedValue = currValue
+
+		assert.True(t, kvPairs[i].ModifiedIndex < snapVersion,
+			"snap db key has version greater than snap version",
+			kvPairs[i].ModifiedIndex, snapVersion)
+
+		if kvPairs[i].ModifiedIndex == currVersion {
+			assert.True(t, string(kvPairs[i].Value) == currValue,
+				"snapshot db does not have correct value, "+
+					" expected %v got %v", currValue, string(kvPairs[i].Value))
+		} else {
+			assert.True(t, kvPairs[i].ModifiedIndex == preSnapKeyVersion,
+				"snapshot db does not have correct version, expected %v got %v",
+				kvPairs[i].ModifiedIndex, preSnapKeyVersion)
+			assert.True(t, string(kvPairs[i].Value) == preSnapValue,
+				"snapshot db does not have correct value, "+
+					" expected %v got %v", preSnapValue, string(kvPairs[i].Value))
 		}
-
-		assert.Equal(t, expectedValue, string(kvPairs[i].Value),
-			"Invalid kvpair %v (%s)->(%s) expect value %s"+
-				" snap version: %v kvVersion: %v",
-			i, kvPairs[i].Key, kvPairs[i].Value, expectedValue,
-			snapVersion, mapVersion)
-
-		assert.True(t, mapVersion > snapVersion || mapVersion == kvPairs[i].ModifiedIndex,
-			"Invalid kvpair %v (%s)->(%s) expect version %v"+
-				" snap version: %v kvVersion: %v",
-			i, kvPairs[i].Key, kvPairs[i].Value, mapVersion,
-			snapVersion, kvPairs[i].KVDBIndex)
 	}
 }
 
