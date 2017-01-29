@@ -1,3 +1,11 @@
 ## kvdb
 
-Key Value Store abstraction library. This library abstracts the caller from the specific key-value database implementation. This makes the underlying providers interchangable. Current supported implementations are `Etcd`, `Consul` and In-memory store
+[![Go Report Card](https://goreportcard.com/badge/github.com/portworx/kvdb)](https://goreportcard.com/report/github.com/portworx/kvdb)
+
+Key Value Store abstraction library.
+
+This library abstracts the caller from the specific key-value database implementation. This makes the underlying providers interchangable. Current supported implementations are:
+* `Etcd v2`
+* `Etcd v3`
+* `Consul`
+* In-memory store
