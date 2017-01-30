@@ -43,7 +43,7 @@ errcheck: testdeps
 		github.com/portworx/kvdb/etcd/v3 \
 		github.com/portworx/kvdb/mem
 
-pretest: lint vet
+pretest: errcheck lint vet
 
 testcheck:
 ifndef ETCD
