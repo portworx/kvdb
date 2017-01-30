@@ -6,9 +6,11 @@ language: go
 go:
   - 1.6
 before_install:
-  - docker run --name etcd quay.io/coreos/etcd:v3.1.0
+  - curl -L "${DOWNLOAD_URL}"/"${ETCD_VER}"/etcd-"${ETCD_VER}"-linux-amd64.tar.gz -o /tmp/etcd-"${ETCD_VER}"-linux-amd64.tar.gz;
+  - mkdir -p /tmp/test-etcd && tar xzvf /tmp/etcd-"${ETCD_VER}"-linux-amd64.tar.gz -C /tmp/test-etcd --strip-components=1;
+  - cd /tmp/test-etcd && ./etcd &;
   - sudo apt-get install consul;
-  - consul agent -dev;
+  - consul agent -dev --advertise=127.0.0.1 &;
 script:
   - make
 notifications:
