@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"fmt"
 )
 
 const (
@@ -18,6 +19,7 @@ const (
 	Name = "kv-mem"
 	// KvSnap is an option passed to designate this kvdb as a snap.
 	KvSnap = "KvSnap"
+	bootstrapKey = "bootstrap"
 )
 
 var (
@@ -101,9 +103,11 @@ func (kv *memKV) Get(key string) (*kvdb.KVPair, error) {
 }
 
 func (kv *memKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
+	_, err := kv.Put(bootstrapKey, time.Now().UnixNano(), 0)
+	if err != nil {
+		return nil, 0, fmt.Errorf("Failed to create snap bootstrap key: %v", err)
+	}
 	kv.mutex.Lock()
-	defer kv.mutex.Unlock()
-
 	data := make(map[string]*kvdb.KVPair)
 	for key, value := range kv.m {
 		if strings.HasPrefix(key, prefix) && !strings.Contains(key, "/_") {
@@ -115,14 +119,15 @@ func (kv *memKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 		copy(snap.Value, value.Value)
 		data[key] = snap
 	}
-
+	highestKvPair, _ := kv.Delete(bootstrapKey)
+	kv.mutex.Unlock()
 	// only snapshot data, watches are not copied
 	return &memKV{
 		m:      data,
 		w:      make(map[string]*watchData),
 		wt:     make(map[string]*watchData),
 		domain: kv.domain,
-	}, kv.index, nil
+	}, highestKvPair.ModifiedIndex, nil
 
 }
 

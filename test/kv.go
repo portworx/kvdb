@@ -388,7 +388,7 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 			kvPairs[i].Key, kvPairs[i].Value)
 
 		assert.True(t, kvPairs[i].ModifiedIndex < snapVersion,
-			"snap db key has version greater than snap version",
+			"snap db key (%v) has version greater than snap version (%v)",
 			kvPairs[i].ModifiedIndex, snapVersion)
 
 		if kvPairs[i].ModifiedIndex == currVersion {
