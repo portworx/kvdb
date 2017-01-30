@@ -74,15 +74,17 @@ func RunBasic(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	get(kv, t)
 	getInterface(kv, t)
 	create(kv, t)
+	createWithTTL(kv, t)
 	update(kv, t)
 	deleteKey(kv, t)
 	deleteTree(kv, t)
 	enumerate(kv, t)
-	lockBasic(kv, t)
+	lock(kv, t)
 	snapshot(kv, t)
-	// watchKey(kv, t)
-	// watchTree(kv, t)
-	// cas(kv, t)
+	watchKey(kv, t)
+	watchTree(kv, t)
+	watchWithIndex(kv, t)
+	cas(kv, t)
 }
 
 // RunAuth runs the authentication test suite for kvdb

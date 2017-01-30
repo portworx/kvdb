@@ -11,7 +11,7 @@ before_install:
   - cd /tmp/test-etcd && ./etcd --advertise-client-urls http://127.0.0.1:2379 &
   - curl -L https://releases.hashicorp.com/consul/0.7.3/consul_0.7.3_linux_amd64.zip -o /tmp/consul.zip;
   - mkdir -p /tmp/test-consul && unzip /tmp/consul.zip -d /tmp/test-consul;
-  - cd /tmp/test-consul && ./consul agent -dev --advertise=127.0.0.1 &
+  - cd /tmp/test-consul && ./consul agent -dev --advertise=127.0.0.1 2&> /dev/null &
 script:
   - make gotest
 notifications:

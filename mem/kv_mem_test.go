@@ -7,5 +7,5 @@ import (
 )
 
 func TestAll(t *testing.T) {
-	test.Run(New, t)
+	test.RunBasic(New, t)
 }
