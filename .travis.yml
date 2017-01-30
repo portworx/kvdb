@@ -1,0 +1,20 @@
+sudo: required
+dist: trusty
+services:
+  - docker
+language: go
+go:
+  - 1.6
+before_install:
+  - ETCD_VER=v3.1.0 DOWNLOAD_URL=https://github.com/coreos/etcd/releases/download curl -L ${DOWNLOAD_URL}/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz -o /tmp/etcd
+  - cd /tmp/etcd && ./etcd
+  - sudo apt-get install consul
+  - consul agent -dev
+script:
+  - make
+notifications:
+  email:
+    recipients:
+      - aditya@portworx.com
+    on_success: always
+    on_failure: always
