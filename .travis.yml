@@ -18,5 +18,6 @@ notifications:
   email:
     recipients:
       - aditya@portworx.com
+      - eng@portworx.com
     on_success: always
     on_failure: always
