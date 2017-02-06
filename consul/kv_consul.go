@@ -755,8 +755,6 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 								*pair)
 						}
 						prevCreateIndex = pair.CreateIndex
-						logrus.Infof("Consul WatchCB Create: Prefix [%v] Key [%v] CreateIndex "+
-							"[%v] ModifyIndex [%v]", prefix, pair.Key, pair.CreateIndex, pair.ModifyIndex)
 						cbCreateErr = cb(prefix, opaque, kv.pairToKv("create", pair, meta), nil)
 						prefixDeleted = false
 						prefixExisted = true
@@ -769,8 +767,6 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 								*pair)
 						}
 						prevCreateIndex = pair.CreateIndex
-						logrus.Infof("Consul Watch CombinedCB Create-Update: Prefix [%v] Key [%v] CreateIndex [%v]"+
-							" ModifyIndex [%v]", prefix, pair.Key, pair.CreateIndex, pair.ModifyIndex)
 						cbCreateErr = cb(prefix, opaque, kv.pairToKv("create", pair, meta), nil)
 						prefixDeleted = false
 						prefixExisted = true
