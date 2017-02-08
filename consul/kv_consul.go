@@ -701,8 +701,17 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 		RequireConsistent: true,
 	}
 	prefixDeleted := false
-	prevCreateIndex := uint64(0)
+	prevIndex := uint64(0)
 	var cbCreateErr, cbUpdateErr error
+
+	checkIndex := func(prevIndex *uint64, pair *api.KVPair, newIndex uint64,
+		msg string) {
+		if *prevIndex != 0 && newIndex <= *prevIndex {
+			kv.FatalCb(msg+" with index invoked twice: %v", *pair)
+		}
+		*prevIndex = newIndex
+	}
+
 	for {
 		// Make a blocking List query
 		kvPairs, meta, err := kv.client.KV().List(prefix, opts)
@@ -719,6 +728,7 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 			}
 			kvPair := kv.pairToKv("delete", pair, meta)
 			kvPair.ModifiedIndex = meta.LastIndex
+			checkIndex(&prevIndex, pair, kvPair.ModifiedIndex, "delete")
 
 			// Callback with a delete action
 			cbUpdateErr = cb(prefix, opaque, kvPair, nil)
@@ -746,27 +756,17 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 			found := false
 			for _, pair := range pairs {
 				// Check if pair's ModifyIndex lies between the wait index and the last modified index
-				if (pair.ModifyIndex > opts.WaitIndex) && (pair.ModifyIndex <= meta.LastIndex) {
+				if pair.ModifyIndex > opts.WaitIndex {
 					if pair.CreateIndex == pair.ModifyIndex {
 						// Callback with a create action
-						if prevCreateIndex != 0 &&
-							pair.CreateIndex <= prevCreateIndex {
-							kv.FatalCb("Create with index invoked twice: %v",
-								*pair)
-						}
-						prevCreateIndex = pair.CreateIndex
+						checkIndex(&prevIndex, pair, pair.CreateIndex, "Create")
 						cbCreateErr = cb(prefix, opaque, kv.pairToKv("create", pair, meta), nil)
 						prefixDeleted = false
 						prefixExisted = true
-					} else if (pair.CreateIndex > opts.WaitIndex) && (pair.CreateIndex < pair.ModifyIndex) {
+					} else if (pair.CreateIndex > opts.WaitIndex) && (pair.ModifyIndex > pair.CreateIndex) {
 						// In this single update from consul we have got both a create action and
 						// update action for this kvpair. Calling two callback functions with different actions
-						if prevCreateIndex != 0 &&
-							pair.CreateIndex <= prevCreateIndex {
-							kv.FatalCb("Create with index invoked twice: %v",
-								*pair)
-						}
-						prevCreateIndex = pair.CreateIndex
+						checkIndex(&prevIndex, pair, pair.CreateIndex, "Create")
 						cbCreateErr = cb(prefix, opaque, kv.pairToKv("create", pair, meta), nil)
 						prefixDeleted = false
 						prefixExisted = true
@@ -774,6 +774,7 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 						cbUpdateErr = cb(prefix, opaque, kv.pairToKv("update", pair, meta), nil)
 					} else {
 						// Callback with an update action
+						checkIndex(&prevIndex, pair, pair.ModifyIndex, "Update")
 						cbUpdateErr = cb(prefix, opaque, kv.pairToKv("update", pair, meta), nil)
 					}
 					found = true
@@ -787,6 +788,7 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 				}
 				kvPair := kv.pairToKv("delete", pair, meta)
 				kvPair.ModifiedIndex = meta.LastIndex
+				checkIndex(&prevIndex, pair, kvPair.ModifiedIndex, "delete")
 				cbUpdateErr = cb(prefix, opaque, kvPair, nil)
 			}
 			// Set the waitIndex so that we block on the next List call
