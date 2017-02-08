@@ -705,9 +705,11 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 	var cbCreateErr, cbUpdateErr error
 
 	checkIndex := func(prevIndex *uint64, pair *api.KVPair, newIndex uint64,
-		msg string) {
+		msg string, lastIndex, waitIndex uint64) {
 		if *prevIndex != 0 && newIndex <= *prevIndex {
-			kv.FatalCb(msg+" with index invoked twice: %v", *pair)
+			kv.FatalCb(msg+" with index invoked twice: %v, prevIndex: %d"+
+				" newIndex: %d, lastIndex: %d, waitIndex: %d", *pair,
+				*prevIndex, newIndex, lastIndex, waitIndex)
 		}
 		*prevIndex = newIndex
 	}
@@ -728,7 +730,8 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 			}
 			kvPair := kv.pairToKv("delete", pair, meta)
 			kvPair.ModifiedIndex = meta.LastIndex
-			checkIndex(&prevIndex, pair, kvPair.ModifiedIndex, "delete")
+			checkIndex(&prevIndex, pair, kvPair.ModifiedIndex,
+				"delete", meta.LastIndex, opts.WaitIndex)
 
 			// Callback with a delete action
 			cbUpdateErr = cb(prefix, opaque, kvPair, nil)
@@ -749,7 +752,7 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 		} else {
 			// Same waitIndex as previous. Out of blocking call because
 			// waitTime timeouted. (This should not happen)
-			if opts.WaitIndex == meta.LastIndex {
+			if opts.WaitIndex >= meta.LastIndex {
 				continue
 			}
 			// Find the key value pair(s) that was(were) added/modified/deleted
@@ -759,14 +762,16 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 				if pair.ModifyIndex > opts.WaitIndex {
 					if pair.CreateIndex == pair.ModifyIndex {
 						// Callback with a create action
-						checkIndex(&prevIndex, pair, pair.CreateIndex, "Create")
+						checkIndex(&prevIndex, pair, pair.CreateIndex,
+							"Create", meta.LastIndex, opts.WaitIndex)
 						cbCreateErr = cb(prefix, opaque, kv.pairToKv("create", pair, meta), nil)
 						prefixDeleted = false
 						prefixExisted = true
 					} else if (pair.CreateIndex > opts.WaitIndex) && (pair.ModifyIndex > pair.CreateIndex) {
 						// In this single update from consul we have got both a create action and
 						// update action for this kvpair. Calling two callback functions with different actions
-						checkIndex(&prevIndex, pair, pair.CreateIndex, "Create")
+						checkIndex(&prevIndex, pair, pair.CreateIndex,
+							"Create", meta.LastIndex, opts.WaitIndex)
 						cbCreateErr = cb(prefix, opaque, kv.pairToKv("create", pair, meta), nil)
 						prefixDeleted = false
 						prefixExisted = true
@@ -774,7 +779,8 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 						cbUpdateErr = cb(prefix, opaque, kv.pairToKv("update", pair, meta), nil)
 					} else {
 						// Callback with an update action
-						checkIndex(&prevIndex, pair, pair.ModifyIndex, "Update")
+						checkIndex(&prevIndex, pair, pair.ModifyIndex,
+							"Update", meta.LastIndex, opts.WaitIndex)
 						cbUpdateErr = cb(prefix, opaque, kv.pairToKv("update", pair, meta), nil)
 					}
 					found = true
@@ -788,7 +794,8 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 				}
 				kvPair := kv.pairToKv("delete", pair, meta)
 				kvPair.ModifiedIndex = meta.LastIndex
-				checkIndex(&prevIndex, pair, kvPair.ModifiedIndex, "delete")
+				checkIndex(&prevIndex, pair, kvPair.ModifiedIndex, "delete",
+					meta.LastIndex, opts.WaitIndex)
 				cbUpdateErr = cb(prefix, opaque, kvPair, nil)
 			}
 			// Set the waitIndex so that we block on the next List call
