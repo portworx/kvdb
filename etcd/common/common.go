@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/coreos/etcd/pkg/transport"
@@ -39,6 +40,19 @@ type EtcdCommon interface {
 
 	// GetRetryCount
 	GetRetryCount() int
+}
+
+type EtcdLock struct {
+	Done     chan struct{}
+	Unlocked bool
+	Err      error
+	Tag      string
+	sync.Mutex
+}
+
+// LockerIDInfo id of locker
+type LockerIDInfo struct {
+	LockerID string
 }
 
 type etcdCommon struct {

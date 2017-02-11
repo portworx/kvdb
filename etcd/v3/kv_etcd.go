@@ -49,18 +49,6 @@ type etcdKV struct {
 	ec.EtcdCommon
 }
 
-type etcdLock struct {
-	done     chan struct{}
-	unlocked bool
-	err      error
-	sync.Mutex
-}
-
-// LockerIDInfo id of locker
-type LockerIDInfo struct {
-	LockerID string
-}
-
 // New constructs a new kvdb.Kvdb.
 func New(
 	domain string,
@@ -508,14 +496,14 @@ func (et *etcdKV) LockWithID(key string, lockerID string) (
 	duration := time.Second
 	ttl := uint64(ec.DefaultLockTTL)
 	count := 0
-	lockTag := LockerIDInfo{LockerID: lockerID}
+	lockTag := ec.LockerIDInfo{LockerID: lockerID}
 	kvPair, err := et.Create(key, lockTag, ttl)
 
 	for maxCount := 300; err != nil && count < maxCount; count++ {
 		time.Sleep(duration)
 		kvPair, err = et.Create(key, lockTag, ttl)
 		if count > 0 && count%15 == 0 && err != nil {
-			currLockerTag := LockerIDInfo{LockerID: ""}
+			currLockerTag := ec.LockerIDInfo{LockerID: ""}
 			if _, errGet := et.GetVal(key, &currLockerTag); errGet == nil {
 				logrus.Warnf("Lock %v locked for %v seconds, tag: %v",
 					key, count, currLockerTag)
@@ -529,13 +517,13 @@ func (et *etcdKV) LockWithID(key string, lockerID string) (
 		logrus.Warnf("ETCD: spent %v iterations locking %v\n", count, key)
 	}
 	kvPair.TTL = int64(time.Duration(ttl) * time.Second)
-	kvPair.Lock = &etcdLock{done: make(chan struct{})}
+	kvPair.Lock = &ec.EtcdLock{Done: make(chan struct{})}
 	go et.refreshLock(kvPair)
 	return kvPair, err
 }
 
 func (et *etcdKV) Unlock(kvp *kvdb.KVPair) error {
-	l, ok := kvp.Lock.(*etcdLock)
+	l, ok := kvp.Lock.(*ec.EtcdLock)
 	if !ok {
 		return fmt.Errorf("Invalid lock structure for key %v", string(kvp.Key))
 	}
@@ -543,9 +531,9 @@ func (et *etcdKV) Unlock(kvp *kvdb.KVPair) error {
 	// Don't modify kvp here, CompareAndDelete does that.
 	_, err := et.CompareAndDelete(kvp, kvdb.KVFlags(0))
 	if err == nil {
-		l.unlocked = true
+		l.Unlocked = true
 		l.Unlock()
-		l.done <- struct{}{}
+		l.Done <- struct{}{}
 		return nil
 	}
 	l.Unlock()
@@ -688,7 +676,7 @@ out:
 }
 
 func (et *etcdKV) refreshLock(kvPair *kvdb.KVPair) {
-	l := kvPair.Lock.(*etcdLock)
+	l := kvPair.Lock.(*ec.EtcdLock)
 	ttl := kvPair.TTL
 	refresh := time.NewTicker(ec.DefaultLockRefreshDuration)
 	var (
@@ -704,7 +692,7 @@ func (et *etcdKV) refreshLock(kvPair *kvdb.KVPair) {
 		select {
 		case <-refresh.C:
 			l.Lock()
-			for !l.unlocked {
+			for !l.Unlocked {
 				kvPair.TTL = ttl
 				kvp, err := et.CompareAndSet(
 					kvPair,
@@ -718,7 +706,7 @@ func (et *etcdKV) refreshLock(kvPair *kvdb.KVPair) {
 							" [Current Refresh: %v] [Previous Refresh: %v]",
 						keyString, err, currentRefresh, prevRefresh,
 					)
-					l.err = err
+					l.Err = err
 					l.Unlock()
 					return
 				}
@@ -727,7 +715,7 @@ func (et *etcdKV) refreshLock(kvPair *kvdb.KVPair) {
 				break
 			}
 			l.Unlock()
-		case <-l.done:
+		case <-l.Done:
 			return
 		}
 	}

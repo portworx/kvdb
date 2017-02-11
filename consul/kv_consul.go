@@ -432,6 +432,8 @@ func (kv *consulKV) Unlock(kvp *kvdb.KVPair) error {
 		}
 		return nil
 	}
+	logrus.Errorf("Unlock failed for key: %s, tag: %s, error: %s", kvp.Key,
+		l.tag, err.Error())
 	return err
 }
 
@@ -683,6 +685,7 @@ func (kv *consulKV) getLock(key string, tag interface{}, ttl time.Duration) (
 	// Place the session on lock
 	lockOpts.Session = session
 	lock.doneCh = make(chan struct{})
+	lock.tag = tag
 
 	l, err := kv.client.LockOpts(lockOpts)
 	if err != nil {
