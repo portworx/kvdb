@@ -773,7 +773,7 @@ func (kv *consulKV) watchTreeStart(prefix string, prefixExisted bool, waitIndex 
 					} else if (pair.CreateIndex > opts.WaitIndex) && (pair.ModifyIndex > pair.CreateIndex) {
 						// In this single update from consul we have got both a create action and
 						// update action for this kvpair. Calling two callback functions with different actions
-						checkIndex(&prevIndex, pair, pair.CreateIndex,
+						checkIndex(&prevIndex, pair, pair.ModifyIndex,
 							"Create", meta.LastIndex, opts.WaitIndex)
 						cbCreateErr = cb(prefix, opaque, kv.pairToKv("create", pair, meta), nil)
 						prefixDeleted = false
