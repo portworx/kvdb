@@ -110,7 +110,7 @@ func (kv *memKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 	kv.mutex.Lock()
 	data := make(map[string]*kvdb.KVPair)
 	for key, value := range kv.m {
-		if strings.HasPrefix(key, prefix) && !strings.Contains(key, "/_") {
+		if !strings.HasPrefix(key, prefix) && strings.Contains(key, "/_") {
 			continue
 		}
 		snap := &kvdb.KVPair{}
