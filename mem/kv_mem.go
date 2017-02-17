@@ -415,7 +415,9 @@ func (kv *memKV) fireCB(key string, kvp kvdb.KVPair, err error) {
 			if err != nil {
 				// TODO: handle error
 				_ = v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)
+				kv.mutex.Lock()
 				delete(kv.w, key)
+				kv.mutex.Unlock()
 
 			}
 			return
@@ -428,7 +430,9 @@ func (kv *memKV) fireCB(key string, kvp kvdb.KVPair, err error) {
 			if err != nil {
 				// TODO: handle error
 				_ = v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)
+				kv.mutex.Lock()
 				delete(kv.wt, key)
+				kv.mutex.Unlock()
 			}
 		}
 	}
