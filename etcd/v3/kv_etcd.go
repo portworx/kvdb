@@ -734,7 +734,7 @@ func (et *etcdKV) watchStart(
 		opts = append(opts, e.WithPrefix())
 	}
 	if waitIndex != 0 {
-		opts = append(opts, e.WithRev(int64(waitIndex)))
+		opts = append(opts, e.WithRev(int64(waitIndex+1)))
 	}
 	watcher := e.NewWatcher(et.kvClient)
 	watchChan := watcher.Watch(context.Background(), key, opts...)
@@ -748,12 +748,6 @@ func (et *etcdKV) watchStart(
 			_ = cb(key, opaque, nil, kvdb.ErrWatchStopped)
 		} else {
 			for _, ev := range wresp.Events {
-				if waitIndex != 0 {
-					if ev.Kv.ModRevision < int64(waitIndex) {
-						// Skip this updte
-						continue
-					}
-				}
 				var action string
 				if ev.Type == mvccpb.PUT {
 					if ev.Kv.Version == 1 {
