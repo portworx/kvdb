@@ -28,7 +28,7 @@ const (
 	// 30s is long enough for most of the network conditions.
 	DefaultDialTimeout = 30 * time.Second
 	// DefaultLockTTL is the ttl for an etcd lock
-	DefaultLockTTL = 8
+	DefaultLockTTL = 16
 	// DefaultLockRefreshDuration is the time interval for refreshing an etcd lock
 	DefaultLockRefreshDuration = 2 * time.Second
 )

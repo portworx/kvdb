@@ -320,12 +320,12 @@ func (kv *etcdKV) LockWithID(key string, lockerID string) (
 	if err != nil {
 		return nil, err
 	}
-	if count >= 10 {
-		logrus.Warnf("ETCD: spent %v iterations locking %v\n", count, key)
-	}
 	kvPair.TTL = int64(time.Duration(ttl) * time.Second)
 	kvPair.Lock = &ec.EtcdLock{Done: make(chan struct{}), Tag: lockerID}
 	go kv.refreshLock(kvPair)
+	if count >= 10 {
+		logrus.Warnf("ETCD: spent %v iterations locking %v\n", count, key)
+	}
 
 	return kvPair, err
 }
