@@ -304,7 +304,8 @@ func (kv *etcdKV) LockWithID(key string, lockerID string) (
 	duration := time.Second
 	ttl := uint64(ec.DefaultLockTTL)
 	count := 0
-	lockTag := ec.LockerIDInfo{LockerID: lockerID}
+	lock := &ec.EtcdLock{Done: make(chan struct{}), Tag: lockerID}
+	lockTag := ec.LockerIDInfo{LockerID: fmt.Sprintf("%p:%s", lock, lockerID)}
 	kvPair, err := kv.Create(key, lockTag, ttl)
 	for maxCount := 300; err != nil && count < maxCount; count++ {
 		time.Sleep(duration)
@@ -321,7 +322,7 @@ func (kv *etcdKV) LockWithID(key string, lockerID string) (
 		return nil, err
 	}
 	kvPair.TTL = int64(time.Duration(ttl) * time.Second)
-	kvPair.Lock = &ec.EtcdLock{Done: make(chan struct{}), Tag: lockerID}
+	kvPair.Lock = lock
 	go kv.refreshLock(kvPair)
 	if count >= 10 {
 		logrus.Warnf("ETCD: spent %v iterations locking %v\n", count, key)
@@ -342,11 +343,12 @@ func (kv *etcdKV) Unlock(kvp *kvdb.KVPair) error {
 		l.Unlocked = true
 		l.Unlock()
 		l.Done <- struct{}{}
+		logrus.Infof("Unlocked %p", l)
 		return nil
 	}
 	l.Unlock()
-	logrus.Errorf("Unlock failed for key: %s, tag: %s, error: %s", kvp.Key,
-		l.Tag, err.Error())
+	logrus.Errorf("Unlock failed for key: %s, tag: %s, error: %s, addr: %p",
+		kvp.Key, l.Tag, err.Error(), l)
 	return err
 }
 
