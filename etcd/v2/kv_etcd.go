@@ -421,11 +421,13 @@ func (kv *etcdKV) get(key string, recursive, sort bool) (*kvdb.KVPair, error) {
 		case *e.ClusterError:
 			logrus.Errorf("kvdb get error: %v, retry count: %v\n", err, i)
 			time.Sleep(ec.DefaultIntervalBetweenRetries)
-		default:
+		case *e.Error:
 			etcdErr := err.(e.Error)
 			if etcdErr.Code == e.ErrorCodeKeyNotFound {
 				return nil, kvdb.ErrNotFound
 			}
+			return nil, err
+		default:
 			return nil, err
 		}
 	}
