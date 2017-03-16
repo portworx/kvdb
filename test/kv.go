@@ -897,98 +897,114 @@ func grantRevokeUser(kvRootUser kvdb.Kvdb, datastoreInit kvdb.DatastoreInit, t *
 }
 
 func collect(kv kvdb.Kvdb, t *testing.T) {
-	fmt.Println("collect")
+	for _, useStartVersion := range []bool{false, true} {
 
-	root := "pwx/test/collect"
-	firstLevel := root + "/first"
-	secondLevel := root + "/second"
-
-	kv.DeleteTree(root)
-
-	kvp, _ := kv.Create(firstLevel, []byte("bar"), 0)
-	fmt.Printf("KVP is %v", kvp)
-	collector, _ := kvdb.NewUpdatesCollector(kv, secondLevel, kvp.CreatedIndex)
-	time.Sleep(time.Second)
-	var updates []*kvdb.KVPair
-	updateFn := func(start, end int) uint64 {
-		lastUpdateVersion := uint64(0)
-		for i := start; i < end; i++ {
-			newLeaf := strconv.Itoa(i)
-			// First update the tree being watched.
-			kvp1, _ := kv.Create(secondLevel+"/"+newLeaf, []byte(newLeaf), 0)
-			// Next update another value in kvdb which is not being
-			// watched, this update will cause kvdb index to move forward.
-			kv.Update(firstLevel, []byte(newLeaf), 0)
-			updates = append(updates, kvp1)
-			lastUpdateVersion = kvp1.ModifiedIndex
+		startVersion := func(modifiedVersion uint64) uint64 {
+			if useStartVersion {
+				return modifiedVersion
+			}
+			return 0
 		}
-		return lastUpdateVersion
+
+		fmt.Println("collect")
+
+		root := "pwx/test/collect"
+		firstLevel := root + "/first"
+		secondLevel := root + "/second"
+
+		kv.DeleteTree(root)
+
+		kvp, _ := kv.Create(firstLevel, []byte("bar"), 0)
+		fmt.Printf("KVP is %v", kvp)
+		collector, _ := kvdb.NewUpdatesCollector(kv, secondLevel,
+			startVersion(kvp.CreatedIndex))
+		time.Sleep(time.Second)
+		var updates []*kvdb.KVPair
+		updateFn := func(start, end int) uint64 {
+			lastUpdateVersion := uint64(0)
+			for i := start; i < end; i++ {
+				newLeaf := strconv.Itoa(i)
+				// First update the tree being watched.
+				kvp1, _ := kv.Create(secondLevel+"/"+newLeaf, []byte(newLeaf), 0)
+				// Next update another value in kvdb which is not being
+				// watched, this update will cause kvdb index to move forward.
+				kv.Update(firstLevel, []byte(newLeaf), 0)
+				updates = append(updates, kvp1)
+				lastUpdateVersion = kvp1.ModifiedIndex
+			}
+			return lastUpdateVersion
+		}
+		lastUpdateVersion := updateFn(0, 10)
+		// Allow watch updates to come back.
+		time.Sleep(time.Millisecond * 500)
+		collector.Stop()
+
+		updateFn(10, 20)
+		lastKVIndex := kvp.CreatedIndex
+		lastLeafIndex := -1
+		cb := func(prefix string, opaque interface{}, kvp *kvdb.KVPair,
+			err error) error {
+			fmt.Printf("\nReplaying KVP: %v", *kvp)
+			assert.True(t, err == nil, "Error is nil %v", err)
+			assert.True(t, kvp.ModifiedIndex > lastKVIndex,
+				"Modified index %v lower than last index %v",
+				kvp.ModifiedIndex, lastKVIndex)
+			lastKVIndex = kvp.ModifiedIndex
+			strValue := string(kvp.Value)
+			value := secondLevel + "/" + strValue
+			assert.True(t, strings.Compare(kvp.Key, value) == 0,
+				"Key: %v, Value: %v", kvp.Key, value)
+			leafIndex, _ := strconv.Atoi(strValue)
+			assert.True(t, leafIndex == lastLeafIndex+1,
+				"Last leaf: %v, leaf: %v", kvp.Key,
+				value)
+			lastLeafIndex = leafIndex
+			return nil
+		}
+
+		replayCb := make([]kvdb.ReplayCb, 1)
+		replayCb[0].Prefix = secondLevel
+		replayCb[0].WatchCB = cb
+		replayCb[0].WaitIndex = kvp.CreatedIndex
+
+		lastVersion, err := collector.ReplayUpdates(replayCb)
+		assert.True(t, err == nil, "Replay encountered error %v", err)
+		assert.True(t, lastLeafIndex == 9, "Last leaf index %v, expected : 9",
+			lastLeafIndex)
+		assert.True(t, lastVersion == lastUpdateVersion,
+			"Last update %d and last replay %d version mismatch",
+			lastVersion, lastUpdateVersion)
+
+		// Test with no updates.
+		thirdLevel := root + "/third"
+		kvp, _ = kv.Create(thirdLevel, []byte("bar_update"), 0)
+		collector, _ = kvdb.NewUpdatesCollector(kv, thirdLevel,
+			startVersion(kvp.ModifiedIndex))
+		time.Sleep(2 * time.Second)
+		replayCb[0].WaitIndex = kvp.ModifiedIndex
+		_, err = collector.ReplayUpdates(replayCb)
+		assert.True(t, err == nil, "Replay encountered error %v", err)
+		assert.True(t, lastLeafIndex == 9, "Last leaf index %v, expected : 9",
+			lastLeafIndex)
+
+		// Test with kvdb returning error because update index was too old.
+		fourthLevel := root + "/fourth"
+		kv.Create(fourthLevel, []byte(strconv.Itoa(0)), 0)
+		for i := 1; i < 2000; i++ {
+			kv.Update(fourthLevel, []byte(strconv.Itoa(i)), 0)
+		}
+		collector, _ = kvdb.NewUpdatesCollector(kv, fourthLevel,
+			startVersion(kvp.ModifiedIndex))
+		kv.Update(fourthLevel, []byte(strconv.Itoa(2000)), 0)
+		time.Sleep(500 * time.Millisecond)
+		cb = func(prefix string, opaque interface{}, kvp *kvdb.KVPair,
+			err error) error {
+			fmt.Printf("Error is %v", err)
+			assert.True(t, err != nil, "Error is nil %v", err)
+			return nil
+		}
+		replayCb[0].WatchCB = cb
+		replayCb[0].WaitIndex = kvp.ModifiedIndex
+		collector.ReplayUpdates(replayCb)
 	}
-	lastUpdateVersion := updateFn(0, 10)
-	// Allow watch updates to come back.
-	time.Sleep(time.Millisecond * 500)
-	collector.Stop()
-
-	updateFn(10, 20)
-	lastKVIndex := kvp.CreatedIndex
-	lastLeafIndex := -1
-	cb := func(prefix string, opaque interface{}, kvp *kvdb.KVPair,
-		err error) error {
-		fmt.Printf("\nReplaying KVP: %v", *kvp)
-		assert.True(t, err == nil, "Error is nil %v", err)
-		assert.True(t, kvp.ModifiedIndex > lastKVIndex,
-			"Modified index %v lower than last index %v",
-			kvp.ModifiedIndex, lastKVIndex)
-		lastKVIndex = kvp.ModifiedIndex
-		strValue := string(kvp.Value)
-		value := secondLevel + "/" + strValue
-		assert.True(t, strings.Compare(kvp.Key, value) == 0,
-			"Key: %v, Value: %v", kvp.Key, value)
-		leafIndex, _ := strconv.Atoi(strValue)
-		assert.True(t, leafIndex == lastLeafIndex+1,
-			"Last leaf: %v, leaf: %v", kvp.Key,
-			value)
-		lastLeafIndex = leafIndex
-		return nil
-	}
-
-	replayCb := make([]kvdb.ReplayCb, 1)
-	replayCb[0].Prefix = secondLevel
-	replayCb[0].WatchCB = cb
-
-	lastVersion, err := collector.ReplayUpdates(replayCb)
-	assert.True(t, err == nil, "Replay encountered error %v", err)
-	assert.True(t, lastLeafIndex == 9, "Last leaf index %v, expected : 9",
-		lastLeafIndex)
-	assert.True(t, lastVersion == lastUpdateVersion,
-		"Last update %d and last replay %d version mismatch",
-		lastVersion, lastUpdateVersion)
-
-	// Test with no updates.
-	thirdLevel := root + "/third"
-	kvp, _ = kv.Create(thirdLevel, []byte("bar_update"), 0)
-	collector, _ = kvdb.NewUpdatesCollector(kv, thirdLevel, kvp.ModifiedIndex)
-	time.Sleep(2 * time.Second)
-	_, err = collector.ReplayUpdates(replayCb)
-	assert.True(t, err == nil, "Replay encountered error %v", err)
-	assert.True(t, lastLeafIndex == 9, "Last leaf index %v, expected : 9",
-		lastLeafIndex)
-
-	// Test with kvdb returning error because update index was too old.
-	fourthLevel := root + "/fourth"
-	kv.Create(fourthLevel, []byte(strconv.Itoa(0)), 0)
-	for i := 1; i < 2000; i++ {
-		kv.Update(fourthLevel, []byte(strconv.Itoa(i)), 0)
-	}
-	collector, _ = kvdb.NewUpdatesCollector(kv, fourthLevel, kvp.ModifiedIndex)
-	kv.Update(fourthLevel, []byte(strconv.Itoa(2000)), 0)
-	time.Sleep(500 * time.Millisecond)
-	cb = func(prefix string, opaque interface{}, kvp *kvdb.KVPair,
-		err error) error {
-		fmt.Printf("Error is %v", err)
-		assert.True(t, err != nil, "Error is nil %v", err)
-		return nil
-	}
-	replayCb[0].WatchCB = cb
-	collector.ReplayUpdates(replayCb)
 }
