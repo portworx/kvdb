@@ -219,8 +219,57 @@ func (kv *etcdKV) DeleteTree(prefix string) error {
 	return err
 }
 
-func (kv *etcdKV) Keys(prefix, key string) ([]string, error) {
-	return nil, kvdb.ErrNotSupported
+func (kv *etcdKV) Keys(prefix, sep string) ([]string, error) {
+	// etcd-v2 supports only '/' separator
+	sep = "/"
+	prefix = kv.domain + prefix
+	lenPrefix := len(prefix)
+	if prefix[0:1] != sep {
+		prefix = sep + prefix
+		lenPrefix++
+	}
+	if prefix[lenPrefix-1:] != sep {
+		prefix += sep
+		lenPrefix++
+	}
+	var err error
+	for i := 0; i < kv.GetRetryCount(); i++ {
+		result, err := kv.client.Get(context.Background(), prefix, &e.GetOptions{
+			Recursive: false,
+			Sort:      true,
+			Quorum:    true,
+		})
+		if err == nil {
+			num := len(result.Node.Nodes)
+			var keys []string
+			if result.Node.Dir && num > 0 {
+				keys = make([]string, num)
+				for j := range result.Node.Nodes {
+					key := result.Node.Nodes[j].Key
+					if strings.HasPrefix(key, prefix) {
+						key = key[lenPrefix:]
+					}
+					keys[j] = key
+				}
+			}
+			return keys, nil
+		}
+		switch err.(type) {
+		case *e.ClusterError:
+			logrus.Errorf("kvdb set error: %v, retry count: %v\n", err, i)
+			time.Sleep(ec.DefaultIntervalBetweenRetries)
+		case e.Error:
+			etcdErr := err.(e.Error)
+			if etcdErr.Code == e.ErrorCodeKeyNotFound {
+				// Return an empty array
+				return []string{}, nil
+			}
+			return nil, err
+		default:
+			return nil, err
+		}
+	}
+	return nil, err
 }
 
 func (kv *etcdKV) CompareAndSet(

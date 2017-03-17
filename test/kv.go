@@ -3,6 +3,7 @@ package test
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -57,6 +58,7 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	deleteKey(kv, t)
 	deleteTree(kv, t)
 	enumerate(kv, t)
+	keys(kv, t)
 	lock(kv, t)
 	watchKey(kv, t)
 	watchTree(kv, t)
@@ -79,6 +81,7 @@ func RunBasic(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	deleteKey(kv, t)
 	deleteTree(kv, t)
 	enumerate(kv, t)
+	keys(kv, t)
 	lock(kv, t)
 	snapshot(kv, t)
 	watchKey(kv, t)
@@ -333,6 +336,45 @@ func enumerate(kv kvdb.Kvdb, t *testing.T) {
 			"Invalid kvpair (%s)->(%s) expect value %s",
 			kvPairs[i].Key, kvPairs[i].Value, v)
 	}
+}
+
+func keys(kv kvdb.Kvdb, t *testing.T) {
+
+	fmt.Println("keys")
+
+	prefix := "keys"
+	testKeys := []string{"testkey1", "testkey2", "testkey99999999999999999"}
+	testRows := map[string]string{
+		prefix + "/" + testKeys[0]:                    "bar",
+		prefix + "/" + testKeys[1] + "/testkey3":      "baz",
+		prefix + "/" + testKeys[2] + "/here/or/there": "foo",
+	}
+
+	kv.DeleteTree(prefix)
+	defer func() {
+		kv.DeleteTree(prefix)
+	}()
+
+	keys, err := kv.Keys(prefix, "")
+	assert.Equal(t, 0, len(keys), "Expected 0 keys")
+
+	for key, val := range testRows {
+		_, err := kv.Put(key, []byte(val), 0)
+		assert.NoError(t, err, "Unexpected error on Put")
+	}
+
+	keys, err = kv.Keys(prefix, "")
+	assert.NoError(t, err, "Unexpected error on Keys")
+
+	assert.Equal(t, len(testRows), len(keys),
+		"Expecting %d keys under %s got: %d",
+		len(testRows), prefix, len(keys))
+
+	sort.Strings(keys)
+	sort.Strings(testKeys)
+	assert.Equal(t, testKeys, keys,
+		"Expecting array %v to be equal to %v",
+		testKeys, keys)
 }
 
 func snapshot(kv kvdb.Kvdb, t *testing.T) {

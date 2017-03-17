@@ -279,8 +279,36 @@ func (kv *consulKV) DeleteTree(key string) error {
 	return nil
 }
 
-func (kv *consulKV) Keys(prefix, key string) ([]string, error) {
-	return nil, kvdb.ErrNotSupported
+func (kv *consulKV) Keys(prefix, sep string) ([]string, error) {
+	if "" == sep {
+		sep = "/"
+	}
+	prefix = kv.domain + prefix
+	prefix = stripConsecutiveForwardslash(prefix)
+	lenPrefix := len(prefix)
+	lenSep := len(sep)
+	if prefix[lenPrefix-lenSep:] != sep {
+		prefix += sep
+		lenPrefix += lenSep
+	}
+	list, _, err := kv.client.KV().Keys(prefix, sep, nil)
+	if err != nil {
+		return nil, err
+	}
+	var retList []string
+	if len(list) > 0 {
+		retList = make([]string, len(list))
+		for i, key := range list {
+			if strings.HasPrefix(key, prefix) {
+				key = key[lenPrefix:]
+			}
+			if lky := len(key); lky > lenSep && key[lky-lenSep:] == sep {
+				key = key[0 : lky-lenSep]
+			}
+			retList[i] = key
+		}
+	}
+	return retList, nil
 }
 
 func (kv *consulKV) CompareAndSet(kvp *kvdb.KVPair, flags kvdb.KVFlags, prevValue []byte) (*kvdb.KVPair, error) {

@@ -283,8 +283,36 @@ func (kv *memKV) DeleteTree(prefix string) error {
 	return err
 }
 
-func (kv *memKV) Keys(prefix, key string) ([]string, error) {
-	return nil, kvdb.ErrNotSupported
+func (kv *memKV) Keys(prefix, sep string) ([]string, error) {
+	if "" == sep {
+		sep = "/"
+	}
+	prefix = kv.domain + prefix
+	lenPrefix := len(prefix)
+	lenSep := len(sep)
+	if prefix[lenPrefix-lenSep:] != sep {
+		prefix += sep
+		lenPrefix += lenSep
+	}
+
+	seen := make(map[string]bool)
+	for k := range kv.m {
+		if strings.HasPrefix(k, prefix) && !strings.Contains(k, "/_") {
+			key := k[lenPrefix:]
+			if idx := strings.Index(key, sep); idx > 0 {
+				key = key[:idx]
+			}
+			seen[key] = true
+		}
+	}
+	retList := make([]string, len(seen))
+	i := 0
+	for k := range seen {
+		retList[i] = k
+		i++
+	}
+
+	return retList, nil
 }
 
 func (kv *memKV) CompareAndSet(
