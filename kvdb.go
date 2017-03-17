@@ -206,8 +206,9 @@ type Kvdb interface {
 	// DeleteTree same as Delete execpt that all keys sharing the prefix are
 	// deleted.
 	DeleteTree(prefix string) error
-	// Keys returns an array of keys that share specified prefix.
-	Keys(prefix, key string) ([]string, error)
+	// Keys returns an array of keys that share specified prefix (ie. "1st level directory").
+	// sep parameter defines a key-separator, and if not provided the "/" is assumed.
+	Keys(prefix, sep string) ([]string, error)
 	// CompareAndSet updates value at kvp.Key if the previous resident
 	// satisfies conditions set in flags and optional prevValue.
 	CompareAndSet(kvp *KVPair, flags KVFlags, prevValue []byte) (*KVPair, error)
