@@ -186,12 +186,14 @@ func (kv *etcdKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 		case *e.ClusterError:
 			logrus.Errorf("kvdb set error: %v, retry count: %v\n", err, i)
 			time.Sleep(ec.DefaultIntervalBetweenRetries)
-		default:
+		case e.Error:
 			etcdErr := err.(e.Error)
 			if etcdErr.Code == e.ErrorCodeKeyNotFound {
 				// Return an empty array
 				return kvdb.KVPairs{}, nil
 			}
+			return nil, err
+		default:
 			return nil, err
 		}
 	}
