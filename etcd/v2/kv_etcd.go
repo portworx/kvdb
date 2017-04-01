@@ -394,7 +394,6 @@ func (kv *etcdKV) Unlock(kvp *kvdb.KVPair) error {
 		l.Unlocked = true
 		l.Unlock()
 		l.Done <- struct{}{}
-		logrus.Infof("Unlocked %p", l)
 		return nil
 	}
 	l.Unlock()
