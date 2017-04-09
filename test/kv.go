@@ -44,16 +44,17 @@ func fatalErrorCb() kvdb.FatalErrorCB {
 }
 
 // Run runs the test suite.
-func Run(datastoreInit kvdb.DatastoreInit, t *testing.T) {
+func Run(datastoreInit kvdb.DatastoreInit, t *testing.T) kvdb.Kvdb {
 	kv, err := datastoreInit("pwx/test", nil, nil, fatalErrorCb())
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
+	create(kv, t)
+	createWithTTL(kv, t)
+	cas(kv, t)
 	snapshot(kv, t)
 	get(kv, t)
 	getInterface(kv, t)
-	create(kv, t)
-	createWithTTL(kv, t)
 	update(kv, t)
 	deleteKey(kv, t)
 	deleteTree(kv, t)
@@ -63,8 +64,8 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	watchKey(kv, t)
 	watchTree(kv, t)
 	watchWithIndex(kv, t)
-	cas(kv, t)
 	collect(kv, t)
+	return kv
 }
 
 // RunBasic runs the basic test suite.
@@ -198,7 +199,7 @@ func create(kv kvdb.Kvdb, t *testing.T) {
 
 func createWithTTL(kv kvdb.Kvdb, t *testing.T) {
 	fmt.Println("create with ttl")
-	key := "create/foo"
+	key := "create/foottl"
 	kv.Delete(key)
 	assert.NotNil(t, kv, "Default KVDB is not set")
 	_, err := kv.Create(key, []byte("bar"), 6)
@@ -833,7 +834,7 @@ func cas(kv kvdb.Kvdb, t *testing.T) {
 	key := "foo/docker"
 	val := "great"
 	defer func() {
-		kv.Delete(key)
+		kv.DeleteTree(key)
 	}()
 
 	kvPair, err := kv.Put(key, []byte(val), 0)
@@ -844,7 +845,6 @@ func cas(kv kvdb.Kvdb, t *testing.T) {
 
 	_, err = kv.CompareAndSet(kvPair, kvdb.KVFlags(0), []byte("badval"))
 	assert.Error(t, err, "CompareAndSet should fail on an incorrect previous value")
-	//assert.EqualError(t, err, kvdb.ErrValueMismatch.Error(), "CompareAndSet should return value mismatch error")
 
 	copyKVPair := *kvPair
 	copyKVPair.ModifiedIndex++
