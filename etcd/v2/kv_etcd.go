@@ -715,7 +715,19 @@ func (kv *etcdKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 			if err != nil {
 				return nil, 0, fmt.Errorf("Failed to get child keys: %v", err)
 			}
-			if len(newKvPairs) > 0 {
+			if len(newKvPairs) == 0 {
+				// empty value for this key
+				_, err := snapDb.SnapPut(kvPair)
+				if err != nil {
+					return nil, 0, fmt.Errorf("Failed creating snap: %v", err)
+				}
+			} else if len(newKvPairs) == 1 {
+				// empty value for this key
+				_, err := snapDb.SnapPut(newKvPairs[0])
+				if err != nil {
+					return nil, 0, fmt.Errorf("Failed creating snap: %v", err)
+				}
+			} else {
 				kvPairs = append(kvPairs, newKvPairs...)
 			}
 		}

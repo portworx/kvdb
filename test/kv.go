@@ -399,6 +399,9 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 			suffix := strconv.Itoa(i)
 			inputKey := prefix + key + suffix
 			inputValue := v
+			if i == 0 {
+				inputValue = ""
+			}
 			kv, err := kv.Put(inputKey, []byte(inputValue), 0)
 			assert.NoError(t, err, "Unexpected error on Put")
 			dataMap[inputKey] = inputValue
@@ -411,8 +414,8 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 	<-doneUpdate
 	newValue := "bar2"
 	go updateFn(count, newValue, inputData, inputDataVersion)
-
 	time.Sleep(20 * time.Millisecond)
+
 	snap, snapVersion, err := kv.Snapshot(prefix)
 	assert.NoError(t, err, "Unexpected error on Snapshot")
 	<-doneUpdate
