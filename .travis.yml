@@ -4,7 +4,7 @@ services:
   - docker
 language: go
 go:
-  - 1.7
+  - 1.8.3
 before_install:
   - curl -L "${DOWNLOAD_URL}"/"${ETCD_VER}"/etcd-"${ETCD_VER}"-linux-amd64.tar.gz -o /tmp/etcd-"${ETCD_VER}"-linux-amd64.tar.gz;
   - mkdir -p /tmp/test-etcd && tar xzvf /tmp/etcd-"${ETCD_VER}"-linux-amd64.tar.gz -C /tmp/test-etcd --strip-components=1;
