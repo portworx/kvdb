@@ -308,4 +308,7 @@ type KvdbController interface {
 	// ListMembers enumerates the members of the kvdb cluster
 	// Returns: the nodeID  to peerUrl mappings of all the members
 	ListMembers() (map[string][]string, error)
+
+	// SetEndpoints set the kvdb endpoints for the client
+	SetEndpoints(endpoints []string) error
 }

@@ -1142,6 +1142,11 @@ func (e *etcdKV) ListMembers() (map[string][]string, error) {
 	return resp, nil
 }
 
+func (e *etcdKV) SetEndpoints(endpoints []string) error {
+	e.kvClient.SetEndpoints(endpoints...)
+	return nil
+}
+
 func (e *etcdKV) listenPeerUrls(ip string, port string) []string {
 	return []string{e.constructUrl(ip, port)}
 }

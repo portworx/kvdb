@@ -19,3 +19,7 @@ func (c *controllerNotSupported) RemoveMember(nodeID string) error {
 func (c *controllerNotSupported) ListMembers() (map[string][]string, error) {
 	return nil, ErrNotSupported
 }
+
+func (c *controllerNotSupported) SetEndpoints(endpoints []string) error {
+	return ErrNotSupported
+}
