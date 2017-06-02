@@ -109,6 +109,9 @@ var (
 	ErrNoCertificate = errors.New("Certificate File Path not provided")
 	// ErrUnknownPermission raised if unknown permission type
 	ErrUnknownPermission = errors.New("Unknown Permission Type")
+	// ErrMemberDoesNotExist returned when an operation fails for a member
+	// which does not exist
+	ErrMemberDoesNotExist = errors.New("Kvdb member does not exist")
 )
 
 // KVAction specifies the action on a KV pair. This is useful to make decisions
@@ -180,6 +183,7 @@ type Tx interface {
 
 // Kvdb interface implemented by backing datastores.
 type Kvdb interface {
+	KvdbController
 	// String representation of backend datastore.
 	String() string
 	// Capbilities - see KVCapabilityXXX
@@ -280,4 +284,28 @@ func NewUpdatesCollector(
 		return nil, err
 	}
 	return collector, nil
+}
+
+// List of kvdb controller ports
+const (
+	// PeerPort is the port on which peers identify themselves
+	PeerPort = "2380"
+	// ClientPort is the port on which clients send requests to kvdb.
+	ClientPort = "2379"
+)
+
+type KvdbController interface {
+	// AddMember adds a new member to an existing kvdb cluster. Add should be
+	// called on a kvdb node where kvdb is already running. It should be
+	// followed by a Setup call on the actual node
+	// Returns: map of nodeID to peerUrls of all members in the initial cluster or error
+	AddMember(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error)
+
+	// RemoveMember removes a member from an existing kvdb cluster
+	// Returns: error if it fails to remove a member
+	RemoveMember(nodeID string) error
+
+	// ListMembers enumerates the members of the kvdb cluster
+	// Returns: the nodeID  to peerUrl mappings of all the members
+	ListMembers() (map[string][]string, error)
 }

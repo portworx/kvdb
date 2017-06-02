@@ -29,6 +29,7 @@ const (
 	// Name is the name of this kvdb implementation.
 	Name                  = "etcdv3-kv"
 	defaultRequestTimeout = 10 * time.Second
+	urlPrefix             = "http://"
 )
 
 var (
@@ -1075,6 +1076,79 @@ func (et *etcdKV) RevokeUsersAccess(username string, permType kvdb.PermissionTyp
 	// Revoke the specfied permission for that subtree
 	_, err := et.authClient.RoleRevokePermission(context.Background(), roleName, subtree, "")
 	return err
+}
+
+func (e *etcdKV) AddMember(
+	nodeIP string,
+	nodePeerPort string,
+	nodeName string,
+) (map[string][]string, error) {
+	peerURLs := e.listenPeerUrls(nodeIP, nodePeerPort)
+	_, err := e.kvClient.Cluster.MemberAdd(context.Background(), peerURLs)
+	if err != nil {
+		return nil, err
+	}
+	resp := make(map[string][]string)
+	memberListResponse, err := e.kvClient.Cluster.MemberList(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	for _, member := range memberListResponse.Members {
+		if member.Name == "" {
+			// Newly added member
+			resp[nodeName] = member.PeerURLs
+		} else {
+			resp[member.Name] = member.PeerURLs
+		}
+	}
+	return resp, nil
+}
+
+func (e *etcdKV) RemoveMember(
+	nodeID string,
+) error {
+	memberListResponse, err := e.kvClient.Cluster.MemberList(context.Background())
+	if err != nil {
+		return err
+	}
+	var (
+		newClientUrls []string
+		memberId      uint64
+	)
+
+	for _, member := range memberListResponse.Members {
+		if member.Name == nodeID {
+			memberId = member.ID
+		} else {
+			for _, clientUrl := range member.ClientURLs {
+				newClientUrls = append(newClientUrls, clientUrl)
+			}
+		}
+	}
+	e.kvClient.SetEndpoints(newClientUrls...)
+	_, err = e.kvClient.Cluster.MemberRemove(context.Background(), memberId)
+	return err
+}
+
+func (e *etcdKV) ListMembers() (map[string][]string, error) {
+	memberListResponse, err := e.kvClient.Cluster.MemberList(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	resp := make(map[string][]string)
+	for _, member := range memberListResponse.Members {
+		resp[member.Name] = member.PeerURLs
+	}
+	return resp, nil
+}
+
+func (e *etcdKV) listenPeerUrls(ip string, port string) []string {
+	return []string{e.constructUrl(ip, port)}
+}
+
+func (e *etcdKV) constructUrl(ip string, port string) string {
+	ip = strings.TrimPrefix(ip, urlPrefix)
+	return urlPrefix + ip + ":" + port
 }
 
 func getEtcdPermType(permType kvdb.PermissionType) (e.PermissionType, error) {
