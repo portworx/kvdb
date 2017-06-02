@@ -43,6 +43,7 @@ type etcdKV struct {
 	authRole e.AuthRoleAPI
 	domain   string
 	ec.EtcdCommon
+	kvdb.KvdbController
 }
 
 // New constructs a new kvdb.Kvdb.
@@ -87,6 +88,7 @@ func New(
 		e.NewAuthRoleAPI(c),
 		domain,
 		etcdCommon,
+		kvdb.KvdbControllerNotSupported,
 	}, nil
 }
 

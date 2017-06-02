@@ -41,6 +41,7 @@ type memKV struct {
 	mutex  sync.Mutex
 	index  uint64
 	domain string
+	kvdb.KvdbController
 }
 
 type snapMem struct {
@@ -70,6 +71,7 @@ func New(
 		w:        make(map[string]*watchData),
 		wt:       make(map[string]*watchData),
 		domain:   domain,
+		KvdbController: kvdb.KvdbControllerNotSupported,
 	}
 
 	if _, ok := options[KvSnap]; ok {
