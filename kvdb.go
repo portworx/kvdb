@@ -311,4 +311,8 @@ type KvdbController interface {
 
 	// SetEndpoints set the kvdb endpoints for the client
 	SetEndpoints(endpoints []string) error
+
+	// GetEndpoints returns the kvdb endpoints for the client
+	GetEndpoints() []string
+
 }

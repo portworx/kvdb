@@ -1147,6 +1147,10 @@ func (e *etcdKV) SetEndpoints(endpoints []string) error {
 	return nil
 }
 
+func (e *etcdKV) GetEndpoints() []string {
+	return e.kvClient.Endpoints()
+}
+
 func (e *etcdKV) listenPeerUrls(ip string, port string) []string {
 	return []string{e.constructUrl(ip, port)}
 }

@@ -23,3 +23,7 @@ func (c *controllerNotSupported) ListMembers() (map[string][]string, error) {
 func (c *controllerNotSupported) SetEndpoints(endpoints []string) error {
 	return ErrNotSupported
 }
+
+func (c *controllerNotSupported) GetEndpoints() []string {
+	return []string{}
+}
