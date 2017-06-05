@@ -1130,14 +1130,17 @@ func (e *etcdKV) RemoveMember(
 	return err
 }
 
-func (e *etcdKV) ListMembers() (map[string][]string, error) {
+func (e *etcdKV) ListMembers() (map[string]*kvdb.MemberUrls, error) {
 	memberListResponse, err := e.kvClient.Cluster.MemberList(context.Background())
 	if err != nil {
 		return nil, err
 	}
-	resp := make(map[string][]string)
+	resp := make(map[string]*kvdb.MemberUrls)
 	for _, member := range memberListResponse.Members {
-		resp[member.Name] = member.PeerURLs
+		resp[member.Name] = &kvdb.MemberUrls{
+			PeerUrls: member.PeerURLs,
+			ClientUrls: member.ClientURLs,
+		}
 	}
 	return resp, nil
 }

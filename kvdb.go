@@ -294,6 +294,11 @@ const (
 	ClientPort = "2379"
 )
 
+type MemberUrls struct {
+	PeerUrls []string
+	ClientUrls []string
+}
+
 type KvdbController interface {
 	// AddMember adds a new member to an existing kvdb cluster. Add should be
 	// called on a kvdb node where kvdb is already running. It should be
@@ -307,7 +312,7 @@ type KvdbController interface {
 
 	// ListMembers enumerates the members of the kvdb cluster
 	// Returns: the nodeID  to peerUrl mappings of all the members
-	ListMembers() (map[string][]string, error)
+	ListMembers() (map[string]*MemberUrls, error)
 
 	// SetEndpoints set the kvdb endpoints for the client
 	SetEndpoints(endpoints []string) error
