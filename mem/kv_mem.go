@@ -35,17 +35,80 @@ func init() {
 
 type memKV struct {
 	common.BaseKvdb
-	m      map[string]*kvdb.KVPair
-	w      map[string]*watchData
-	wt     map[string]*watchData
-	mutex  sync.Mutex
-	index  uint64
-	domain string
+	// m is the key value database
+	m map[string]*kvdb.KVPair
+	// w is a set of watches currently active on keys
+	w map[string]*watchData
+	// wt is a set of watches currently active on trees
+	wt map[string]*watchData
+	// mutex protects m, w, wt
+	mutex sync.Mutex
+	// updateWKeys is true if wKeys was updated
+	updateWatchKeys bool
+	// watchUpdateQueue is the queue of updates for which watch should be fired
+	watchUpdateQueue WatchUpdateQueue
+	index            uint64
+	domain           string
 	kvdb.KvdbController
 }
 
 type snapMem struct {
 	*memKV
+}
+
+// watchUpdate refers to an update to this kvdb
+type watchUpdate struct {
+	key string
+	kvp kvdb.KVPair
+	err error
+}
+
+// WatchUpdateQueue is a producer consumer queue.
+type WatchUpdateQueue interface {
+	// Enqueue will enqueue an update. It is non-blocking.
+	Enqueue(update *watchUpdate)
+	// Dequeue will either return an element from front of the queue or
+	// will block until element becomes available
+	Dequeue() *watchUpdate
+}
+
+// watchQueue implements WatchUpdateQueue interface for watchUpdates
+type watchQueue struct {
+	// updates is the list of updates
+	updates []*watchUpdate
+	// m is the mutex to protect updates
+	m *sync.Mutex
+	// cv is used to coordinate the producer-consumer threads
+	cv *sync.Cond
+}
+
+func NewWatchUpdateQueue() WatchUpdateQueue {
+	mtx := &sync.Mutex{}
+	return &watchQueue{
+		m:       mtx,
+		cv:      sync.NewCond(mtx),
+		updates: make([]*watchUpdate, 0)}
+}
+
+func (w *watchQueue) Dequeue() *watchUpdate {
+	w.m.Lock()
+	for {
+		if len(w.updates) > 0 {
+			update := w.updates[0]
+			w.updates = w.updates[1:]
+			w.m.Unlock()
+			return update
+		}
+		w.cv.Wait()
+	}
+}
+
+// Enqueue enqueues and never blocks
+func (w *watchQueue) Enqueue(update *watchUpdate) {
+	w.m.Lock()
+	w.updates = append(w.updates, update)
+	w.cv.Signal()
+	w.m.Unlock()
 }
 
 type watchData struct {
@@ -66,19 +129,21 @@ func New(
 	}
 
 	mem := &memKV{
-		BaseKvdb: common.BaseKvdb{FatalCb: fatalErrorCb},
-		m:        make(map[string]*kvdb.KVPair),
-		w:        make(map[string]*watchData),
-		wt:       make(map[string]*watchData),
-		domain:   domain,
-		KvdbController: kvdb.KvdbControllerNotSupported,
+		BaseKvdb:         common.BaseKvdb{FatalCb: fatalErrorCb},
+		m:                make(map[string]*kvdb.KVPair),
+		w:                make(map[string]*watchData),
+		wt:               make(map[string]*watchData),
+		watchUpdateQueue: NewWatchUpdateQueue(),
+		updateWatchKeys:  true,
+		domain:           domain,
+		KvdbController:   kvdb.KvdbControllerNotSupported,
 	}
 
 	if _, ok := options[KvSnap]; ok {
 		return &snapMem{memKV: mem}, nil
 	}
+	go mem.watchUpdates()
 	return mem, nil
-
 }
 
 // Version returns the supported version of the mem implementation
@@ -179,7 +244,7 @@ func (kv *memKV) put(
 	}
 
 	kv.normalize(kvp)
-	go kv.fireCB(key, *kvp, nil)
+	kv.watchUpdateQueue.Enqueue(&watchUpdate{key, *kvp, nil})
 	return kvp, nil
 }
 
@@ -256,8 +321,8 @@ func (kv *memKV) delete(key string) (*kvdb.KVPair, error) {
 	kvp.KVDBIndex = atomic.AddUint64(&kv.index, 1)
 	kvp.ModifiedIndex = kvp.KVDBIndex
 	kvp.Action = kvdb.KVDelete
-	go kv.fireCB(kv.domain+key, *kvp, nil)
 	delete(kv.m, kv.domain+key)
+	kv.watchUpdateQueue.Enqueue(&watchUpdate{kv.domain + key, *kvp, nil})
 	return kvp, nil
 }
 
@@ -374,6 +439,7 @@ func (kv *memKV) WatchKey(
 		return kvdb.ErrExist
 	}
 	kv.w[key] = &watchData{cb: cb, waitIndex: waitIndex, opaque: opaque}
+	kv.updateWatchKeys = true
 	return nil
 }
 
@@ -391,6 +457,7 @@ func (kv *memKV) WatchTree(
 		return kvdb.ErrExist
 	}
 	kv.wt[prefix] = &watchData{cb: cb, waitIndex: waitIndex, opaque: opaque}
+	kv.updateWatchKeys = true
 	return nil
 }
 
@@ -438,31 +505,66 @@ func (kv *memKV) normalize(kvp *kvdb.KVPair) {
 	kvp.Key = strings.TrimPrefix(kvp.Key, kv.domain)
 }
 
-func (kv *memKV) fireCB(key string, kvp kvdb.KVPair, err error) {
-	for k, v := range kv.w {
-		if k == key && (v.waitIndex == 0 || v.waitIndex < kvp.ModifiedIndex) {
-			err := v.cb(key, v.opaque, &kvp, err)
-			if err != nil {
-				// TODO: handle error
-				_ = v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)
-				kv.mutex.Lock()
-				delete(kv.w, key)
-				kv.mutex.Unlock()
-
-			}
-			return
-		}
+func copyWatchKeys(w map[string]*watchData) []string {
+	keys := make([]string, len(w))
+	i := 0
+	for key := range w {
+		keys[i] = key
+		i++
 	}
-	for k, v := range kv.wt {
-		if strings.HasPrefix(key, k) &&
-			(v.waitIndex == 0 || v.waitIndex < kvp.ModifiedIndex) {
-			err := v.cb(key, v.opaque, &kvp, err)
-			if err != nil {
-				// TODO: handle error
-				_ = v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)
-				kv.mutex.Lock()
-				delete(kv.wt, key)
-				kv.mutex.Unlock()
+	return keys
+}
+
+func (kv *memKV) watchUpdates() {
+	var watchKeys, watchTreeKeys []string
+	for {
+		update := kv.watchUpdateQueue.Dequeue()
+		// Make a copy of the keys so that we can iterate over the map
+		// without the lock.
+		kv.mutex.Lock()
+		if kv.updateWatchKeys {
+			watchKeys = copyWatchKeys(kv.w)
+			watchTreeKeys = copyWatchKeys(kv.wt)
+			kv.updateWatchKeys = false
+		}
+		kv.mutex.Unlock()
+
+		for _, k := range watchKeys {
+			kv.mutex.Lock()
+			v, ok := kv.w[k]
+			kv.mutex.Unlock()
+			if !ok {
+				continue
+			}
+			if k == update.key && (v.waitIndex == 0 ||
+				v.waitIndex < update.kvp.ModifiedIndex) {
+				err := v.cb(update.key, v.opaque, &update.kvp, update.err)
+				if err != nil {
+					_ = v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)
+					kv.mutex.Lock()
+					delete(kv.w, update.key)
+					kv.updateWatchKeys = true
+					kv.mutex.Unlock()
+				}
+			}
+		}
+		for _, k := range watchTreeKeys {
+			kv.mutex.Lock()
+			v, ok := kv.wt[k]
+			kv.mutex.Unlock()
+			if !ok {
+				continue
+			}
+			if strings.HasPrefix(update.key, k) &&
+				(v.waitIndex == 0 || v.waitIndex < update.kvp.ModifiedIndex) {
+				err := v.cb(update.key, v.opaque, &update.kvp, update.err)
+				if err != nil {
+					_ = v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)
+					kv.mutex.Lock()
+					delete(kv.wt, update.key)
+					kv.updateWatchKeys = true
+					kv.mutex.Unlock()
+				}
 			}
 		}
 	}
