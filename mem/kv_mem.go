@@ -37,18 +37,13 @@ type memKV struct {
 	common.BaseKvdb
 	// m is the key value database
 	m map[string]*kvdb.KVPair
-	// w is a set of watches currently active on keys
-	w map[string]*watchData
-	// wt is a set of watches currently active on trees
-	wt map[string]*watchData
+	// updates is the list of latest few updates
+	dist WatchDistributor
 	// mutex protects m, w, wt
 	mutex sync.Mutex
-	// updateWKeys is true if wKeys was updated
-	updateWatchKeys bool
-	// watchUpdateQueue is the queue of updates for which watch should be fired
-	watchUpdateQueue WatchUpdateQueue
-	index            uint64
-	domain           string
+	// index current kvdb index
+	index  uint64
+	domain string
 	kvdb.KvdbController
 }
 
@@ -58,8 +53,11 @@ type snapMem struct {
 
 // watchUpdate refers to an update to this kvdb
 type watchUpdate struct {
+	// key is the key that was updated
 	key string
+	// kvp is the key-value that was updated
 	kvp kvdb.KVPair
+	// err is any error on update
 	err error
 }
 
@@ -70,6 +68,66 @@ type WatchUpdateQueue interface {
 	// Dequeue will either return an element from front of the queue or
 	// will block until element becomes available
 	Dequeue() *watchUpdate
+}
+
+// WatchDistributor distributes updates to the watchers
+type WatchDistributor interface {
+	// Add creates a new watch queue to send updates
+	Add() WatchUpdateQueue
+	// Remove removes an existing watch queue
+	Remove(WatchUpdateQueue)
+	// NewUpdate is invoked to distribute a new update
+	NewUpdate(w *watchUpdate)
+}
+
+// distributor implements WatchDistributor interface
+type distributor struct {
+	sync.Mutex
+	// updates is the list of latest few updates
+	updates []*watchUpdate
+	// watchers watch for updates
+	watchers []WatchUpdateQueue
+}
+
+func NewWatchDistributor() WatchDistributor {
+	return &distributor{}
+}
+
+func (d *distributor) Add() WatchUpdateQueue {
+	d.Lock()
+	defer d.Unlock()
+	q := NewWatchUpdateQueue()
+	for _, u := range d.updates {
+		q.Enqueue(u)
+	}
+	d.watchers = append(d.watchers, q)
+	return q
+}
+
+func (d *distributor) Remove(r WatchUpdateQueue) {
+	d.Lock()
+	defer d.Unlock()
+	for i, q := range d.watchers {
+		if q == r {
+			copy(d.watchers[i:], d.watchers[i+1:])
+			d.watchers[len(d.watchers)-1] = nil
+			d.watchers = d.watchers[:len(d.watchers)-1]
+		}
+	}
+}
+
+func (d *distributor) NewUpdate(u *watchUpdate) {
+	d.Lock()
+	defer d.Unlock()
+	// collect update
+	d.updates = append(d.updates, u)
+	if len(d.updates) > 100 {
+		d.updates = d.updates[100:]
+	}
+	// send update to watchers
+	for _, q := range d.watchers {
+		q.Enqueue(u)
+	}
 }
 
 // watchQueue implements WatchUpdateQueue interface for watchUpdates
@@ -129,20 +187,16 @@ func New(
 	}
 
 	mem := &memKV{
-		BaseKvdb:         common.BaseKvdb{FatalCb: fatalErrorCb},
-		m:                make(map[string]*kvdb.KVPair),
-		w:                make(map[string]*watchData),
-		wt:               make(map[string]*watchData),
-		watchUpdateQueue: NewWatchUpdateQueue(),
-		updateWatchKeys:  true,
-		domain:           domain,
-		KvdbController:   kvdb.KvdbControllerNotSupported,
+		BaseKvdb:       common.BaseKvdb{FatalCb: fatalErrorCb},
+		m:              make(map[string]*kvdb.KVPair),
+		dist:           NewWatchDistributor(),
+		domain:         domain,
+		KvdbController: kvdb.KvdbControllerNotSupported,
 	}
 
 	if _, ok := options[KvSnap]; ok {
 		return &snapMem{memKV: mem}, nil
 	}
-	go mem.watchUpdates()
 	return mem, nil
 }
 
@@ -196,8 +250,6 @@ func (kv *memKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 	// Snapshot only data, watches are not copied.
 	return &memKV{
 		m:      data,
-		w:      make(map[string]*watchData),
-		wt:     make(map[string]*watchData),
 		domain: kv.domain,
 	}, highestKvPair.ModifiedIndex, nil
 }
@@ -244,7 +296,7 @@ func (kv *memKV) put(
 	}
 
 	kv.normalize(kvp)
-	kv.watchUpdateQueue.Enqueue(&watchUpdate{key, *kvp, nil})
+	kv.dist.NewUpdate(&watchUpdate{key, *kvp, nil})
 	return kvp, nil
 }
 
@@ -322,7 +374,7 @@ func (kv *memKV) delete(key string) (*kvdb.KVPair, error) {
 	kvp.ModifiedIndex = kvp.KVDBIndex
 	kvp.Action = kvdb.KVDelete
 	delete(kv.m, kv.domain+key)
-	kv.watchUpdateQueue.Enqueue(&watchUpdate{kv.domain + key, *kvp, nil})
+	kv.dist.NewUpdate(&watchUpdate{kv.domain + key, *kvp, nil})
 	return kvp, nil
 }
 
@@ -435,11 +487,9 @@ func (kv *memKV) WatchKey(
 	kv.mutex.Lock()
 	defer kv.mutex.Unlock()
 	key = kv.domain + key
-	if _, ok := kv.w[key]; ok {
-		return kvdb.ErrExist
-	}
-	kv.w[key] = &watchData{cb: cb, waitIndex: waitIndex, opaque: opaque}
-	kv.updateWatchKeys = true
+	go kv.watchCb(kv.dist.Add(), key,
+		&watchData{cb: cb, waitIndex: waitIndex, opaque: opaque},
+		false)
 	return nil
 }
 
@@ -449,15 +499,12 @@ func (kv *memKV) WatchTree(
 	opaque interface{},
 	cb kvdb.WatchCB,
 ) error {
-
 	kv.mutex.Lock()
 	defer kv.mutex.Unlock()
 	prefix = kv.domain + prefix
-	if _, ok := kv.wt[prefix]; ok {
-		return kvdb.ErrExist
-	}
-	kv.wt[prefix] = &watchData{cb: cb, waitIndex: waitIndex, opaque: opaque}
-	kv.updateWatchKeys = true
+	go kv.watchCb(kv.dist.Add(), prefix,
+		&watchData{cb: cb, waitIndex: waitIndex, opaque: opaque},
+		true)
 	return nil
 }
 
@@ -515,56 +562,22 @@ func copyWatchKeys(w map[string]*watchData) []string {
 	return keys
 }
 
-func (kv *memKV) watchUpdates() {
-	var watchKeys, watchTreeKeys []string
+func (kv *memKV) watchCb(
+	q WatchUpdateQueue,
+	prefix string,
+	v *watchData,
+	treeWatch bool,
+) {
 	for {
-		update := kv.watchUpdateQueue.Dequeue()
-		// Make a copy of the keys so that we can iterate over the map
-		// without the lock.
-		kv.mutex.Lock()
-		if kv.updateWatchKeys {
-			watchKeys = copyWatchKeys(kv.w)
-			watchTreeKeys = copyWatchKeys(kv.wt)
-			kv.updateWatchKeys = false
-		}
-		kv.mutex.Unlock()
-
-		for _, k := range watchKeys {
-			kv.mutex.Lock()
-			v, ok := kv.w[k]
-			kv.mutex.Unlock()
-			if !ok {
-				continue
-			}
-			if k == update.key && (v.waitIndex == 0 ||
-				v.waitIndex < update.kvp.ModifiedIndex) {
-				err := v.cb(update.key, v.opaque, &update.kvp, update.err)
-				if err != nil {
-					_ = v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)
-					kv.mutex.Lock()
-					delete(kv.w, update.key)
-					kv.updateWatchKeys = true
-					kv.mutex.Unlock()
-				}
-			}
-		}
-		for _, k := range watchTreeKeys {
-			kv.mutex.Lock()
-			v, ok := kv.wt[k]
-			kv.mutex.Unlock()
-			if !ok {
-				continue
-			}
-			if strings.HasPrefix(update.key, k) &&
-				(v.waitIndex == 0 || v.waitIndex < update.kvp.ModifiedIndex) {
-				err := v.cb(update.key, v.opaque, &update.kvp, update.err)
-				if err != nil {
-					_ = v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)
-					kv.mutex.Lock()
-					delete(kv.wt, update.key)
-					kv.updateWatchKeys = true
-					kv.mutex.Unlock()
-				}
+		update := q.Dequeue()
+		if ((treeWatch && strings.HasPrefix(update.key, prefix)) ||
+			(!treeWatch && update.key == prefix)) &&
+			(v.waitIndex == 0 || v.waitIndex < update.kvp.ModifiedIndex) {
+			err := v.cb(update.key, v.opaque, &update.kvp, update.err)
+			if err != nil {
+				_ = v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)
+				kv.dist.Remove(q)
+				return
 			}
 		}
 	}

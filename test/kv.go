@@ -85,8 +85,8 @@ func RunBasic(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	keys(kv, t)
 	lock(kv, t)
 	snapshot(kv, t)
-	watchKey(kv, t)
 	watchTree(kv, t)
+	watchKey(kv, t)
 	watchWithIndex(kv, t)
 	cas(kv, t)
 }
@@ -573,7 +573,6 @@ func watchFn(
 	err error,
 ) error {
 	data := opaque.(*watchData)
-
 	time.Sleep(100 * time.Millisecond)
 	if err != nil {
 		assert.Equal(data.t, err, kvdb.ErrWatchStopped)
@@ -695,11 +694,11 @@ func watchKey(kv kvdb.Kvdb, t *testing.T) {
 	kv.Delete(watchData.key)
 	kv.Delete(watchData.otherKey)
 	// First create a key. We should not get update for this create.
-	_, err := kv.Create(watchData.otherKey, []byte("bar"), 0)
+	kvp, err := kv.Create(watchData.otherKey, []byte("bar"), 0)
 	// Let the create operation finish and then start the watch
-	time.Sleep(time.Second)
+	time.Sleep(2 * time.Second)
 
-	err = kv.WatchKey(watchData.otherKey, 0, &watchData, watchFn)
+	err = kv.WatchKey(watchData.otherKey, kvp.ModifiedIndex, &watchData, watchFn)
 	if err != nil {
 		fmt.Printf("Cannot test watchKey: %v\n", err)
 		return
@@ -746,11 +745,11 @@ func watchTree(kv kvdb.Kvdb, t *testing.T) {
 	_, err = kv.Delete(watchData.otherKey)
 
 	// First create a tree to watch for. We should not get update for this create.
-	_, err = kv.Create(watchData.otherKey, []byte("bar"), 0)
+	kvp, err := kv.Create(watchData.otherKey, []byte("bar"), 0)
 	// Let the create operation finish and then start the watch
 
 	time.Sleep(time.Second)
-	err = kv.WatchTree(tree, 0, &watchData, watchFn)
+	err = kv.WatchTree(tree, kvp.ModifiedIndex, &watchData, watchFn)
 	if err != nil {
 		fmt.Printf("Cannot test watchKey: %v\n", err)
 		return
