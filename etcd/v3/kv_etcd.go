@@ -812,7 +812,7 @@ func (et *etcdKV) watchStart(
 		logrus.Errorf("Failed to establish session for etcd client watch: %v", err)
 	}
 	watcher := e.NewWatcher(et.kvClient)
-	ctx := context.Background()
+	ctx, watchCancel := context.WithCancel(context.Background())
 
 	watchRet := make(chan error)
 	watchChan := watcher.Watch(ctx, key, opts...)
@@ -858,6 +858,8 @@ func (et *etcdKV) watchStart(
 
 	select {
 	case <-session.Done(): // closed by etcd
+		// Close the context
+		watchCancel()
 		// Close the watcher
 		watcher.Close()
 		// Indicate the caller that watch has been canceled
