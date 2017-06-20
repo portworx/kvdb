@@ -1110,7 +1110,7 @@ func (e *etcdKV) AddMember(
 	nodeName string,
 ) (map[string][]string, error) {
 	peerURLs := e.listenPeerUrls(nodeIP, nodePeerPort)
-	_, err := e.kvClient.Cluster.MemberAdd(context.Background(), peerURLs)
+	_, err := e.kvClient.Cluster.MemberAdd(getContextWithLeaderRequirement(), peerURLs)
 	if err != nil {
 		return nil, err
 	}
@@ -1133,7 +1133,7 @@ func (e *etcdKV) AddMember(
 func (e *etcdKV) RemoveMember(
 	nodeID string,
 ) error {
-	memberListResponse, err := e.kvClient.Cluster.MemberList(context.Background())
+	memberListResponse, err := e.kvClient.Cluster.MemberList(getContextWithLeaderRequirement())
 	if err != nil {
 		return err
 	}
@@ -1187,6 +1187,10 @@ func (e *etcdKV) listenPeerUrls(ip string, port string) []string {
 func (e *etcdKV) constructUrl(ip string, port string) string {
 	ip = strings.TrimPrefix(ip, urlPrefix)
 	return urlPrefix + ip + ":" + port
+}
+
+func getContextWithLeaderRequirement() context.Context {
+	return e.WithRequireLeader(context.Background())
 }
 
 func getEtcdPermType(permType kvdb.PermissionType) (e.PermissionType, error) {
