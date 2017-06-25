@@ -807,10 +807,15 @@ func (et *etcdKV) watchStart(
 	if waitIndex != 0 {
 		opts = append(opts, e.WithRev(int64(waitIndex+1)))
 	}
-	session, err := concurrency.NewSession(et.kvClient, concurrency.WithTTL(defaultSessionTimeout))
+	session, err := concurrency.NewSession(
+		et.kvClient,
+		concurrency.WithTTL(defaultSessionTimeout))
 	if err != nil {
 		logrus.Errorf("Failed to establish session for etcd client watch: %v", err)
+		cb(key, opaque, nil, kvdb.ErrWatchStopped)
+		return
 	}
+
 	watcher := e.NewWatcher(et.kvClient)
 	ctx, watchCancel := context.WithCancel(context.Background())
 
@@ -823,7 +828,8 @@ func (et *etcdKV) watchStart(
 			}
 			if wresp.Canceled == true {
 				// Watch is canceled. Notify the watcher
-				logrus.Errorf("Watch on key %v cancelled. Error: %v", key, wresp.Err())
+				logrus.Errorf("Watch on key %v cancelled. Error: %v", key,
+					wresp.Err())
 				_ = cb(key, opaque, nil, kvdb.ErrWatchStopped)
 			} else {
 				for _, ev := range wresp.Events {
@@ -841,10 +847,12 @@ func (et *etcdKV) watchStart(
 					}
 					err := cb(key, opaque, et.resultToKv(ev.Kv, action), nil)
 					if err != nil {
+						logrus.Infof("Watch cb returned err: %v", err)
 						closeErr := watcher.Close()
 						// etcd server might close the context before us.
 						if closeErr != context.Canceled && closeErr != nil {
-							logrus.Errorf("Unable to close the watcher channel for key %v : %v", key, closeErr)
+							logrus.Errorf("Unable to close the watcher "+
+								"channel for key %v : %v", key, closeErr)
 						}
 						// Indicate the caller that watch has been canceled
 						_ = cb(key, opaque, nil, kvdb.ErrWatchStopped)
@@ -863,9 +871,10 @@ func (et *etcdKV) watchStart(
 		// Close the watcher
 		watcher.Close()
 		// Indicate the caller that watch has been canceled
+		logrus.Errorf("Watch closing session")
 		_ = cb(key, opaque, nil, kvdb.ErrWatchStopped)
 	case err := <-watchRet: // error in watcher
-		logrus.Errorf("Watch for %v stopped: %v",key, err)
+		logrus.Errorf("Watch for %v stopped: %v", key, err)
 	}
 }
 
@@ -888,15 +897,17 @@ func (et *etcdKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 		ok := false
 
 		if err != nil {
-			if err == kvdb.ErrWatchStopped {
+			if err == kvdb.ErrWatchStopped && finalPutDone {
 				return nil
 			}
+			logrus.Errorf("Watch returned error: %v", err)
 			watchErr = err
 			sendErr = err
 			goto errordone
 		}
 
 		if kvp == nil {
+			logrus.Infof("Snapshot error, nil kvp")
 			watchErr = fmt.Errorf("kvp is nil")
 			sendErr = watchErr
 			goto errordone
@@ -904,6 +915,7 @@ func (et *etcdKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 
 		m, ok = opaque.(*sync.Mutex)
 		if !ok {
+			logrus.Infof("Snapshot error, failed to get mutex")
 			watchErr = fmt.Errorf("Failed to get mutex")
 			sendErr = watchErr
 			goto errordone
@@ -915,6 +927,7 @@ func (et *etcdKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 		if finalPutDone {
 			if kvp.ModifiedIndex >= highestKvdbIndex {
 				// Done applying changes.
+				logrus.Infof("Snapshot complete")
 				watchErr = fmt.Errorf("done")
 				sendErr = nil
 				goto errordone
