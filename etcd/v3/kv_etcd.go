@@ -816,11 +816,9 @@ func (et *etcdKV) watchStart(
 		return
 	}
 
-	watcher := e.NewWatcher(et.kvClient)
 	ctx, watchCancel := context.WithCancel(context.Background())
-
 	watchRet := make(chan error)
-	watchChan := watcher.Watch(ctx, key, opts...)
+	watchChan := et.kvClient.Watch(ctx, key, opts...)
 	go func() {
 		for wresp := range watchChan {
 			if wresp.Created == true {
@@ -848,12 +846,6 @@ func (et *etcdKV) watchStart(
 					err := cb(key, opaque, et.resultToKv(ev.Kv, action), nil)
 					if err != nil {
 						logrus.Infof("Watch cb returned err: %v", err)
-						closeErr := watcher.Close()
-						// etcd server might close the context before us.
-						if closeErr != context.Canceled && closeErr != nil {
-							logrus.Errorf("Unable to close the watcher "+
-								"channel for key %v : %v", key, closeErr)
-						}
 						// Indicate the caller that watch has been canceled
 						_ = cb(key, opaque, nil, kvdb.ErrWatchStopped)
 						watchRet <- err
@@ -868,8 +860,6 @@ func (et *etcdKV) watchStart(
 	case <-session.Done(): // closed by etcd
 		// Close the context
 		watchCancel()
-		// Close the watcher
-		watcher.Close()
 		// Indicate the caller that watch has been canceled
 		logrus.Errorf("Watch closing session")
 		_ = cb(key, opaque, nil, kvdb.ErrWatchStopped)
