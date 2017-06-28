@@ -40,6 +40,48 @@ var (
 	defaultMachines = []string{"http://127.0.0.1:2379"}
 )
 
+// watchQ to collect updates without blocking
+type watchQ struct {
+	// q is the producer consumer q
+	q common.WatchUpdateQueue
+	// opaque is returned with the callbacl
+	opaque interface{}
+	// cb is the watch callback
+	cb kvdb.WatchCB
+	// watchRet returns error on channel to indicate stopping of watch
+	watchRet chan error
+	// done is true if watch has finished and no longer active
+	done bool
+}
+
+func newWatchQ(o interface{}, cb kvdb.WatchCB, watchRet chan error) *watchQ {
+	q := &watchQ{q: common.NewWatchUpdateQueue(), opaque: o, cb: cb,
+		watchRet: watchRet, done: false}
+	go q.start()
+	return q
+}
+
+func (w *watchQ) enqueue(key string, kvp *kvdb.KVPair, err error) bool {
+	w.q.Enqueue(key, kvp, err)
+	return !w.done
+}
+
+func (w *watchQ) start() {
+	for {
+		key, kvp, err := w.q.Dequeue()
+		err = w.cb(key, w.opaque, kvp, err)
+		if err != nil {
+			w.done = true
+			logrus.Infof("Watch cb returned err: %v", err)
+			// Indicate the caller that watch has been canceled
+			_ = w.cb(key, w.opaque, nil, kvdb.ErrWatchStopped)
+			// Indicate that watch is returning.
+			w.watchRet <- err
+			break
+		}
+	}
+}
+
 func init() {
 	if err := kvdb.Register(Name, New, ec.Version); err != nil {
 		panic(err.Error())
@@ -812,13 +854,14 @@ func (et *etcdKV) watchStart(
 		concurrency.WithTTL(defaultSessionTimeout))
 	if err != nil {
 		logrus.Errorf("Failed to establish session for etcd client watch: %v", err)
-		cb(key, opaque, nil, kvdb.ErrWatchStopped)
+		_ = cb(key, opaque, nil, kvdb.ErrWatchStopped)
 		return
 	}
 
 	ctx, watchCancel := context.WithCancel(context.Background())
 	watchRet := make(chan error)
 	watchChan := et.kvClient.Watch(ctx, key, opts...)
+	watchQ := newWatchQ(opaque, cb, watchRet)
 	go func() {
 		for wresp := range watchChan {
 			if wresp.Created == true {
@@ -828,7 +871,8 @@ func (et *etcdKV) watchStart(
 				// Watch is canceled. Notify the watcher
 				logrus.Errorf("Watch on key %v cancelled. Error: %v", key,
 					wresp.Err())
-				_ = cb(key, opaque, nil, kvdb.ErrWatchStopped)
+				watchQ.enqueue(key, nil, kvdb.ErrWatchStopped)
+				break
 			} else {
 				for _, ev := range wresp.Events {
 					var action string
@@ -843,12 +887,7 @@ func (et *etcdKV) watchStart(
 					} else {
 						action = "unknown"
 					}
-					err := cb(key, opaque, et.resultToKv(ev.Kv, action), nil)
-					if err != nil {
-						logrus.Infof("Watch cb returned err: %v", err)
-						// Indicate the caller that watch has been canceled
-						_ = cb(key, opaque, nil, kvdb.ErrWatchStopped)
-						watchRet <- err
+					if !watchQ.enqueue(key, et.resultToKv(ev.Kv, action), err) {
 						break
 					}
 				}
@@ -862,7 +901,7 @@ func (et *etcdKV) watchStart(
 		watchCancel()
 		// Indicate the caller that watch has been canceled
 		logrus.Errorf("Watch closing session")
-		_ = cb(key, opaque, nil, kvdb.ErrWatchStopped)
+		watchQ.enqueue(key, nil, kvdb.ErrWatchStopped)
 	case err := <-watchRet: // error in watcher
 		logrus.Errorf("Watch for %v stopped: %v", key, err)
 	}
@@ -1107,18 +1146,18 @@ func (et *etcdKV) RevokeUsersAccess(username string, permType kvdb.PermissionTyp
 	return err
 }
 
-func (e *etcdKV) AddMember(
+func (et *etcdKV) AddMember(
 	nodeIP string,
 	nodePeerPort string,
 	nodeName string,
 ) (map[string][]string, error) {
-	peerURLs := e.listenPeerUrls(nodeIP, nodePeerPort)
-	_, err := e.kvClient.Cluster.MemberAdd(getContextWithLeaderRequirement(), peerURLs)
+	peerURLs := et.listenPeerUrls(nodeIP, nodePeerPort)
+	_, err := et.kvClient.Cluster.MemberAdd(getContextWithLeaderRequirement(), peerURLs)
 	if err != nil {
 		return nil, err
 	}
 	resp := make(map[string][]string)
-	memberListResponse, err := e.kvClient.Cluster.MemberList(context.Background())
+	memberListResponse, err := et.kvClient.Cluster.MemberList(context.Background())
 	if err != nil {
 		return nil, err
 	}

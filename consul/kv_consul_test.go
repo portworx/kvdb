@@ -15,7 +15,7 @@ func TestAll(t *testing.T) {
 
 func createUsingCAS(kv kvdb.Kvdb, t *testing.T) {
 	defer func() {
-		kv.DeleteTree("foo")
+		_ = kv.DeleteTree("foo")
 	}()
 	kvPair := &kvdb.KVPair{Key: "foo/createKey", ModifiedIndex: 0}
 	_, err := kv.CompareAndSet(kvPair, kvdb.KVModifiedIndex, []byte("some"))
