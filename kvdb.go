@@ -294,9 +294,12 @@ const (
 	ClientPort = "2379"
 )
 
-type MemberUrls struct {
-	PeerUrls []string
+type MemberInfo struct {
+	PeerUrls   []string
 	ClientUrls []string
+	Leader     bool
+	DbSize     int64
+	IsHealthy  bool
 }
 
 type KvdbController interface {
@@ -311,13 +314,12 @@ type KvdbController interface {
 	RemoveMember(nodeID string) error
 
 	// ListMembers enumerates the members of the kvdb cluster
-	// Returns: the nodeID  to peerUrl mappings of all the members
-	ListMembers() (map[string]*MemberUrls, error)
+	// Returns: the nodeID  to memberInfo mappings of all the members
+	ListMembers() (map[string]*MemberInfo, error)
 
 	// SetEndpoints set the kvdb endpoints for the client
 	SetEndpoints(endpoints []string) error
 
 	// GetEndpoints returns the kvdb endpoints for the client
 	GetEndpoints() []string
-
 }

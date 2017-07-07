@@ -90,9 +90,10 @@ func init() {
 
 type etcdKV struct {
 	common.BaseKvdb
-	kvClient   *e.Client
-	authClient e.Auth
-	domain     string
+	kvClient          *e.Client
+	authClient        e.Auth
+	maintenanceClient e.Maintenance
+	domain            string
 	ec.EtcdCommon
 }
 
@@ -138,6 +139,7 @@ func New(
 		common.BaseKvdb{FatalCb: fatalErrorCb},
 		c,
 		e.NewAuth(c),
+		e.NewMaintenance(c),
 		domain,
 		etcdCommon,
 	}, nil
@@ -611,15 +613,14 @@ func (et *etcdKV) LockWithID(key string, lockerID string) (
 	count := 0
 	lockTag := ec.LockerIDInfo{LockerID: lockerID}
 	kvPair, err := et.Create(key, lockTag, ttl)
-
 	for maxCount := 300; err != nil && count < maxCount; count++ {
 		time.Sleep(duration)
 		kvPair, err = et.Create(key, lockTag, ttl)
 		if count > 0 && count%15 == 0 && err != nil {
 			currLockerTag := ec.LockerIDInfo{LockerID: ""}
 			if _, errGet := et.GetVal(key, &currLockerTag); errGet == nil {
-				logrus.Warnf("Lock %v locked for %v seconds, tag: %v",
-					key, count, currLockerTag)
+				logrus.Warnf("Lock %v locked for %v seconds, tag: %v, err: %v",
+					key, count, currLockerTag, err)
 			}
 		}
 	}
@@ -1198,16 +1199,35 @@ func (e *etcdKV) RemoveMember(
 	return err
 }
 
-func (e *etcdKV) ListMembers() (map[string]*kvdb.MemberUrls, error) {
+func (e *etcdKV) ListMembers() (map[string]*kvdb.MemberInfo, error) {
 	memberListResponse, err := e.kvClient.Cluster.MemberList(context.Background())
 	if err != nil {
 		return nil, err
 	}
-	resp := make(map[string]*kvdb.MemberUrls)
+	resp := make(map[string]*kvdb.MemberInfo)
 	for _, member := range memberListResponse.Members {
-		resp[member.Name] = &kvdb.MemberUrls{
+		var (
+			leader    bool
+			dbSize    int64
+			isHealthy bool
+		)
+		endpointStatus, err := e.maintenanceClient.Status(
+			context.Background(),
+			member.ClientURLs[0],
+		)
+		if err == nil {
+			if member.ID == endpointStatus.Leader {
+				leader = true
+			}
+			dbSize = endpointStatus.DbSize
+			isHealthy = true
+		}
+		resp[member.Name] = &kvdb.MemberInfo{
 			PeerUrls:   member.PeerURLs,
 			ClientUrls: member.ClientURLs,
+			Leader:     leader,
+			DbSize:     dbSize,
+			IsHealthy:  isHealthy,
 		}
 	}
 	return resp, nil

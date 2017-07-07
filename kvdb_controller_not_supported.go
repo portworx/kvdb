@@ -16,7 +16,7 @@ func (c *controllerNotSupported) RemoveMember(nodeID string) error {
 	return ErrNotSupported
 }
 
-func (c *controllerNotSupported) ListMembers() (map[string]*MemberUrls, error) {
+func (c *controllerNotSupported) ListMembers() (map[string]*MemberInfo, error) {
 	return nil, ErrNotSupported
 }
 
