@@ -745,7 +745,7 @@ func (et *etcdKV) setWithRetry(key, value string, ttl uint64) (*kvdb.KVPair, err
 			goto handle_error
 		} else {
 			ctx, cancel := et.Context()
-			result, err := et.kvClient.Put(ctx, pathKey, value)
+			result, err = et.kvClient.Put(ctx, pathKey, value)
 			cancel()
 			if err == nil && result != nil {
 				kvp, err := et.handlePutResponse(result, key)
