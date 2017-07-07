@@ -529,12 +529,24 @@ func lock(kv kvdb.Kvdb, t *testing.T) {
 		kvPair, err = lockMethod(key)
 		assert.NoError(t, err, "Unexpected error in lock")
 		go func() {
-			time.Sleep(30 * time.Second)
+			time.Sleep(10 * time.Second)
 			err = kv.Unlock(kvPair)
 			assert.NoError(t, err, "Unexpected error from Unlock")
 		}()
 		kvPair2, err := lockMethod(key)
 		assert.NoError(t, err, "Double lock")
+		err = kv.Unlock(kvPair2)
+		assert.NoError(t, err, "Unexpected error from Unlock")
+
+		kvPair, err = lockMethod("key1")
+		assert.NoError(t, err, "Unexpected error in lock")
+		go func() {
+			time.Sleep(1 * time.Second)
+			err = kv.Unlock(kvPair)
+			assert.NoError(t, err, "Unexpected error from Unlock")
+		}()
+		kvPair2, err = lockMethod("key2")
+		assert.NoError(t, err, "diff lock")
 		err = kv.Unlock(kvPair2)
 		assert.NoError(t, err, "Unexpected error from Unlock")
 
