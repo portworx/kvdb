@@ -29,7 +29,8 @@ import (
 const (
 	// Name is the name of this kvdb implementation.
 	Name                  = "etcdv3-kv"
-	defaultRequestTimeout = 10 * time.Second
+	defaultKvRequestTimeout = 10 * time.Second
+	defaultMaintenanceTimeout = 5 * time.Second
 	// defaultSessionTimeout in seconds is used for etcd watch
 	// to detect connectivity issues
 	defaultSessionTimeout = 120
@@ -154,7 +155,11 @@ func (et *etcdKV) Capabilities() int {
 }
 
 func (et *etcdKV) Context() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), defaultRequestTimeout)
+	return context.WithTimeout(context.Background(), defaultKvRequestTimeout)
+}
+
+func (et *etcdKV) MaintenanceContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(getContextWithLeaderRequirement(), defaultMaintenanceTimeout)
 }
 
 func (et *etcdKV) Get(key string) (*kvdb.KVPair, error) {
@@ -1153,12 +1158,16 @@ func (et *etcdKV) AddMember(
 	nodeName string,
 ) (map[string][]string, error) {
 	peerURLs := et.listenPeerUrls(nodeIP, nodePeerPort)
-	_, err := et.kvClient.Cluster.MemberAdd(getContextWithLeaderRequirement(), peerURLs)
+	ctx, cancel := et.MaintenanceContext()
+	_, err := et.kvClient.MemberAdd(ctx, peerURLs)
+	cancel()
 	if err != nil {
 		return nil, err
 	}
 	resp := make(map[string][]string)
-	memberListResponse, err := et.kvClient.Cluster.MemberList(context.Background())
+	ctx, cancel = et.MaintenanceContext()
+	memberListResponse, err := et.kvClient.MemberList(ctx)
+	cancel()
 	if err != nil {
 		return nil, err
 	}
@@ -1173,10 +1182,12 @@ func (et *etcdKV) AddMember(
 	return resp, nil
 }
 
-func (e *etcdKV) RemoveMember(
+func (et *etcdKV) RemoveMember(
 	nodeID string,
 ) error {
-	memberListResponse, err := e.kvClient.Cluster.MemberList(getContextWithLeaderRequirement())
+	ctx, cancel := et.MaintenanceContext()
+	memberListResponse, err := et.kvClient.MemberList(ctx)
+	cancel()
 	if err != nil {
 		return err
 	}
@@ -1194,13 +1205,20 @@ func (e *etcdKV) RemoveMember(
 			}
 		}
 	}
-	e.kvClient.SetEndpoints(newClientUrls...)
-	_, err = e.kvClient.Cluster.MemberRemove(context.Background(), memberId)
-	return err
+	et.kvClient.SetEndpoints(newClientUrls...)
+	ctx, cancel = et.MaintenanceContext()
+	_, err = et.kvClient.MemberRemove(ctx, memberId)
+	cancel()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func (e *etcdKV) ListMembers() (map[string]*kvdb.MemberInfo, error) {
-	memberListResponse, err := e.kvClient.Cluster.MemberList(context.Background())
+func (et *etcdKV) ListMembers() (map[string]*kvdb.MemberInfo, error) {
+	ctx, cancel := et.MaintenanceContext()
+	memberListResponse, err := et.kvClient.MemberList(ctx)
+	cancel()
 	if err != nil {
 		return nil, err
 	}
@@ -1211,10 +1229,12 @@ func (e *etcdKV) ListMembers() (map[string]*kvdb.MemberInfo, error) {
 			dbSize    int64
 			isHealthy bool
 		)
-		endpointStatus, err := e.maintenanceClient.Status(
-			context.Background(),
+		ctx, cancel = et.MaintenanceContext()
+		endpointStatus, err := et.maintenanceClient.Status(
+			ctx,
 			member.ClientURLs[0],
 		)
+		cancel()
 		if err == nil {
 			if member.ID == endpointStatus.Leader {
 				leader = true
@@ -1233,20 +1253,20 @@ func (e *etcdKV) ListMembers() (map[string]*kvdb.MemberInfo, error) {
 	return resp, nil
 }
 
-func (e *etcdKV) SetEndpoints(endpoints []string) error {
-	e.kvClient.SetEndpoints(endpoints...)
+func (et *etcdKV) SetEndpoints(endpoints []string) error {
+	et.kvClient.SetEndpoints(endpoints...)
 	return nil
 }
 
-func (e *etcdKV) GetEndpoints() []string {
-	return e.kvClient.Endpoints()
+func (et *etcdKV) GetEndpoints() []string {
+	return et.kvClient.Endpoints()
 }
 
-func (e *etcdKV) listenPeerUrls(ip string, port string) []string {
-	return []string{e.constructUrl(ip, port)}
+func (et *etcdKV) listenPeerUrls(ip string, port string) []string {
+	return []string{et.constructUrl(ip, port)}
 }
 
-func (e *etcdKV) constructUrl(ip string, port string) string {
+func (et *etcdKV) constructUrl(ip string, port string) string {
 	ip = strings.TrimPrefix(ip, urlPrefix)
 	return urlPrefix + ip + ":" + port
 }
