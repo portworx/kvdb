@@ -3,9 +3,11 @@ package test
 import (
 	"errors"
 	"fmt"
+	"math/rand"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -60,6 +62,7 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T) kvdb.Kvdb {
 	deleteTree(kv, t)
 	enumerate(kv, t)
 	keys(kv, t)
+	concurrentEnum(kv, t)
 	lock(kv, t)
 	watchKey(kv, t)
 	watchTree(kv, t)
@@ -83,6 +86,7 @@ func RunBasic(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	deleteTree(kv, t)
 	enumerate(kv, t)
 	keys(kv, t)
+	concurrentEnum(kv, t)
 	lock(kv, t)
 	snapshot(kv, t)
 	watchTree(kv, t)
@@ -376,6 +380,98 @@ func keys(kv kvdb.Kvdb, t *testing.T) {
 	assert.Equal(t, testKeys, keys,
 		"Expecting array %v to be equal to %v",
 		testKeys, keys)
+}
+
+func concurrentEnum(kv kvdb.Kvdb, t *testing.T) {
+
+	fmt.Println("concurrentEnum")
+
+	prefix := "concEnum"
+	var wg sync.WaitGroup
+	quit, latch := make(chan bool), make(chan bool)
+	shared, numGoroutines := int32(0), 0
+
+	kv.DeleteTree(prefix)
+	defer func() {
+		kv.DeleteTree(prefix)
+	}()
+
+	// start 3 "adders"
+	for i := 0; i < 3; i++ {
+		go func() {
+			id := atomic.AddInt32(&shared, 1)
+			fmt.Printf("> Adder #%d started ...\n", id)
+			content := []byte(fmt.Sprintf("adder #%d", id))
+			wg.Add(1)
+			defer wg.Done()
+			_ = <-latch // sync-point
+			for j := 0; ; j++ {
+				select {
+				case <-quit:
+					fmt.Printf("> Adder #%d quit ...\n", id)
+					return
+				default:
+					key := fmt.Sprintf("%s/%d-%d", prefix, id, j%100000)
+					_, err := kv.Put(key, content, 0)
+					assert.NoError(t, err, "Unexpected error on Put")
+					// sleep a bit, not to be overly aggressive
+					time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)
+				}
+			}
+			assert.Fail(t, "I should not be here")
+		}()
+		numGoroutines++
+	}
+
+	// start 1 "deleter"
+	go func() {
+		wg.Add(1)
+		defer wg.Done()
+		fmt.Printf("> Deleter started ...\n")
+		_ = <-latch     // sync-point
+		for j := 0; ; { // cap at max 100k
+			select {
+			case <-quit:
+				fmt.Printf("> Deleter quit ...\n")
+				return
+			default:
+				key := fmt.Sprintf("%s/%d-%d", prefix, rand.Intn(numGoroutines), j%100000)
+				_, err := kv.Delete(key)
+				if err == nil {
+					// advance only on successful delete
+					j++
+				}
+				// sleep a bit, not to be overly aggressive
+				time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)
+			}
+		}
+		assert.Fail(t, "I should not be here")
+	}()
+	numGoroutines++
+
+	fmt.Printf("> MAIN wait ...\n")
+	time.Sleep(50 * time.Millisecond)
+	close(latch) // release sync-points
+	time.Sleep(1500 * time.Millisecond)
+
+	// make sure these two just work, otherwise we cannot assume how many elements found
+
+	fmt.Printf("> MAIN run Enum ...\n")
+	_, err := kv.Enumerate(prefix)
+	assert.NoError(t, err)
+
+	fmt.Printf("> MAIN run Keys ...\n")
+	_, err = kv.Keys(prefix, "")
+	assert.NoError(t, err)
+
+	fmt.Printf("> MAIN quit goroutines ...\n")
+	for i := 0; i < numGoroutines; i++ {
+		quit <- true
+	}
+	close(quit)
+	fmt.Printf("> MAIN waiting ...\n")
+	wg.Wait()
+	fmt.Printf("> MAIN done ...\n")
 }
 
 func snapshot(kv kvdb.Kvdb, t *testing.T) {

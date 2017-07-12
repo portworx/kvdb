@@ -354,6 +354,12 @@ func (kv *memKV) Update(
 }
 
 func (kv *memKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
+	kv.mutex.Lock()
+	defer kv.mutex.Unlock()
+	return kv.enumerate(prefix)
+}
+
+func (kv *memKV) enumerate(prefix string) (kvdb.KVPairs, error) {
 	var kvp = make(kvdb.KVPairs, 0, 100)
 	prefix = kv.domain + prefix
 
@@ -392,7 +398,7 @@ func (kv *memKV) DeleteTree(prefix string) error {
 	kv.mutex.Lock()
 	defer kv.mutex.Unlock()
 
-	kvp, err := kv.Enumerate(prefix)
+	kvp, err := kv.enumerate(prefix)
 	if err != nil {
 		return err
 	}
@@ -416,8 +422,10 @@ func (kv *memKV) Keys(prefix, sep string) ([]string, error) {
 		prefix += sep
 		lenPrefix += lenSep
 	}
-
 	seen := make(map[string]bool)
+	kv.mutex.Lock()
+	defer kv.mutex.Unlock()
+
 	for k := range kv.m {
 		if strings.HasPrefix(k, prefix) && !strings.Contains(k, "/_") {
 			key := k[lenPrefix:]
