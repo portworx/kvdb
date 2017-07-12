@@ -43,7 +43,7 @@ type etcdKV struct {
 	authRole e.AuthRoleAPI
 	domain   string
 	ec.EtcdCommon
-	kvdb.KvdbController
+	kvdb.Controller
 }
 
 // New constructs a new kvdb.Kvdb.
@@ -88,7 +88,7 @@ func New(
 		e.NewAuthRoleAPI(c),
 		domain,
 		etcdCommon,
-		kvdb.KvdbControllerNotSupported,
+		kvdb.ControllerNotSupported,
 	}, nil
 }
 
@@ -617,7 +617,7 @@ func (kv *etcdKV) watchStart(
 
 func (kv *etcdKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 
-	updates := make([]*kvdb.KVPair, 0)
+	var updates []*kvdb.KVPair
 	done := make(chan error)
 	mutex := &sync.Mutex{}
 	finalPutDone := false

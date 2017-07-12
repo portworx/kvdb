@@ -915,7 +915,7 @@ func (et *etcdKV) watchStart(
 
 func (et *etcdKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 	// Create a new bootstrap key
-	updates := make([]*kvdb.KVPair, 0)
+	var updates []*kvdb.KVPair
 	finalPutDone := false
 	var lowestKvdbIndex, highestKvdbIndex uint64
 	done := make(chan error)
@@ -1193,21 +1193,21 @@ func (et *etcdKV) RemoveMember(
 	}
 	var (
 		newClientUrls []string
-		memberId      uint64
+		memberID      uint64
 	)
 
 	for _, member := range memberListResponse.Members {
 		if member.Name == nodeID {
-			memberId = member.ID
+			memberID = member.ID
 		} else {
-			for _, clientUrl := range member.ClientURLs {
-				newClientUrls = append(newClientUrls, clientUrl)
+			for _, clientURL := range member.ClientURLs {
+				newClientUrls = append(newClientUrls, clientURL)
 			}
 		}
 	}
 	et.kvClient.SetEndpoints(newClientUrls...)
 	ctx, cancel = et.MaintenanceContext()
-	_, err = et.kvClient.MemberRemove(ctx, memberId)
+	_, err = et.kvClient.MemberRemove(ctx, memberID)
 	cancel()
 	if err != nil {
 		return err
@@ -1265,10 +1265,10 @@ func (et *etcdKV) GetEndpoints() []string {
 }
 
 func (et *etcdKV) listenPeerUrls(ip string, port string) []string {
-	return []string{et.constructUrl(ip, port)}
+	return []string{et.constructURL(ip, port)}
 }
 
-func (et *etcdKV) constructUrl(ip string, port string) string {
+func (et *etcdKV) constructURL(ip string, port string) string {
 	ip = strings.TrimPrefix(ip, urlPrefix)
 	return urlPrefix + ip + ":" + port
 }

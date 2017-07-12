@@ -44,7 +44,7 @@ type memKV struct {
 	// index current kvdb index
 	index  uint64
 	domain string
-	kvdb.KvdbController
+	kvdb.Controller
 }
 
 type snapMem struct {
@@ -89,6 +89,8 @@ type distributor struct {
 	watchers []WatchUpdateQueue
 }
 
+// NewWatchDistributor returns a new instance of 
+// the WatchDistrubtor interface
 func NewWatchDistributor() WatchDistributor {
 	return &distributor{}
 }
@@ -140,6 +142,7 @@ type watchQueue struct {
 	cv *sync.Cond
 }
 
+// NewWatchUpdateQueue returns an instance of WatchUpdateQueue
 func NewWatchUpdateQueue() WatchUpdateQueue {
 	mtx := &sync.Mutex{}
 	return &watchQueue{
@@ -191,7 +194,7 @@ func New(
 		m:              make(map[string]*kvdb.KVPair),
 		dist:           NewWatchDistributor(),
 		domain:         domain,
-		KvdbController: kvdb.KvdbControllerNotSupported,
+		Controller: kvdb.ControllerNotSupported,
 	}
 
 	if _, ok := options[KvSnap]; ok {

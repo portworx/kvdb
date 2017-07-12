@@ -1,9 +1,9 @@
 package kvdb
 
 var (
-	// KvdbControllerNotSupported is a null controller implementation. This can be used
+	// ControllerNotSupported is a null controller implementation. This can be used
 	// kvdb implementors that do no want to implement the controller interface
-	KvdbControllerNotSupported = &controllerNotSupported{}
+	ControllerNotSupported = &controllerNotSupported{}
 )
 
 type controllerNotSupported struct{}

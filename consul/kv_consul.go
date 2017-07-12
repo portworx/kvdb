@@ -67,7 +67,7 @@ type consulKV struct {
 	client *api.Client
 	config *api.Config
 	domain string
-	kvdb.KvdbController
+	kvdb.Controller
 }
 
 type consulLock struct {
@@ -137,7 +137,7 @@ func New(
 		client,
 		config,
 		domain,
-		kvdb.KvdbControllerNotSupported,
+		kvdb.ControllerNotSupported,
 	}, nil
 }
 

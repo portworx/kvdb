@@ -183,7 +183,7 @@ type Tx interface {
 
 // Kvdb interface implemented by backing datastores.
 type Kvdb interface {
-	KvdbController
+	Controller
 	// String representation of backend datastore.
 	String() string
 	// Capbilities - see KVCapabilityXXX
@@ -294,6 +294,7 @@ const (
 	ClientPort = "2379"
 )
 
+// MemberInfo represents a member of the kvdb cluster
 type MemberInfo struct {
 	PeerUrls   []string
 	ClientUrls []string
@@ -302,7 +303,8 @@ type MemberInfo struct {
 	IsHealthy  bool
 }
 
-type KvdbController interface {
+// Controller interface provides APIs to manage Kvdb Cluster and Kvdb Clients.
+type Controller interface {
 	// AddMember adds a new member to an existing kvdb cluster. Add should be
 	// called on a kvdb node where kvdb is already running. It should be
 	// followed by a Setup call on the actual node

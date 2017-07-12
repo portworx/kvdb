@@ -25,14 +25,15 @@ var (
 	cmds map[int]*exec.Cmd
 )
 
+// RunControllerTests is a test suite for kvdb controller APIs
 func RunControllerTests(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	cleanup()
 	// Initialize node 0
 	cmds = make(map[int]*exec.Cmd)
 	index := 0
 	initCluster := make(map[string][]string)
-	peerUrl := urlPrefix + localhost + ":" + peerPorts[index]
-	initCluster[names[index]] = []string{peerUrl}
+	peerURL := urlPrefix + localhost + ":" + peerPorts[index]
+	initCluster[names[index]] = []string{peerURL}
 	cmd, err := startEtcd(index, initCluster, "new")
 	if err != nil {
 		t.Fatalf(err.Error())
@@ -125,8 +126,8 @@ func testReAdd(kv kvdb.Kvdb, t *testing.T) {
 }
 
 func startEtcd(index int, initCluster map[string][]string, initState string) (*exec.Cmd, error){
-	peerUrl := urlPrefix + localhost + ":" + peerPorts[index]
-	clientUrl := clientUrls[index]
+	peerURL := urlPrefix + localhost + ":" + peerPorts[index]
+	clientURL := clientUrls[index]
 	initialCluster := ""
 	for name, ip := range initCluster {
 		initialCluster = initialCluster + name + "=" + ip[0] + ","
@@ -137,13 +138,13 @@ func startEtcd(index int, initCluster map[string][]string, initState string) (*e
 		"--name="+
 		names[index],
 		"--initial-advertise-peer-urls="+
-		peerUrl,
+		peerURL,
 		"--listen-peer-urls="+
-		peerUrl,
+		peerURL,
 		"--listen-client-urls="+
-		clientUrl,
+		clientURL,
 		"--advertise-client-urls="+
-		clientUrl,
+		clientURL,
 		"--initial-cluster="+
 		initialCluster,
 		"--data-dir="+
