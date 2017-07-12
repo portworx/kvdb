@@ -28,8 +28,8 @@ import (
 
 const (
 	// Name is the name of this kvdb implementation.
-	Name                  = "etcdv3-kv"
-	defaultKvRequestTimeout = 10 * time.Second
+	Name                      = "etcdv3-kv"
+	defaultKvRequestTimeout   = 10 * time.Second
 	defaultMaintenanceTimeout = 5 * time.Second
 	// defaultSessionTimeout in seconds is used for etcd watch
 	// to detect connectivity issues
@@ -1229,18 +1229,20 @@ func (et *etcdKV) ListMembers() (map[string]*kvdb.MemberInfo, error) {
 			dbSize    int64
 			isHealthy bool
 		)
-		ctx, cancel = et.MaintenanceContext()
-		endpointStatus, err := et.maintenanceClient.Status(
-			ctx,
-			member.ClientURLs[0],
-		)
-		cancel()
-		if err == nil {
-			if member.ID == endpointStatus.Leader {
-				leader = true
+		if len(member.ClientURLs) != 0 {
+			ctx, cancel = et.MaintenanceContext()
+			endpointStatus, err := et.maintenanceClient.Status(
+				ctx,
+				member.ClientURLs[0],
+			)
+			cancel()
+			if err == nil {
+				if member.ID == endpointStatus.Leader {
+					leader = true
+				}
+				dbSize = endpointStatus.DbSize
+				isHealthy = true
 			}
-			dbSize = endpointStatus.DbSize
-			isHealthy = true
 		}
 		resp[member.Name] = &kvdb.MemberInfo{
 			PeerUrls:   member.PeerURLs,
