@@ -89,7 +89,7 @@ type distributor struct {
 	watchers []WatchUpdateQueue
 }
 
-// NewWatchDistributor returns a new instance of 
+// NewWatchDistributor returns a new instance of
 // the WatchDistrubtor interface
 func NewWatchDistributor() WatchDistributor {
 	return &distributor{}
@@ -190,10 +190,10 @@ func New(
 	}
 
 	mem := &memKV{
-		BaseKvdb:       common.BaseKvdb{FatalCb: fatalErrorCb},
-		m:              make(map[string]*kvdb.KVPair),
-		dist:           NewWatchDistributor(),
-		domain:         domain,
+		BaseKvdb:   common.BaseKvdb{FatalCb: fatalErrorCb},
+		m:          make(map[string]*kvdb.KVPair),
+		dist:       NewWatchDistributor(),
+		domain:     domain,
 		Controller: kvdb.ControllerNotSupported,
 	}
 
