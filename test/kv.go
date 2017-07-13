@@ -400,7 +400,7 @@ func concurrentEnum(kv kvdb.Kvdb, t *testing.T) {
 	for i := 0; i < 3; i++ {
 		go func() {
 			id := atomic.AddInt32(&shared, 1)
-			fmt.Printf("> Adder #%d started ...\n", id)
+			fmt.Printf("+> Adder #%d started\n", id)
 			content := []byte(fmt.Sprintf("adder #%d", id))
 			wg.Add(1)
 			defer wg.Done()
@@ -408,14 +408,14 @@ func concurrentEnum(kv kvdb.Kvdb, t *testing.T) {
 			for j := 0; ; j++ {
 				select {
 				case <-quit:
-					fmt.Printf("> Adder #%d quit ...\n", id)
+					fmt.Printf("+> Adder #%d quit (stored %d keys)\n", id, j)
 					return
 				default:
 					key := fmt.Sprintf("%s/%d-%d", prefix, id, j%100000)
 					_, err := kv.Put(key, content, 0)
 					assert.NoError(t, err, "Unexpected error on Put")
 					// sleep a bit, not to be overly aggressive
-					time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)
+					time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
 				}
 			}
 			assert.Fail(t, "I should not be here")
@@ -427,12 +427,12 @@ func concurrentEnum(kv kvdb.Kvdb, t *testing.T) {
 	go func() {
 		wg.Add(1)
 		defer wg.Done()
-		fmt.Printf("> Deleter started ...\n")
+		fmt.Printf("+> Deleter started\n")
 		_ = <-latch     // sync-point
 		for j := 0; ; { // cap at max 100k
 			select {
 			case <-quit:
-				fmt.Printf("> Deleter quit ...\n")
+				fmt.Printf("+> Deleter quit (deleted %d keys)\n", j)
 				return
 			default:
 				key := fmt.Sprintf("%s/%d-%d", prefix, rand.Intn(numGoroutines), j%100000)
@@ -442,36 +442,41 @@ func concurrentEnum(kv kvdb.Kvdb, t *testing.T) {
 					j++
 				}
 				// sleep a bit, not to be overly aggressive
-				time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)
+				time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
 			}
 		}
 		assert.Fail(t, "I should not be here")
 	}()
 	numGoroutines++
 
-	fmt.Printf("> MAIN wait ...\n")
+	fmt.Printf("> MAIN waiting for workers\n")
 	time.Sleep(50 * time.Millisecond)
 	close(latch) // release sync-points
-	time.Sleep(1500 * time.Millisecond)
+	time.Sleep(5500 * time.Millisecond)
 
 	// make sure these two just work, otherwise we cannot assume how many elements found
 
-	fmt.Printf("> MAIN run Enum ...\n")
-	_, err := kv.Enumerate(prefix)
-	assert.NoError(t, err)
+	sep := ':'
+	fmt.Printf("> MAIN run")
+	for i := 0; i < 5; i++ {
+		fmt.Printf("%c Enumerate", sep)
+		_, err := kv.Enumerate(prefix)
+		assert.NoError(t, err)
 
-	fmt.Printf("> MAIN run Keys ...\n")
-	_, err = kv.Keys(prefix, "")
-	assert.NoError(t, err)
+		sep = ','
+		fmt.Printf("%c Keys", sep)
+		_, err = kv.Keys(prefix, "")
+		assert.NoError(t, err)
+	}
 
-	fmt.Printf("> MAIN quit goroutines ...\n")
+	fmt.Printf("%c stop workers\n", sep)
 	for i := 0; i < numGoroutines; i++ {
 		quit <- true
 	}
 	close(quit)
-	fmt.Printf("> MAIN waiting ...\n")
+	fmt.Printf("> MAIN waiting ...")
 	wg.Wait()
-	fmt.Printf("> MAIN done ...\n")
+	fmt.Printf("DONE.\n")
 }
 
 func snapshot(kv kvdb.Kvdb, t *testing.T) {
