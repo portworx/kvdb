@@ -405,6 +405,7 @@ func concurrentEnum(kv kvdb.Kvdb, t *testing.T) {
 			wg.Add(1)
 			defer wg.Done()
 			_ = <-latch // sync-point
+			numFails := 0
 			for j := 0; ; j++ {
 				select {
 				case <-quit:
@@ -413,12 +414,16 @@ func concurrentEnum(kv kvdb.Kvdb, t *testing.T) {
 				default:
 					key := fmt.Sprintf("%s/%d-%d", prefix, id, j%100000)
 					_, err := kv.Put(key, content, 0)
-					assert.NoError(t, err, "Unexpected error on Put")
+					if err != nil {
+						logrus.WithError(err).Warnf("Error inserting key $s", key)
+						numFails++
+						// let's tolerate some errors, since we're in race w/ Deleter
+						assert.True(t, numFails < 10, "Too many failures on PUT")
+					}
 					// sleep a bit, not to be overly aggressive
 					time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
 				}
 			}
-			assert.Fail(t, "I should not be here")
 		}()
 		numGoroutines++
 	}
@@ -445,7 +450,6 @@ func concurrentEnum(kv kvdb.Kvdb, t *testing.T) {
 				time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
 			}
 		}
-		assert.Fail(t, "I should not be here")
 	}()
 	numGoroutines++
 
