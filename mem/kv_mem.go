@@ -44,6 +44,8 @@ type memKV struct {
 	// index current kvdb index
 	index  uint64
 	domain string
+	// locks is the map of currently held locks
+	locks map[string]chan int
 	kvdb.Controller
 }
 
@@ -195,6 +197,7 @@ func New(
 		dist:       NewWatchDistributor(),
 		domain:     domain,
 		Controller: kvdb.ControllerNotSupported,
+		locks:      make(map[string]chan int),
 	}
 
 	if _, ok := options[KvSnap]; ok {
@@ -547,10 +550,35 @@ func (kv *memKV) LockWithID(
 	if err != nil {
 		return nil, err
 	}
+
+	lockChan := make(chan int)
+	kv.mutex.Lock()
+	kv.locks[key] = lockChan
+	kv.mutex.Unlock()
+	if kv.LockTimeout > 0 {
+		go func() {
+			timeout := time.After(kv.LockTimeout)
+			for {
+				select {
+				case <-timeout:
+					kv.LockTimedout(key)
+				case <-lockChan:
+					return
+				}
+			}
+		}()
+	}
+
 	return result, err
 }
 
 func (kv *memKV) Unlock(kvp *kvdb.KVPair) error {
+	kv.mutex.Lock()
+	lockChan := kv.locks[kvp.Key]
+	kv.mutex.Unlock()
+	if lockChan != nil {
+		close(lockChan)
+	}
 	_, err := kv.CompareAndDelete(kvp, kvdb.KVFlags(0))
 	return err
 }
