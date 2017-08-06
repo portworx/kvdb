@@ -2,8 +2,10 @@ package common
 
 import (
 	"encoding/json"
+	"github.com/Sirupsen/logrus"
 	"github.com/portworx/kvdb"
 	"sync"
+	"time"
 )
 
 var (
@@ -26,8 +28,29 @@ func ToBytes(val interface{}) ([]byte, error) {
 
 // BaseKvdb provides common functionality across kvdb types
 type BaseKvdb struct {
+	// LockTimeout is the maximum time any lock can be held
+	LockTimeout time.Duration
 	// FatalCb invoked for fatal errors
 	FatalCb kvdb.FatalErrorCB
+}
+
+func (b *BaseKvdb) SetFatalCb(f kvdb.FatalErrorCB) {
+	b.FatalCb = f
+}
+
+func (b *BaseKvdb) SetLockTimeout(timeout time.Duration) {
+	logrus.Infof("Setting lock timeout to: %v", timeout)
+	b.LockTimeout = timeout
+}
+
+func (b *BaseKvdb) CheckLockTimeout(key string, startTime time.Time) {
+	if b.LockTimeout > 0 && time.Since(startTime) > b.LockTimeout {
+		b.LockTimedout(key)
+	}
+}
+
+func (b *BaseKvdb) LockTimedout(key string) {
+	b.FatalCb("Lock %s hold timeout triggered", key)
 }
 
 // watchUpdate refers to an update to this kvdb

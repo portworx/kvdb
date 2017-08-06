@@ -3,6 +3,7 @@ package kvdb
 import (
 	"errors"
 	"github.com/Sirupsen/logrus"
+	"time"
 )
 
 const (
@@ -246,6 +247,10 @@ type Kvdb interface {
 	GrantUserAccess(username string, permType PermissionType, subtree string) error
 	// RevokeUsersAccess revokes user's access to a subtree/prefix based on the permission
 	RevokeUsersAccess(username string, permType PermissionType, subtree string) error
+	// SetFatalCb sets the function to be called in case of fatal errors
+	SetFatalCb(f FatalErrorCB)
+	// SetLockTimeout sets maximum time a lock may be held
+	SetLockTimeout(timeout time.Duration)
 }
 
 // ReplayCb provides info required for replay

@@ -536,7 +536,9 @@ func (kv *etcdKV) refreshLock(kvPair *kvdb.KVPair) {
 		keyString      string
 		currentRefresh time.Time
 		prevRefresh    time.Time
+		startTime      time.Time
 	)
+	startTime = time.Now()
 	if kvPair != nil {
 		keyString = kvPair.Key
 	}
@@ -546,6 +548,7 @@ func (kv *etcdKV) refreshLock(kvPair *kvdb.KVPair) {
 		case <-refresh.C:
 			l.Lock()
 			for !l.Unlocked {
+				kv.CheckLockTimeout(keyString, startTime)
 				kvPair.TTL = ttl
 				kvp, err := kv.CompareAndSet(
 					kvPair,

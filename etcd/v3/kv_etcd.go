@@ -802,16 +802,19 @@ func (et *etcdKV) refreshLock(kvPair *kvdb.KVPair) {
 		keyString      string
 		currentRefresh time.Time
 		prevRefresh    time.Time
+		startTime      time.Time
 	)
 	if kvPair != nil {
 		keyString = kvPair.Key
 	}
+	startTime = time.Now()
 	defer refresh.Stop()
 	for {
 		select {
 		case <-refresh.C:
 			l.Lock()
 			for !l.Unlocked {
+				et.CheckLockTimeout(keyString, startTime)
 				kvPair.TTL = ttl
 				kvp, err := et.CompareAndSet(
 					kvPair,
