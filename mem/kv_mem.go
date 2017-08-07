@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/Sirupsen/logrus"
-	"github.com/portworx/kvdb"
-	"github.com/portworx/kvdb/common"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/Sirupsen/logrus"
+	"github.com/portworx/kvdb"
+	"github.com/portworx/kvdb/common"
 )
 
 const (

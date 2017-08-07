@@ -2,8 +2,9 @@ package kvdb
 
 import (
 	"errors"
-	"github.com/Sirupsen/logrus"
 	"time"
+
+	"github.com/Sirupsen/logrus"
 )
 
 const (
