@@ -574,7 +574,10 @@ func (kv *memKV) LockWithID(
 
 func (kv *memKV) Unlock(kvp *kvdb.KVPair) error {
 	kv.mutex.Lock()
-	lockChan := kv.locks[kvp.Key]
+	lockChan, ok := kv.locks[kvp.Key]
+	if ok {
+		delete(kv.locks, kvp.Key)
+	}
 	kv.mutex.Unlock()
 	if lockChan != nil {
 		close(lockChan)
