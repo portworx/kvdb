@@ -858,15 +858,31 @@ func (et *etcdKV) watchStart(
 	if waitIndex != 0 {
 		opts = append(opts, e.WithRev(int64(waitIndex+1)))
 	}
-	session, err := concurrency.NewSession(
-		et.kvClient,
-		concurrency.WithTTL(defaultSessionTimeout))
-	if err != nil {
-		logrus.Errorf("Failed to establish session for etcd client watch: %v", err)
+	sessionChan := make(chan int, 1)
+	var (
+		session    *concurrency.Session
+		err error
+	)
+	go func() {
+		session, err = concurrency.NewSession(
+			et.kvClient,
+			concurrency.WithTTL(defaultSessionTimeout))
+		close(sessionChan)
+	}()
+
+	select {
+	case <-sessionChan:
+		if err != nil {
+			logrus.Errorf("Failed to establish session for etcd client watch: %v", err)
+			_ = cb(key, opaque, nil, kvdb.ErrWatchStopped)
+			return
+		}
+	case <-time.After(defaultKvRequestTimeout):
+		logrus.Errorf("Failed to establish session for etcd client watch." +
+			" Timeout!. Etcd cluster not reachable")
 		_ = cb(key, opaque, nil, kvdb.ErrWatchStopped)
 		return
 	}
-
 	ctx, watchCancel := context.WithCancel(context.Background())
 	watchRet := make(chan error)
 	watchChan := et.kvClient.Watch(ctx, key, opts...)
