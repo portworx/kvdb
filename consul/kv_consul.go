@@ -268,12 +268,15 @@ func (kv *consulKV) Create(
 		if ttl > 0 {
 			var ok bool
 			ok, _, err = kv.client.KV().Acquire(sessionPair, nil)
+			if ok && err == nil {
+				return kvPair, err
+			}
+			kv.client.Session().Destroy(sessionPair.Session, nil)
+			kv.Delete(key)
 			if err != nil {
-				kv.Delete(key)
 				return nil, err
 			}
 			if !ok {
-				kv.Delete(key)
 				return nil, fmt.Errorf("Failed to set ttl")
 			}
 		}
