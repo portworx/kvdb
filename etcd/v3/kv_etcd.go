@@ -637,7 +637,7 @@ func (et *etcdKV) LockWithID(key string, lockerID string) (
 	}
 	kvPair.TTL = int64(ttl)
 	kvPair.Lock = &ec.EtcdLock{Done: make(chan struct{})}
-	go et.refreshLock(kvPair)
+	go et.refreshLock(kvPair, lockerID)
 	return kvPair, err
 }
 
@@ -794,7 +794,7 @@ out:
 	return nil, outErr
 }
 
-func (et *etcdKV) refreshLock(kvPair *kvdb.KVPair) {
+func (et *etcdKV) refreshLock(kvPair *kvdb.KVPair, tag string) {
 	l := kvPair.Lock.(*ec.EtcdLock)
 	ttl := kvPair.TTL
 	refresh := time.NewTicker(ec.DefaultLockRefreshDuration)
@@ -808,13 +808,14 @@ func (et *etcdKV) refreshLock(kvPair *kvdb.KVPair) {
 		keyString = kvPair.Key
 	}
 	startTime = time.Now()
+	lockMsgString := keyString + ",tag=" + tag
 	defer refresh.Stop()
 	for {
 		select {
 		case <-refresh.C:
 			l.Lock()
 			for !l.Unlocked {
-				et.CheckLockTimeout(keyString, startTime)
+				et.CheckLockTimeout(lockMsgString, startTime)
 				kvPair.TTL = ttl
 				kvp, err := et.CompareAndSet(
 					kvPair,
@@ -860,8 +861,8 @@ func (et *etcdKV) watchStart(
 	}
 	sessionChan := make(chan int, 1)
 	var (
-		session    *concurrency.Session
-		err error
+		session *concurrency.Session
+		err     error
 	)
 	go func() {
 		session, err = concurrency.NewSession(

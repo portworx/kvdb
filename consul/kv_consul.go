@@ -752,6 +752,7 @@ func (kv *consulKV) renewLockSession(
 	initialTTL string,
 	session string,
 	doneCh chan struct{},
+	tag interface{},
 ) {
 	go func() {
 		_ = kv.client.Session().RenewPeriodic(initialTTL, session, nil, doneCh)
@@ -762,7 +763,7 @@ func (kv *consulKV) renewLockSession(
 			for {
 				select {
 				case <-timeout:
-					kv.LockTimedout(key)
+					kv.LockTimedout(fmt.Sprintf("Key:%s,Tag:%v", key, tag))
 				case <-doneCh:
 					return
 				}
@@ -808,7 +809,7 @@ func (kv *consulKV) getLock(key string, tag interface{}, ttl time.Duration) (
 		return nil, err
 	}
 
-	kv.renewLockSession(key, entry.TTL, session, lock.doneCh)
+	kv.renewLockSession(key, entry.TTL, session, lock.doneCh, tag)
 	lock.lock = l
 	return lock, nil
 }

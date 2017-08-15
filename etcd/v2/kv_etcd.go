@@ -376,7 +376,7 @@ func (kv *etcdKV) LockWithID(key string, lockerID string) (
 	}
 	kvPair.TTL = int64(time.Duration(ttl) * time.Second)
 	kvPair.Lock = lock
-	go kv.refreshLock(kvPair)
+	go kv.refreshLock(kvPair, lockerID)
 	if count >= 10 {
 		logrus.Warnf("ETCD: spent %v iterations locking %v\n", count, key)
 	}
@@ -528,7 +528,7 @@ out:
 	return nil, outErr
 }
 
-func (kv *etcdKV) refreshLock(kvPair *kvdb.KVPair) {
+func (kv *etcdKV) refreshLock(kvPair *kvdb.KVPair, tag string) {
 	l := kvPair.Lock.(*ec.EtcdLock)
 	ttl := kvPair.TTL
 	refresh := time.NewTicker(ec.DefaultLockRefreshDuration)
@@ -542,13 +542,14 @@ func (kv *etcdKV) refreshLock(kvPair *kvdb.KVPair) {
 	if kvPair != nil {
 		keyString = kvPair.Key
 	}
+	lockMsgString := keyString + ",tag=" + tag
 	defer refresh.Stop()
 	for {
 		select {
 		case <-refresh.C:
 			l.Lock()
 			for !l.Unlocked {
-				kv.CheckLockTimeout(keyString, startTime)
+				kv.CheckLockTimeout(lockMsgString, startTime)
 				kvPair.TTL = ttl
 				kvp, err := kv.CompareAndSet(
 					kvPair,
