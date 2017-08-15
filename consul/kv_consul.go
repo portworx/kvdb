@@ -206,11 +206,9 @@ func (kv *consulKV) createTTLSession(
 			// Consul doubles the ttl value. Hence we divide it by 2
 			// Consul does not support ttl values less than 10.
 			// Hence we set our lower limit to 20
-			version, err := kv.renewSession(pair, ttl/2, noCreate)
+			session, err := kv.renewSession(pair, ttl/2, noCreate)
 			if err == nil {
-				if noCreate {
-					pair.ModifyIndex = version
-				}
+				pair.Session = session
 				break
 			}
 			if retries == MaxRenewRetries {
@@ -230,8 +228,20 @@ func (kv *consulKV) Put(
 	if err != nil {
 		return nil, err
 	}
-	if _, err := kv.client.KV().Put(pair, nil); err != nil {
-		return nil, err
+	if ttl == 0 {
+		if _, err := kv.client.KV().Put(pair, nil); err != nil {
+			return nil, err
+		}
+	} else {
+		// It is unclear why err == nil but ok == false. We always
+		// delete any existing sessions on Put, so this should work fine.
+		ok, _, err := kv.client.KV().Acquire(pair, nil)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, fmt.Errorf("Acquire failed")
+		}
 	}
 
 	kvPair, err := kv.Get(key)
@@ -247,15 +257,26 @@ func (kv *consulKV) Create(
 	val interface{},
 	ttl uint64,
 ) (*kvdb.KVPair, error) {
-	pair, err := kv.createTTLSession(key, val, ttl, true)
+	sessionPair, err := kv.createTTLSession(key, val, ttl, true)
 	if err != nil {
 		return nil, err
 	}
-	kvPair := &kvdb.KVPair{Key: key, Value: pair.Value,
-		ModifiedIndex: pair.ModifyIndex}
+	kvPair := &kvdb.KVPair{Key: key, Value: sessionPair.Value}
 	kvPair, err = kv.CompareAndSet(kvPair, kvdb.KVModifiedIndex, nil)
 	if err == nil {
 		kvPair.Action = kvdb.KVCreate
+		if ttl > 0 {
+			var ok bool
+			ok, _, err = kv.client.KV().Acquire(sessionPair, nil)
+			if err != nil {
+				kv.Delete(key)
+				return nil, err
+			}
+			if !ok {
+				kv.Delete(key)
+				return nil, fmt.Errorf("Failed to set ttl")
+			}
+		}
 	}
 	return kvPair, err
 }
@@ -987,23 +1008,23 @@ func (kv *consulKV) renewSession(
 	pair *api.KVPair,
 	ttl uint64,
 	noCreate bool,
-) (uint64, error) {
+) (string, error) {
 	// Check if there is any previous session with an active TTL
 	session, err := kv.getActiveSession(pair.Key)
 	if err != nil {
 		logrus.Infof("Failed to find session: %v", err)
-		return 0, err
+		return "", err
 	}
 
 	if session != "" {
 		if noCreate {
 			// Do not create new session for the key
-			return 0, kvdb.ErrModified
+			return "", kvdb.ErrModified
 		}
 		// Destroy the existing session associated with the key
 		_, err := kv.client.Session().Destroy(session, nil)
 		if err != nil {
-			return 0, err
+			return "", err
 		}
 	}
 
@@ -1018,33 +1039,12 @@ func (kv *consulKV) renewSession(
 	// Create the key session
 	session, _, err = kv.client.Session().Create(entry, nil)
 	if err != nil {
-		return 0, err
+		return "", err
 	}
 
-	lockOpts := &api.LockOptions{
-		Key:     pair.Key,
-		Session: session,
-	}
-	// Lock and ignore if lock is held
-	// It's just a placeholder for the
-	// ephemeral behavior
-	lock, err := kv.client.LockOpts(lockOpts)
-	if err != nil {
-		return 0, err
-	}
-	if lock != nil {
-		_, err = lock.Lock(nil)
-		if err != nil {
-			return 0, err
-		}
-	}
-
+	// Session timer is started after a call to "Renew"
 	_, _, err = kv.client.Session().Renew(session, nil)
-	if err == nil {
-		pair, _, err := kv.client.KV().Get(pair.Key, nil)
-		return pair.ModifyIndex, err
-	}
-	return 0, err
+	return session, err
 }
 
 // getActiveSession checks if the key already has
