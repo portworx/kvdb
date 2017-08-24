@@ -63,11 +63,11 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T) kvdb.Kvdb {
 	enumerate(kv, t)
 	keys(kv, t)
 	concurrentEnum(kv, t)
-	lock(kv, t)
 	watchKey(kv, t)
 	watchTree(kv, t)
 	watchWithIndex(kv, t)
 	collect(kv, t)
+	lock(kv, t)
 	return kv
 }
 
