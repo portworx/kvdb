@@ -3,10 +3,11 @@ package common
 import (
 	"container/list"
 	"encoding/json"
-	"github.com/Sirupsen/logrus"
-	"github.com/portworx/kvdb"
 	"sync"
 	"time"
+
+	"github.com/Sirupsen/logrus"
+	"github.com/portworx/kvdb"
 )
 
 var (
