@@ -1,12 +1,12 @@
 package common
 
 import (
+	"container/list"
 	"encoding/json"
-	"sync"
-	"time"
-
 	"github.com/Sirupsen/logrus"
 	"github.com/portworx/kvdb"
+	"sync"
+	"time"
 )
 
 var (
@@ -76,7 +76,7 @@ type WatchUpdateQueue interface {
 // watchQueue implements WatchUpdateQueue interface for watchUpdates
 type watchQueue struct {
 	// updates is the list of updates
-	updates []*watchUpdate
+	updates *list.List
 	// m is the mutex to protect updates
 	m *sync.Mutex
 	// cv is used to coordinate the producer-consumer threads
@@ -89,16 +89,17 @@ func NewWatchUpdateQueue() WatchUpdateQueue {
 	return &watchQueue{
 		m:       mtx,
 		cv:      sync.NewCond(mtx),
-		updates: make([]*watchUpdate, 0)}
+		updates: list.New()}
 }
 
 func (w *watchQueue) Dequeue() (string, *kvdb.KVPair, error) {
 	w.m.Lock()
 	for {
-		if len(w.updates) > 0 {
-			update := w.updates[0]
-			w.updates = w.updates[1:]
+		if w.updates.Len() > 0 {
+			el := w.updates.Front()
+			w.updates.Remove(el)
 			w.m.Unlock()
+			update := el.Value.(*watchUpdate)
 			return update.key, update.kvp, update.err
 		}
 		w.cv.Wait()
@@ -108,7 +109,7 @@ func (w *watchQueue) Dequeue() (string, *kvdb.KVPair, error) {
 // Enqueue enqueues and never blocks
 func (w *watchQueue) Enqueue(key string, kvp *kvdb.KVPair, err error) {
 	w.m.Lock()
-	w.updates = append(w.updates, &watchUpdate{key: key, kvp: kvp, err: err})
+	w.updates.PushBack(&watchUpdate{key: key, kvp: kvp, err: err})
 	w.cv.Signal()
 	w.m.Unlock()
 }
