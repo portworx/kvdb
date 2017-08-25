@@ -923,14 +923,14 @@ func (et *etcdKV) watchStart(
 
 	select {
 	case <-session.Done(): // closed by etcd
-		// Close the context
-		watchCancel()
 		// Indicate the caller that watch has been canceled
 		logrus.Errorf("Watch closing session")
 		watchQ.enqueue(key, nil, kvdb.ErrWatchStopped)
 	case <-watchRet: // error in watcher
-		logrus.Errorf("Watch for %v stopped", key)
+		// Close the context
+		watchCancel()
 		session.Close()
+		logrus.Errorf("Watch for %v stopped", key)
 		return
 	}
 }
