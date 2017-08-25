@@ -930,6 +930,7 @@ func (et *etcdKV) watchStart(
 		watchQ.enqueue(key, nil, kvdb.ErrWatchStopped)
 	case <-watchRet: // error in watcher
 		logrus.Errorf("Watch for %v stopped", key)
+		session.Close()
 		return
 	}
 }
