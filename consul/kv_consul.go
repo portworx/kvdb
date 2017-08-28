@@ -652,7 +652,11 @@ func (kv *consulKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 				}
 				goto errordone
 			} else {
-				_, err = snapDb.SnapPut(kvp)
+				if kvp.Action == kvdb.KVDelete {
+					_, err = snapDb.Delete(kvp.Key)
+				} else {
+					_, err = snapDb.SnapPut(kvp)
+				}
 				if err != nil {
 					watchErr = fmt.Errorf("Failed to apply update to snap: %v", err)
 					sendErr = watchErr

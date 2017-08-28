@@ -760,7 +760,11 @@ func (kv *etcdKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 	for _, kvPair := range updates {
 		if kvPair.ModifiedIndex < highestKvdbIndex &&
 			kvPair.ModifiedIndex > lowestKvdbIndex {
-			_, err = snapDb.SnapPut(kvPair)
+			if kvPair.Action == kvdb.KVDelete {
+				_, err = snapDb.Delete(kvPair.Key)
+			} else {
+				_, err = snapDb.SnapPut(kvPair)
+			}
 			if err != nil {
 				return nil, 0, fmt.Errorf("Failed to apply update to snap: %v", err)
 			}

@@ -498,6 +498,7 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 	value := "bar"
 	count := 100
 	doneUpdate := make(chan bool, 2)
+	emptyKeyName := ""
 	updateFn := func(count int, v string, dataMap map[string]string,
 		versionMap map[string]uint64) {
 		for i := 0; i < count; i++ {
@@ -505,6 +506,7 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 			inputKey := prefix + key + suffix
 			inputValue := v
 			if i == 0 {
+				emptyKeyName = inputKey
 				inputValue = ""
 			}
 			kv, err := kv.Put(inputKey, []byte(inputValue), 0)
@@ -539,6 +541,10 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 		preSnapKeyVersion, ok4 := preSnapDataVersion[kvPairs[i].Key]
 		assert.True(t, ok1 && ok2 && ok3 && ok4, "unexpected kvpair (%s)->(%s)",
 			kvPairs[i].Key, kvPairs[i].Value)
+
+		assert.True(t, kvPairs[i].Key == emptyKeyName ||
+			len(string(kvPairs[i].Value)) != 0,
+			"Empty value for key %f", kvPairs[i].Key)
 
 		assert.True(t, kvPairs[i].ModifiedIndex < snapVersion,
 			"snap db key (%v) has version greater than snap version (%v)",

@@ -685,8 +685,13 @@ func (kv *snapMem) Update(
 	return nil, ErrSnap
 }
 
-func (kv *snapMem) Delete(key string) (*kvdb.KVPair, error) {
-	return nil, ErrSnap
+func (kv *snapMem) Delete(snapKey string) (*kvdb.KVPair, error) {
+	key := kv.domain + snapKey
+	kv.mutex.Lock()
+	defer kv.mutex.Unlock()
+	kvp := kv.m[key]
+	delete(kv.m, key)
+	return kvp, nil
 }
 
 func (kv *snapMem) DeleteTree(prefix string) error {
