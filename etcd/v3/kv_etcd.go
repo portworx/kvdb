@@ -498,7 +498,7 @@ func (et *etcdKV) CompareAndSet(
 		}
 		if txnResponse.Succeeded == false {
 			if len(txnResponse.Responses) == 0 {
-				logrus.Infof("Etcd did not return any transaction responses")
+				logrus.Infof("Etcd did not return any transaction responses for key (%v)", kvp.Key)
 			} else {
 				for i, responseOp := range txnResponse.Responses {
 					logrus.Infof("Etcd transaction Response: %v %v", i, responseOp.String())
@@ -518,7 +518,7 @@ func (et *etcdKV) CompareAndSet(
 		}
 		if txnResponse.Succeeded == false {
 			if len(txnResponse.Responses) == 0 {
-				logrus.Infof("Etcd did not return any transaction responses")
+				logrus.Infof("Etcd did not return any transaction responses for key (%v)", kvp.Key)
 			} else {
 				for i, responseOp := range txnResponse.Responses {
 					logrus.Infof("Etcd transaction Response: %v %v", i, responseOp.String())
@@ -551,7 +551,7 @@ func (et *etcdKV) CompareAndDelete(
 		}
 		if txnResponse.Succeeded == false {
 			if len(txnResponse.Responses) == 0 {
-				logrus.Infof("Etcd did not return any transaction responses")
+				logrus.Infof("Etcd did not return any transaction responses for key (%v)", kvp.Key)
 			} else {
 				for i, responseOp := range txnResponse.Responses {
 					logrus.Infof("Etcd transaction Response: %v %v", i, responseOp.String())
@@ -570,7 +570,7 @@ func (et *etcdKV) CompareAndDelete(
 		}
 		if txnResponse.Succeeded == false {
 			if len(txnResponse.Responses) == 0 {
-				logrus.Infof("Etcd did not return any transaction responses")
+				logrus.Infof("Etcd did not return any transaction responses for key (%v)", kvp.Key)
 			} else {
 				for i, responseOp := range txnResponse.Responses {
 					logrus.Infof("Etcd transaction Response: %v %v", i, responseOp.String())
