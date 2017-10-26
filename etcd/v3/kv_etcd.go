@@ -73,7 +73,7 @@ func (w *watchQ) start() {
 		err = w.cb(key, w.opaque, kvp, err)
 		if err != nil {
 			w.done = true
-			logrus.Infof("Watch cb returned err: %v", err)
+			logrus.Infof("Watch cb for key %v returned err: %v", key, err)
 			// Indicate the caller that watch has been canceled
 			_ = w.cb(key, w.opaque, nil, kvdb.ErrWatchStopped)
 			// Indicate that watch is returning.
@@ -924,8 +924,9 @@ func (et *etcdKV) watchStart(
 	select {
 	case <-session.Done(): // closed by etcd
 		// Indicate the caller that watch has been canceled
-		logrus.Errorf("Watch closing session")
+		logrus.Errorf("Watch closing session for key: %v", key)
 		watchQ.enqueue(key, nil, kvdb.ErrWatchStopped)
+		watchCancel()
 	case <-watchRet: // error in watcher
 		// Close the context
 		watchCancel()
