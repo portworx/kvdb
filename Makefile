@@ -47,6 +47,15 @@ gotest: testdeps
 
 test: pretest gotest
 
+docker-build-kvdb-dev:
+	docker build -t adityadani/kvdb:dev -f $(GOPATH)/src/github.com/portworx/kvdb/Dockerfile.kvdb .
+
+docker-test:
+	docker run \
+		-v $(GOPATH)/src/github.com/portworx/kvdb:/go/src/github.com/portworx/kvdb \
+		adityadani/kvdb:dev \
+			go test -v ./...
+
 clean:
 	go clean -i ./...
 
