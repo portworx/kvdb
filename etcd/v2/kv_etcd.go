@@ -857,6 +857,19 @@ func (kv *etcdKV) RevokeUsersAccess(username string, permType kvdb.PermissionTyp
 	return err
 }
 
+func (kv *etcdKV) Serialize() ([]byte, error) {
+
+	kvps, err := kv.Enumerate("")
+	if err != nil {
+		return nil, err
+	}
+	return kv.SerializeAll(kvps)
+}
+
+func (kv *etcdKV) Deserialize(b []byte) (kvdb.KVPairs, error) {
+	return kv.DeserializeAll(b)
+}
+
 func getEtcdPermType(permType kvdb.PermissionType) (e.PermissionType, error) {
 	switch permType {
 	case kvdb.ReadPermission:

@@ -1291,6 +1291,19 @@ func (et *etcdKV) ListMembers() (map[string]*kvdb.MemberInfo, error) {
 	return resp, nil
 }
 
+func (et *etcdKV) Serialize() ([]byte, error) {
+
+	kvps, err := et.Enumerate("")
+	if err != nil {
+		return nil, err
+	}
+	return et.SerializeAll(kvps)
+}
+
+func (et *etcdKV) Deserialize(b []byte) (kvdb.KVPairs, error) {
+	return et.DeserializeAll(b)
+}
+
 func (et *etcdKV) SetEndpoints(endpoints []string) error {
 	et.kvClient.SetEndpoints(endpoints...)
 	return nil
