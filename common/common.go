@@ -75,6 +75,22 @@ func (b *BaseKvdb) lockTimedout(key string) {
 	b.FatalCb("Lock %s hold timeout triggered", key)
 }
 
+func (b *BaseKvdb) SerializeAll(kvps kvdb.KVPairs) ([]byte, error) {
+	out, err := json.Marshal(kvps)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (b *BaseKvdb) DeserializeAll(out []byte) (kvdb.KVPairs, error) {
+	var kvps kvdb.KVPairs
+	if err := json.Unmarshal(out, &kvps); err != nil {
+		return nil, err
+	}
+	return kvps, nil
+}
+
 // watchUpdate refers to an update to this kvdb
 type watchUpdate struct {
 	// key is the key that was updated

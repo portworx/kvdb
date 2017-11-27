@@ -1,6 +1,7 @@
 package test
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -76,6 +77,7 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop S
 	collect(kv, t)
 	lock(kv, t)
 	lockBetweenRestarts(kv, t, start, stop)
+	serialization(kv, t)
 	err = stop()
 	assert.NoError(t, err, "Unable to stop kvdb")
 }
@@ -106,6 +108,7 @@ func RunBasic(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, s
 	watchKey(kv, t)
 	watchWithIndex(kv, t)
 	cas(kv, t)
+	serialization(kv, t)
 	assert.NoError(t, err, "Unable to stop kvdb")
 }
 
@@ -1245,5 +1248,42 @@ func collect(kv kvdb.Kvdb, t *testing.T) {
 		replayCb[0].WatchCB = cb
 		replayCb[0].WaitIndex = kvp.ModifiedIndex
 		collector.ReplayUpdates(replayCb)
+	}
+}
+
+func serialization(kv kvdb.Kvdb, t *testing.T) {
+	fmt.Println("serialization")
+	kv.DeleteTree("")
+	prefix := "/folder"
+	type A struct {
+		A1 int
+		A2 string
+	}
+	type B struct {
+		B1 string
+	}
+	a1 := A{1, "a"}
+	b1 := B{"2"}
+	kv.Put(prefix+"/a/a1", a1, 0)
+	kv.Put(prefix+"/b/b1", b1, 0)
+	b, err := kv.Serialize()
+	assert.NoError(t, err, "Unexpected error on serialize")
+	kvps, err := kv.Deserialize(b)
+	assert.NoError(t, err, "Unexpected error on de-serialize")
+	for _, kvp := range kvps {
+		if strings.Contains(kvp.Key, "/a/a1") {
+			aa := A{}
+			err = json.Unmarshal(kvp.Value, &aa)
+			assert.NoError(t, err, "Unexpected error on unmarshal")
+			assert.Equal(t, aa.A1, a1.A1, "Unequal A values")
+			assert.Equal(t, aa.A2, a1.A2, "Unequal A values")
+		} else if strings.Contains(kvp.Key, "/b/b1") {
+			bb := B{}
+			err = json.Unmarshal(kvp.Value, &bb)
+			assert.NoError(t, err, "Unexpected error on unmarshal")
+			assert.Equal(t, bb.B1, b1.B1, "Unequal B values")
+		} else {
+			t.Fatalf("Unexpected values returned by deserialize")
+		}
 	}
 }

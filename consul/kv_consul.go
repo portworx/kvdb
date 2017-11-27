@@ -1103,3 +1103,16 @@ func (kv *consulKV) RevokeUsersAccess(
 ) error {
 	return kvdb.ErrNotSupported
 }
+
+func (kv *consulKV) Serialize() ([]byte, error) {
+
+	kvps, err := kv.Enumerate("")
+	if err != nil {
+		return nil, err
+	}
+	return kv.SerializeAll(kvps)
+}
+
+func (kv *consulKV) Deserialize(b []byte) (kvdb.KVPairs, error) {
+	return kv.DeserializeAll(b)
+}
