@@ -81,11 +81,11 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop S
 }
 
 // RunBasic runs the basic test suite.
-func RunBasic(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop StopKvdb) {
+func RunBasic(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop StopKvdb, kvdbOptions map[string]string) {
 	err := start()
 	time.Sleep(3 * time.Second)
 	assert.NoError(t, err, "Unable to start kvdb")
-	kv, err := datastoreInit("pwx/test", nil, nil, fatalErrorCb())
+	kv, err := datastoreInit("pwx/test", nil, kvdbOptions, fatalErrorCb())
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
@@ -861,7 +861,6 @@ func watchUpdate(kv kvdb.Kvdb, data *watchData) error {
 	atomic.SwapInt32(&data.whichKey, 1)
 	data.action = kvdb.KVCreate
 	_, err = kv.Create(data.key, []byte(data.stop), 0)
-
 	return err
 }
 

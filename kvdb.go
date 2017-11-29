@@ -141,6 +141,15 @@ type DatastoreInit func(domain string, machines []string, options map[string]str
 // DatastoreVersion is called to get the version of a backend KV store
 type DatastoreVersion func(url string, kvdbOptions map[string]string) (string, error)
 
+// EnumerateSelect function is a callback function provided to EnumerateWithSelect API
+// This fn is executed over all the keys and only those values are returned by Enumerate for which
+// this function return true.
+type EnumerateSelect func(val interface{}) (bool, interface{})
+
+// CopySelect function is a callback function provided to EnumerateWithSelect API
+// This fn should perform a deep copy of the input interface and return the copy
+type CopySelect func(val interface{}) interface{}
+
 // KVPair represents the results of an operation on KVDB.
 type KVPair struct {
 	// Key for this kv pair.
@@ -206,6 +215,9 @@ type Kvdb interface {
 	Update(key string, value interface{}, ttl uint64) (*KVPair, error)
 	// Enumerate returns a list of KVPair for all keys that share the specified prefix.
 	Enumerate(prefix string) (KVPairs, error)
+	// EnumerateWithSelect returns a copy of all values under the prefix that satisfy the select
+	// function in the provided output array of interfaces
+	// EnumerateWithSelect(prefix string, enumerateSelect EnumerateSelect, copySelect CopySelect) ([]interface{}, error)
 	// Delete deletes the KVPair specified by the key. ErrNotFound is returned
 	// if the key is not found. The old KVPair is returned if successful.
 	Delete(key string) (*KVPair, error)
