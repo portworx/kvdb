@@ -7,7 +7,12 @@ import (
 )
 
 func TestAll(t *testing.T) {
-	test.RunBasic(New, t, Start, Stop)
+	options := make(map[string]string)
+	// RunBasic with values as bytes
+	test.RunBasic(New, t, Start, Stop, options)
+	options[KvUseInterface] = ""
+	// RunBasic with values as interface
+	test.RunBasic(New, t, Start, Stop, options)
 }
 
 func Start() error {
