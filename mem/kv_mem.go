@@ -65,6 +65,14 @@ type memKVPair struct {
 	ivalue interface{}
 }
 
+func (mkvp *memKVPair) copy() *kvdb.KVPair {
+	copyKvp := mkvp.KVPair
+	if mkvp.Value == nil && mkvp.ivalue != nil {
+		copyKvp.Value, _ = common.ToBytes(mkvp.ivalue)
+	}
+	return &copyKvp
+}
+
 type snapMem struct {
 	*memKV
 }
@@ -313,12 +321,13 @@ func (kv *memKV) put(
 			_, _ = kv.delete(suffix)
 		})
 	}
+
+	// Either set bytes or interface value
 	if !kv.noByte {
 		b, err = common.ToBytes(value)
 		if err != nil {
 			return nil, err
 		}
-		// When using bytes as value ival is set to nil
 	} else {
 		ival = value
 	}
@@ -329,7 +338,6 @@ func (kv *memKV) put(
 		old.ModifiedIndex = index
 		old.KVDBIndex = index
 		kvp = old
-
 	} else {
 		kvp = &memKVPair{
 			KVPair: kvdb.KVPair{
@@ -346,9 +354,9 @@ func (kv *memKV) put(
 		kv.m[key] = kvp
 	}
 
-	kv.normalize(kvp)
+	kv.normalize(&kvp.KVPair)
 	kv.dist.NewUpdate(&watchUpdate{key, *kvp, nil})
-	return &kvp.KVPair, nil
+	return kvp.copy(), nil
 }
 
 func (kv *memKV) Put(
@@ -405,22 +413,19 @@ func (kv *memKV) Update(
 func (kv *memKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 	kv.mutex.Lock()
 	defer kv.mutex.Unlock()
-	return kv.enumerate(prefix, true)
+	return kv.enumerate(prefix)
 }
 
 // enumerate returns a list of values and creates a copy if specified
-func (kv *memKV) enumerate(prefix string, copy bool) (kvdb.KVPairs, error) {
+func (kv *memKV) enumerate(prefix string) (kvdb.KVPairs, error) {
 	var kvp = make(kvdb.KVPairs, 0, 100)
 	prefix = kv.domain + prefix
 
 	for k, v := range kv.m {
 		if strings.HasPrefix(k, prefix) && !strings.Contains(k, "/_") {
-			kvpLocal := *v
-			kv.normalize(&kvpLocal)
-			if kv.noByte && copy {
-				kvpLocal.Value, _ = common.ToBytes(v.ivalue)
-			}
-			kvp = append(kvp, &kvpLocal.KVPair)
+			kvpLocal := v.copy()
+			kv.normalize(kvpLocal)
+			kvp = append(kvp, kvpLocal)
 		}
 	}
 
@@ -451,7 +456,7 @@ func (kv *memKV) DeleteTree(prefix string) error {
 	kv.mutex.Lock()
 	defer kv.mutex.Unlock()
 
-	kvp, err := kv.enumerate(prefix, false)
+	kvp, err := kv.enumerate(prefix)
 	if err != nil {
 		return err
 	}
@@ -511,14 +516,14 @@ func (kv *memKV) CompareAndSet(
 	if err != nil {
 		return nil, err
 	}
-	cpy := result.copy()
 	if prevValue != nil {
+		cpy := result.copy()
 		if !bytes.Equal(cpy.Value, prevValue) {
 			return nil, kvdb.ErrValueMismatch
 		}
 	}
 	if flags == kvdb.KVModifiedIndex {
-		if kvp.ModifiedIndex != cpy.ModifiedIndex {
+		if kvp.ModifiedIndex != result.ModifiedIndex {
 			return nil, kvdb.ErrValueMismatch
 		}
 	}
@@ -644,7 +649,7 @@ func (kv *memKV) TxNew() (kvdb.Tx, error) {
 	return nil, kvdb.ErrNotSupported
 }
 
-func (kv *memKV) normalize(kvp *memKVPair) {
+func (kv *memKV) normalize(kvp *kvdb.KVPair) {
 	kvp.Key = strings.TrimPrefix(kvp.Key, kv.domain)
 }
 
@@ -669,10 +674,8 @@ func (kv *memKV) watchCb(
 		if ((treeWatch && strings.HasPrefix(update.key, prefix)) ||
 			(!treeWatch && update.key == prefix)) &&
 			(v.waitIndex == 0 || v.waitIndex < update.kvp.ModifiedIndex) {
-			if kv.noByte {
-				update.kvp.Value, _ = common.ToBytes(update.kvp.ivalue)
-			}
-			err := v.cb(update.key, v.opaque, &update.kvp.KVPair, update.err)
+			kvpCopy := update.kvp.copy()
+			err := v.cb(update.key, v.opaque, kvpCopy, update.err)
 			if err != nil {
 				_ = v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)
 				kv.dist.Remove(q)
@@ -715,7 +718,7 @@ func (kv *snapMem) SnapPut(snapKvp *kvdb.KVPair) (*kvdb.KVPair, error) {
 		kv.m[key] = kvp
 	}
 
-	kv.normalize(kvp)
+	kv.normalize(&kvp.KVPair)
 	return &kvp.KVPair, nil
 }
 
@@ -811,12 +814,4 @@ func (kv *memKV) RevokeUsersAccess(
 	subtree string,
 ) error {
 	return kvdb.ErrNotSupported
-}
-
-func (mkvp *memKVPair) copy() *kvdb.KVPair {
-	// copy is executed only when memKVPair is using interfaces as values
-	if mkvp.ivalue != nil {
-		mkvp.Value, _ = common.ToBytes(mkvp.ivalue)
-	}
-	return &mkvp.KVPair
 }

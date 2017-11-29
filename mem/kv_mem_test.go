@@ -14,7 +14,7 @@ func TestAll(t *testing.T) {
 	// RunBasic with values as bytes
 	test.RunBasic(New, t, Start, Stop, options)
 	options[KvUseInterface] = ""
-	// RunBasic with values as interface
+	//  RunBasic with values as interface
 	test.RunBasic(New, t, Start, Stop, options)
 	// Run mem specific tests
 	kv, err := New("pwx/test", nil, options, nil)
