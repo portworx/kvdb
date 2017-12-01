@@ -22,6 +22,7 @@ func TestAll(t *testing.T) {
 		t.Fatalf(err.Error())
 	}
 	testNoCopy(kv, t)
+	testEnumerateWithSelect(kv, t)
 }
 
 func testNoCopy(kv kvdb.Kvdb, t *testing.T) {
@@ -40,6 +41,63 @@ func testNoCopy(kv kvdb.Kvdb, t *testing.T) {
 	assert.NoError(t, err, "Expected no error on get")
 	assert.Equal(t, newVal.A, val.A, "Expected equal values")
 	assert.Equal(t, newVal.B, val.B, "Expected equal values")
+}
+
+func testEnumerateWithSelect(kv kvdb.Kvdb, t *testing.T) {
+	fmt.Println("enumerateWithSelect")
+	type EWS struct {
+		A int
+		B string
+	}
+	a := &EWS{1, "abc"}
+	b := &EWS{2, "def"}
+	c := &EWS{3, "abcdef"}
+	prefix := "ews"
+	kv.Put(prefix+"/"+"key1", a, 0)
+	kv.Put(prefix+"/"+"key2", b, 0)
+	kv.Put(prefix+"/"+"key3", c, 0)
+	enumerateSelect := func(val interface{}) bool {
+		v, ok := val.(*EWS)
+		if !ok {
+			return false
+		}
+		if len(v.B) != 3 {
+			return false
+		}
+		return true
+	}
+	copySelect := func(val interface{}) interface{} {
+		v, ok := val.(*EWS)
+		if !ok {
+			return nil
+		}
+		cpy := *v
+		return &cpy
+	}
+	output, err := kv.EnumerateWithSelect(prefix, enumerateSelect, copySelect)
+	assert.NoError(t, err, "Unexpected error on EnumerateWithSelect")
+	assert.Equal(t, 2, len(output), "Unexpected no. of values returned")
+	// Check if copy is returned
+	for _, out := range output {
+		ews, ok := out.(*EWS)
+		assert.Equal(t, ok, true, "Unexpected type of object returned")
+		if ews.A == a.A {
+			a.A = 999
+			assert.NotEqual(t, a.A, ews.A, "Copy was not returned")
+		} else if ews.A == b.A {
+			b.A = 888
+			assert.NotEqual(t, b.A, ews.A, "Copy was not returned")
+		} else {
+			assert.Fail(t, "Unexpected objects returned")
+		}
+	}
+	// Invalid copy function
+	invalidCopySelect := func(val interface{}) interface{} {
+		return nil
+	}
+	output, err = kv.EnumerateWithSelect(prefix, enumerateSelect, invalidCopySelect)
+	assert.EqualError(t, err, ErrIllegalCopySelect.Error(), "Unexpected error")
+	assert.Equal(t, 0, len(output), "Unexpected output")
 }
 
 func Start() error {

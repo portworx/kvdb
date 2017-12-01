@@ -33,6 +33,9 @@ var (
 	// ErrSnapWithInterfaceNotSupported is returned when a snap kv-mem is
 	// created with KvUseInterface flag on
 	ErrSnapWithInterfaceNotSupported = errors.New("snap kvdb not supported with interfaces")
+	// ErrIllegalCopySelect is returned when an incorrect copySelect function
+	// implementation is delected.
+	ErrIllegalCopySelect = errors.New("Illegal CopySelect implementation")
 )
 
 func init() {
@@ -643,6 +646,27 @@ func (kv *memKV) Unlock(kvp *kvdb.KVPair) error {
 	}
 	_, err := kv.CompareAndDelete(kvp, kvdb.KVFlags(0))
 	return err
+}
+
+func (kv *memKV) EnumerateWithSelect(
+	prefix string,
+	enumerateSelect kvdb.EnumerateSelect,
+	copySelect kvdb.CopySelect,
+) ([]interface{}, error) {
+	var kvi []interface{}
+	prefix = kv.domain + prefix
+	for k, v := range kv.m {
+		if strings.HasPrefix(k, prefix) && !strings.Contains(k, "/_") {
+			if enumerateSelect(v.ivalue) {
+				cpy := copySelect(v.ivalue)
+				if cpy == nil {
+					return nil, ErrIllegalCopySelect
+				}
+				kvi = append(kvi, cpy)
+			}
+		}
+	}
+	return kvi, nil
 }
 
 func (kv *memKV) TxNew() (kvdb.Tx, error) {

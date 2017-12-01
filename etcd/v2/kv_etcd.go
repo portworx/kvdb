@@ -774,6 +774,14 @@ func (kv *etcdKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 	return snapDb, highestKvdbIndex, nil
 }
 
+func (kv *etcdKV) EnumerateWithSelect(
+	prefix string,
+	enumerateSelect kvdb.EnumerateSelect,
+	copySelect kvdb.CopySelect,
+) ([]interface{}, error) {
+	return nil, kvdb.ErrNotSupported
+}
+
 func (kv *etcdKV) SnapPut(snapKvp *kvdb.KVPair) (*kvdb.KVPair, error) {
 	return nil, kvdb.ErrNotSupported
 }
