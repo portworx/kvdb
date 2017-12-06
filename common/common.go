@@ -34,24 +34,44 @@ type BaseKvdb struct {
 	LockTimeout time.Duration
 	// FatalCb invoked for fatal errors
 	FatalCb kvdb.FatalErrorCB
+	// lock to guard updates to timeout and fatalCb
+	lock sync.Mutex
 }
 
 func (b *BaseKvdb) SetFatalCb(f kvdb.FatalErrorCB) {
+	b.lock.Lock()
+	defer b.lock.Unlock()
 	b.FatalCb = f
 }
 
 func (b *BaseKvdb) SetLockTimeout(timeout time.Duration) {
+	b.lock.Lock()
+	defer b.lock.Unlock()
 	logrus.Infof("Setting lock timeout to: %v", timeout)
 	b.LockTimeout = timeout
 }
 
 func (b *BaseKvdb) CheckLockTimeout(key string, startTime time.Time) {
+	b.lock.Lock()
+	defer b.lock.Unlock()
 	if b.LockTimeout > 0 && time.Since(startTime) > b.LockTimeout {
-		b.LockTimedout(key)
+		b.lockTimedout(key)
 	}
 }
 
+func (b *BaseKvdb) GetLockTimeout() time.Duration {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+	return b.LockTimeout
+}
+
 func (b *BaseKvdb) LockTimedout(key string) {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+	b.lockTimedout(key)
+}
+
+func (b *BaseKvdb) lockTimedout(key string) {
 	b.FatalCb("Lock %s hold timeout triggered", key)
 }
 

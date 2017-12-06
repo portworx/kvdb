@@ -33,6 +33,9 @@ var (
 	// ErrSnapWithInterfaceNotSupported is returned when a snap kv-mem is
 	// created with KvUseInterface flag on
 	ErrSnapWithInterfaceNotSupported = errors.New("snap kvdb not supported with interfaces")
+	// ErrIllegalCopySelect is returned when an incorrect copySelect function
+	// implementation is delected.
+	ErrIllegalCopySelect = errors.New("Illegal CopySelect implementation")
 )
 
 func init() {
@@ -315,12 +318,6 @@ func (kv *memKV) put(
 	suffix := key
 	key = kv.domain + suffix
 	index := atomic.AddUint64(&kv.index, 1)
-	if ttl != 0 {
-		time.AfterFunc(time.Second*time.Duration(ttl), func() {
-			// TODO: handle error
-			_, _ = kv.delete(suffix)
-		})
-	}
 
 	// Either set bytes or interface value
 	if !kv.noByte {
@@ -356,6 +353,16 @@ func (kv *memKV) put(
 
 	kv.normalize(&kvp.KVPair)
 	kv.dist.NewUpdate(&watchUpdate{key, *kvp, nil})
+
+	if ttl != 0 {
+		time.AfterFunc(time.Second*time.Duration(ttl), func() {
+			// TODO: handle error
+			kv.mutex.Lock()
+			defer kv.mutex.Unlock()
+			_, _ = kv.delete(suffix)
+		})
+	}
+
 	return kvp.copy(), nil
 }
 
@@ -371,6 +378,8 @@ func (kv *memKV) Put(
 }
 
 func (kv *memKV) GetVal(key string, v interface{}) (*kvdb.KVPair, error) {
+	kv.mutex.Lock()
+	defer kv.mutex.Unlock()
 	kvp, err := kv.get(key)
 	if err != nil {
 		return nil, err
@@ -614,9 +623,9 @@ func (kv *memKV) LockWithID(
 	kv.mutex.Lock()
 	kv.locks[key] = lockChan
 	kv.mutex.Unlock()
-	if kv.LockTimeout > 0 {
+	if kv.GetLockTimeout() > 0 {
 		go func() {
-			timeout := time.After(kv.LockTimeout)
+			timeout := time.After(kv.GetLockTimeout())
 			for {
 				select {
 				case <-timeout:
@@ -643,6 +652,29 @@ func (kv *memKV) Unlock(kvp *kvdb.KVPair) error {
 	}
 	_, err := kv.CompareAndDelete(kvp, kvdb.KVFlags(0))
 	return err
+}
+
+func (kv *memKV) EnumerateWithSelect(
+	prefix string,
+	enumerateSelect kvdb.EnumerateSelect,
+	copySelect kvdb.CopySelect,
+) ([]interface{}, error) {
+	kv.mutex.Lock()
+	defer kv.mutex.Unlock()
+	var kvi []interface{}
+	prefix = kv.domain + prefix
+	for k, v := range kv.m {
+		if strings.HasPrefix(k, prefix) && !strings.Contains(k, "/_") {
+			if enumerateSelect(v.ivalue) {
+				cpy := copySelect(v.ivalue)
+				if cpy == nil {
+					return nil, ErrIllegalCopySelect
+				}
+				kvi = append(kvi, cpy)
+			}
+		}
+	}
+	return kvi, nil
 }
 
 func (kv *memKV) TxNew() (kvdb.Tx, error) {

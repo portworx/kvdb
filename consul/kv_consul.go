@@ -709,6 +709,14 @@ func (kv *consulKV) createKv(pair *api.KVPair) *kvdb.KVPair {
 	return kvp
 }
 
+func (kv *consulKV) EnumerateWithSelect(
+	prefix string,
+	enumerateSelect kvdb.EnumerateSelect,
+	copySelect kvdb.CopySelect,
+) ([]interface{}, error) {
+	return nil, kvdb.ErrNotSupported
+}
+
 func (kv *consulKV) pairToKv(action string, pair *api.KVPair, meta *api.QueryMeta) *kvdb.KVPair {
 	kvp := kv.createKv(pair)
 	switch action {
