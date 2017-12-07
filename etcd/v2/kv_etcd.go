@@ -858,12 +858,30 @@ func (kv *etcdKV) RevokeUsersAccess(username string, permType kvdb.PermissionTyp
 }
 
 func (kv *etcdKV) Serialize() ([]byte, error) {
-
+	var allKvps kvdb.KVPairs
 	kvps, err := kv.Enumerate("")
 	if err != nil {
 		return nil, err
 	}
-	return kv.SerializeAll(kvps)
+	for i := 0; i < len(kvps); i++ {
+		kvPair := kvps[i]
+		if len(kvPair.Value) > 0 {
+			allKvps = append(allKvps, kvPair)
+		} else {
+			newKvps, err := kv.Enumerate(kvPair.Key)
+			if err != nil {
+				return nil, err
+			}
+			if len(newKvps) == 0 {
+				allKvps = append(allKvps, kvPair)
+			} else if len(newKvps) == 1 {
+				allKvps = append(allKvps, newKvps[0])
+			} else {
+				kvps = append(kvps, newKvps...)
+			}
+		}
+	}
+	return kv.SerializeAll(allKvps)
 }
 
 func (kv *etcdKV) Deserialize(b []byte) (kvdb.KVPairs, error) {
