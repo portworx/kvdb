@@ -1264,8 +1264,14 @@ func serialization(kv kvdb.Kvdb, t *testing.T) {
 	}
 	a1 := A{1, "a"}
 	b1 := B{"2"}
-	kv.Put(prefix+"/a/a1", a1, 0)
-	kv.Put(prefix+"/b/b1", b1, 0)
+	c1 := A{2, "b"}
+	_, err := kv.Put(prefix+"/a/a1", a1, 0)
+	assert.NoError(t, err, "Unexpected error on put")
+	_, err = kv.Put(prefix+"/b/b1", b1, 0)
+	assert.NoError(t, err, "Unexpected error on put")
+	_, err = kv.Put(prefix+"/c/c1", c1, 0)
+	assert.NoError(t, err, "Unexpected error on put")
+	kv.Delete(prefix + "/c/c1")
 	b, err := kv.Serialize()
 	assert.NoError(t, err, "Unexpected error on serialize")
 	kvps, err := kv.Deserialize(b)
@@ -1282,8 +1288,11 @@ func serialization(kv kvdb.Kvdb, t *testing.T) {
 			err = json.Unmarshal(kvp.Value, &bb)
 			assert.NoError(t, err, "Unexpected error on unmarshal")
 			assert.Equal(t, bb.B1, b1.B1, "Unequal B values")
+		} else if strings.Contains(kvp.Key, "/c") {
+			// ETCD v2 will return an empty folder, but v3 and consul will not
+			assert.Equal(t, len(kvp.Value), 0, "Unexpected C values")
 		} else {
-			t.Fatalf("Unexpected values returned by deserialize")
+			t.Fatalf("Unexpected values returned by deserialize: %v", kvp.Key)
 		}
 	}
 }
