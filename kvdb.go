@@ -204,6 +204,8 @@ type Kvdb interface {
 	// Get returns KVPair that maps to specified key or ErrNotFound. If found
 	// value contains the unmarshalled result or error is ErrUnmarshal
 	GetVal(key string, value interface{}) (*KVPair, error)
+	// GetWithCopy returns a copy of the value as an interface for the specified key
+	GetWithCopy(key string, copySelect CopySelect) (interface{}, error)
 	// Put inserts value at key in kvdb. If value is a runtime.Object, it is
 	// marshalled. If Value is []byte it is set directly. If Value is a string,
 	// its byte representation is stored.

@@ -782,6 +782,13 @@ func (kv *etcdKV) EnumerateWithSelect(
 	return nil, kvdb.ErrNotSupported
 }
 
+func (kv *etcdKV) GetWithCopy(
+	key string,
+	copySelect kvdb.CopySelect,
+) (interface{}, error) {
+	return nil, kvdb.ErrNotSupported
+}
+
 func (kv *etcdKV) SnapPut(snapKvp *kvdb.KVPair) (*kvdb.KVPair, error) {
 	return nil, kvdb.ErrNotSupported
 }
