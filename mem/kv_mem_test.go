@@ -22,6 +22,7 @@ func TestAll(t *testing.T) {
 		t.Fatalf(err.Error())
 	}
 	testNoCopy(kv, t)
+	testGetCopy(kv, t)
 	testEnumerateWithSelect(kv, t)
 }
 
@@ -31,7 +32,7 @@ func testNoCopy(kv kvdb.Kvdb, t *testing.T) {
 		A int
 		B string
 	}
-	val := &Test{1, "abc"}
+	val := Test{1, "abc"}
 	_, err := kv.Put("key1", &val, 0)
 	assert.NoError(t, err, "Expected no error on put")
 	val.A = 2
@@ -41,6 +42,34 @@ func testNoCopy(kv kvdb.Kvdb, t *testing.T) {
 	assert.NoError(t, err, "Expected no error on get")
 	assert.Equal(t, newVal.A, val.A, "Expected equal values")
 	assert.Equal(t, newVal.B, val.B, "Expected equal values")
+}
+
+func testGetCopy(kv kvdb.Kvdb, t *testing.T) {
+	fmt.Println("testGetCopy")
+	type Test struct {
+		A int
+		B string
+	}
+	val := Test{1, "abc"}
+	_, err := kv.Put("key-copy", &val, 0)
+	assert.NoError(t, err, "Expected no error on put")
+	copySelect := func(val interface{}) interface{} {
+		cpy := val.(*Test)
+		return &Test{cpy.A, cpy.B}
+	}
+	_, err = kv.GetWithCopy("key-copy", nil)
+	assert.Error(t, err, "Expected an error")
+	valIntf, err := kv.GetWithCopy("key-copy", copySelect)
+	assert.NoError(t, err, "Expected no error on GetWithCopy")
+	newVal, ok := valIntf.(*Test)
+	assert.True(t, ok, "Expected correct interface to be returned")
+	// Modify the actual value
+	val.A = 2
+	val.B = "def"
+
+	assert.NoError(t, err, "Expected no error on get")
+	assert.NotEqual(t, newVal.A, val.A, "Expected unequal values")
+	assert.NotEqual(t, newVal.B, val.B, "Expected unequal values")
 }
 
 func testEnumerateWithSelect(kv kvdb.Kvdb, t *testing.T) {
@@ -74,6 +103,8 @@ func testEnumerateWithSelect(kv kvdb.Kvdb, t *testing.T) {
 		cpy := *v
 		return &cpy
 	}
+	_, err := kv.EnumerateWithSelect(prefix, nil, nil)
+	assert.Error(t, err, "Expected error on EnumerateWithSelect")
 	output, err := kv.EnumerateWithSelect(prefix, enumerateSelect, copySelect)
 	assert.NoError(t, err, "Unexpected error on EnumerateWithSelect")
 	assert.Equal(t, 2, len(output), "Unexpected no. of values returned")
@@ -96,7 +127,7 @@ func testEnumerateWithSelect(kv kvdb.Kvdb, t *testing.T) {
 		return nil
 	}
 	output, err = kv.EnumerateWithSelect(prefix, enumerateSelect, invalidCopySelect)
-	assert.EqualError(t, err, ErrIllegalCopySelect.Error(), "Unexpected error")
+	assert.EqualError(t, err, ErrIllegalSelect.Error(), "Unexpected error")
 	assert.Equal(t, 0, len(output), "Unexpected output")
 }
 

@@ -717,6 +717,13 @@ func (kv *consulKV) EnumerateWithSelect(
 	return nil, kvdb.ErrNotSupported
 }
 
+func (kv *consulKV) GetWithCopy(
+	key string,
+	copySelect kvdb.CopySelect,
+) (interface{}, error) {
+	return nil, kvdb.ErrNotSupported
+}
+
 func (kv *consulKV) pairToKv(action string, pair *api.KVPair, meta *api.QueryMeta) *kvdb.KVPair {
 	kvp := kv.createKv(pair)
 	switch action {

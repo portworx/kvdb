@@ -33,9 +33,9 @@ var (
 	// ErrSnapWithInterfaceNotSupported is returned when a snap kv-mem is
 	// created with KvUseInterface flag on
 	ErrSnapWithInterfaceNotSupported = errors.New("snap kvdb not supported with interfaces")
-	// ErrIllegalCopySelect is returned when an incorrect copySelect function
-	// implementation is delected.
-	ErrIllegalCopySelect = errors.New("Illegal CopySelect implementation")
+	// ErrIllegalSelect is returned when an incorrect select function
+	// implementation is detected.
+	ErrIllegalSelect = errors.New("Illegal Select implementation")
 )
 
 func init() {
@@ -659,6 +659,9 @@ func (kv *memKV) EnumerateWithSelect(
 	enumerateSelect kvdb.EnumerateSelect,
 	copySelect kvdb.CopySelect,
 ) ([]interface{}, error) {
+	if enumerateSelect == nil || copySelect == nil {
+		return nil, ErrIllegalSelect
+	}
 	kv.mutex.Lock()
 	defer kv.mutex.Unlock()
 	var kvi []interface{}
@@ -668,13 +671,29 @@ func (kv *memKV) EnumerateWithSelect(
 			if enumerateSelect(v.ivalue) {
 				cpy := copySelect(v.ivalue)
 				if cpy == nil {
-					return nil, ErrIllegalCopySelect
+					return nil, ErrIllegalSelect
 				}
 				kvi = append(kvi, cpy)
 			}
 		}
 	}
 	return kvi, nil
+}
+
+func (kv *memKV) GetWithCopy(
+	key string,
+	copySelect kvdb.CopySelect,
+) (interface{}, error) {
+	if copySelect == nil {
+		return nil, ErrIllegalSelect
+	}
+	kv.mutex.Lock()
+	defer kv.mutex.Unlock()
+	kvp, err := kv.get(key)
+	if err != nil {
+		return nil, err
+	}
+	return copySelect(kvp.ivalue), nil
 }
 
 func (kv *memKV) TxNew() (kvdb.Tx, error) {
