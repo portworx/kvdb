@@ -6,7 +6,7 @@ language: go
 go:
   - 1.8.3
 script:
-  - travis_wait 20 make docker-test
+  - make docker-test
 notifications:
   email:
     recipients:
