@@ -230,7 +230,7 @@ func createWithTTL(kv kvdb.Kvdb, t *testing.T) {
 		_, err := kv.Create(key, []byte("bar"), 20)
 		assert.NoError(t, err, "Error on create")
 		// Consul doubles the ttl value
-		time.Sleep(time.Second * 20)
+		time.Sleep(time.Second * 21)
 		_, err = kv.Get(key)
 		assert.Error(t, err, "Expecting error value for expired value")
 
@@ -896,6 +896,9 @@ func watchKey(kv kvdb.Kvdb, t *testing.T) {
 		fmt.Printf("Cannot test watchKey: %v\n", err)
 		return
 	}
+
+	// Sleep for sometime before calling the watchUpdate go routine.
+	time.Sleep(time.Second * 2)
 
 	go watchUpdate(kv, &watchData)
 
