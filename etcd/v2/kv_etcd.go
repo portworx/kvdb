@@ -762,6 +762,11 @@ func (kv *etcdKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 			kvPair.ModifiedIndex > lowestKvdbIndex {
 			if kvPair.Action == kvdb.KVDelete {
 				_, err = snapDb.Delete(kvPair.Key)
+				// A Delete key was issued between our Watch and Enumerate
+				// APIs in this function
+				if err == kvdb.ErrNotFound {
+					err = nil
+				}
 			} else {
 				_, err = snapDb.SnapPut(kvPair)
 			}
