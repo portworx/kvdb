@@ -513,11 +513,13 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 
 	key := "key"
 	value := "bar"
+	keyd := "key-delete"
+	valued := "bar-delete"
 	count := 100
 	doneUpdate := make(chan bool, 2)
 	emptyKeyName := ""
 	updateFn := func(count int, v string, dataMap map[string]string,
-		versionMap map[string]uint64) {
+		versionMap map[string]uint64, isDelete bool) {
 		for i := 0; i < count; i++ {
 			suffix := strconv.Itoa(i)
 			inputKey := prefix + key + suffix
@@ -526,18 +528,27 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 				emptyKeyName = inputKey
 				inputValue = ""
 			}
-			kv, err := kv.Put(inputKey, []byte(inputValue), 0)
+			kvp, err := kv.Put(inputKey, []byte(inputValue), 0)
 			assert.NoError(t, err, "Unexpected error on Put")
 			dataMap[inputKey] = inputValue
-			versionMap[inputKey] = kv.ModifiedIndex
+			versionMap[inputKey] = kvp.ModifiedIndex
+			deleteKey := prefix + keyd + suffix
+			if !isDelete {
+				_, err := kv.Put(deleteKey, []byte(valued), 0)
+				assert.NoError(t, err, "Unexpected error on Put")
+			} else {
+				_, err := kv.Delete(deleteKey)
+				assert.NoError(t, err, "Unexpected error on Delete")
+			}
+
 		}
 		doneUpdate <- true
 	}
 
-	updateFn(count, value, preSnapData, preSnapDataVersion)
+	updateFn(count, value, preSnapData, preSnapDataVersion, false)
 	<-doneUpdate
 	newValue := "bar2"
-	go updateFn(count, newValue, inputData, inputDataVersion)
+	go updateFn(count, newValue, inputData, inputDataVersion, true)
 	time.Sleep(20 * time.Millisecond)
 
 	snap, snapVersion, err := kv.Snapshot(prefix)
@@ -547,11 +558,12 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 	kvPairs, err := snap.Enumerate(prefix)
 	assert.NoError(t, err, "Unexpected error on Enumerate")
 
-	assert.Equal(t, len(kvPairs), count,
-		"Expecting %d keys under %s got: %d, kv: %v",
-		count, prefix, len(kvPairs), kvPairs)
-
+	processedKeys := 0
 	for i := range kvPairs {
+		if strings.Contains(kvPairs[i].Key, keyd) {
+			continue
+		}
+		processedKeys++
 		currValue, ok1 := inputData[kvPairs[i].Key]
 		currVersion, ok2 := inputDataVersion[kvPairs[i].Key]
 		preSnapValue, ok3 := preSnapData[kvPairs[i].Key]
@@ -580,6 +592,10 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 					" expected %v got %v", preSnapValue, string(kvPairs[i].Value))
 		}
 	}
+	assert.Equal(t, count, processedKeys,
+		"Expecting %d keys under %s got: %d, kv: %v",
+		processedKeys, prefix, len(kvPairs), kvPairs)
+
 }
 
 func getLockMethods(kv kvdb.Kvdb) []func(string) (*kvdb.KVPair, error) {
