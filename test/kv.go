@@ -511,7 +511,6 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 	inputData := make(map[string]string)
 	inputDataVersion := make(map[string]uint64)
 	deleteKeys := make(map[string]string)
-	deleteKeysVersion := make(map[string]uint64)
 
 	key := "key"
 	value := "bar"
@@ -540,8 +539,7 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 				assert.NoError(t, err, "Unexpected error on Put")
 				deleteKeys[deleteKey] = deleteKey
 			} else {
-				kvp, err := kv.Delete(deleteKey)
-				deleteKeysVersion[deleteKey] = kvp.ModifiedIndex
+				_, err := kv.Delete(deleteKey)
 				assert.NoError(t, err, "Unexpected error on Delete")
 			}
 
@@ -565,11 +563,8 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 	processedKeys := 0
 	for i := range kvPairs {
 		if strings.Contains(kvPairs[i].Key, keyd) {
-			modifiedVersion, ok := deleteKeysVersion[kvPairs[i].Key]
+			_, ok := deleteKeys[kvPairs[i].Key]
 			assert.True(t, ok, "Key not found in deleteKeys list (%v)", kvPairs[i].Key)
-			assert.True(t, modifiedVersion < snapVersion,
-				" snap db key (%v) has version greater than snap version (%v) (%v)",
-				modifiedVersion, snapVersion)
 			delete(deleteKeys, kvPairs[i].Key)
 			continue
 		}
@@ -601,11 +596,6 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 				"snapshot db does not have correct value, "+
 					" expected %v got %v", preSnapValue, string(kvPairs[i].Value))
 		}
-	}
-	for _, deleteKey := range deleteKeys {
-		modifiedVersion, ok := deleteKeysVersion[deleteKey]
-		assert.True(t, ok, "deleted key not found %v", deleteKey)
-		assert.True(t, modifiedVersion < snapVersion, "incorrect version for deleted key %v %v", modifiedVersion, snapVersion)
 	}
 	assert.Equal(t, count, processedKeys,
 		"Expecting %d keys under %s got: %d, kv: %v",

@@ -654,8 +654,8 @@ func (kv *consulKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 			} else {
 				if kvp.Action == kvdb.KVDelete {
 					_, err = snapDb.Delete(kvp.Key)
-					// A Delete key was issued between our Watch and Enumerate
-					// APIs in this function
+					// A Delete key was issued between our first lowestKvdbIndex Put
+					// and Enumerate APIs in this function
 					if err == kvdb.ErrNotFound {
 						err = nil
 					}
