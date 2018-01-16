@@ -376,6 +376,11 @@ func (et *etcdKV) Delete(key string) (*kvdb.KVPair, error) {
 		kvp.Action = kvdb.KVDelete
 		return kvp, nil
 	}
+
+	if err == rpctypes.ErrGRPCEmptyKey {
+		return nil, kvdb.ErrNotFound
+	}
+
 	return nil, err
 }
 
