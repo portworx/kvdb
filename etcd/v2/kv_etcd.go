@@ -211,7 +211,17 @@ func (kv *etcdKV) Delete(key string) (*kvdb.KVPair, error) {
 	if err == nil {
 		return kv.resultToKv(result), err
 	}
-	return nil, err
+
+	switch err.(type) {
+	case e.Error:
+		etcdErr := err.(e.Error)
+		if etcdErr.Code == e.ErrorCodeKeyNotFound {
+			return nil, kvdb.ErrNotFound
+		}
+		return nil, err
+	default:
+		return nil, err
+	}
 }
 
 func (kv *etcdKV) DeleteTree(prefix string) error {

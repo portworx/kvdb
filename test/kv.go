@@ -285,6 +285,7 @@ func deleteKey(kv kvdb.Kvdb, t *testing.T) {
 
 	_, err = kv.Delete(key)
 	assert.Error(t, err, "Delete should fail on non existent key")
+	assert.EqualError(t, err, kvdb.ErrNotFound.Error(), "Invalid error returned : %v", err)
 }
 
 func deleteTree(kv kvdb.Kvdb, t *testing.T) {
