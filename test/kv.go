@@ -215,7 +215,7 @@ func create(kv kvdb.Kvdb, t *testing.T) {
 		"Expected action KVCreate, actual %v", kvp.Action)
 
 	_, err = kv.Create(key, []byte("bar"), 0)
-	assert.Error(t, err, "Create on existing key should have errored.")
+	assert.Error(t, kvdb.ErrExist, "Create on existing key should have errored.")
 }
 
 func createWithTTL(kv kvdb.Kvdb, t *testing.T) {
