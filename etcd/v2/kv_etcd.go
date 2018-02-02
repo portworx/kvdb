@@ -521,6 +521,9 @@ func (kv *etcdKV) setWithRetry(ctx context.Context, key, value string,
 
 out:
 	outErr := err
+	if outErr != nil && strings.Contains(outErr.Error(), kvdb.ErrExist.Error()) {
+		outErr = kvdb.ErrExist
+	}
 	// It's possible that update succeeded but the re-update failed.
 	// Check only if the original error was a cluster error.
 	if i > 0 && i < kv.GetRetryCount() && err != nil {

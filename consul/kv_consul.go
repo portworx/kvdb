@@ -281,6 +281,10 @@ func (kv *consulKV) Create(
 			}
 		}
 	}
+	if err == kvdb.ErrModified {
+		// key already exists since compare and set with index 0 failed.
+		err = kvdb.ErrExist
+	}
 	return kvPair, err
 }
 
