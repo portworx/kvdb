@@ -1278,10 +1278,14 @@ func (et *etcdKV) ListMembers() (map[string]*kvdb.MemberInfo, error) {
 	resp := make(map[string]*kvdb.MemberInfo)
 	for _, member := range memberListResponse.Members {
 		var (
-			leader    bool
-			dbSize    int64
-			isHealthy bool
+			leader     bool
+			dbSize     int64
+			isHealthy  bool
+			clientURLs []string
 		)
+		// etcd versions < v3.2.15 will return empty ClientURLs if
+		// the node is unhealthy. For versions >= v3.2.15 they populate
+		// ClientURLs but return an error status
 		if len(member.ClientURLs) != 0 {
 			ctx, cancel = et.MaintenanceContext()
 			endpointStatus, err := et.maintenanceClient.Status(
@@ -1295,11 +1299,13 @@ func (et *etcdKV) ListMembers() (map[string]*kvdb.MemberInfo, error) {
 				}
 				dbSize = endpointStatus.DbSize
 				isHealthy = true
+				// Only set the urls if status is healthy
+				clientURLs = member.ClientURLs
 			}
 		}
 		resp[member.Name] = &kvdb.MemberInfo{
 			PeerUrls:   member.PeerURLs,
-			ClientUrls: member.ClientURLs,
+			ClientUrls: clientURLs,
 			Leader:     leader,
 			DbSize:     dbSize,
 			IsHealthy:  isHealthy,
