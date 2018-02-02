@@ -35,6 +35,8 @@ const (
 	// to detect connectivity issues
 	defaultSessionTimeout = 120
 	urlPrefix             = "http://"
+	// timeoutMaxRetry is maximum retries before faulting
+	timeoutMaxRetry = 30
 )
 
 var (
@@ -496,7 +498,7 @@ func (et *etcdKV) CompareAndSet(
 		cmp = e.Compare(e.ModRevision(key), "=", int64(kvp.ModifiedIndex))
 	}
 retry:
-	for {
+	for i := 0; i < timeoutMaxRetry; i++ {
 		ctx, cancel := et.Context()
 		txnResponse, txnErr = et.kvClient.Txn(ctx).
 			If(cmp).
@@ -512,6 +514,9 @@ retry:
 				}
 				if kvPair.ModifiedIndex == kvp.ModifiedIndex {
 					// update did not succeed, retry
+					if i == (timeoutMaxRetry - 1) {
+						et.FatalCb("Too many server retries for CAS: %v", *kvp)
+					}
 					continue retry
 				} else if bytes.Compare(kvp.Value, kvPair.Value) == 0 {
 					return kvPair, nil
