@@ -35,6 +35,8 @@ const (
 	// to detect connectivity issues
 	defaultSessionTimeout = 120
 	urlPrefix             = "http://"
+	// timeoutMaxRetry is maximum retries before faulting
+	timeoutMaxRetry = 30
 )
 
 var (
@@ -491,47 +493,57 @@ func (et *etcdKV) CompareAndSet(
 		opts = append(opts, e.WithLease(leaseResult.ID))
 	}
 
-	ctx, cancel := et.Context()
+	cmp := e.Compare(e.Value(key), "=", string(prevValue))
 	if (flags & kvdb.KVModifiedIndex) != 0 {
-		txnResponse, txnErr = et.kvClient.Txn(ctx).
-			If(e.Compare(e.ModRevision(key), "=", int64(kvp.ModifiedIndex))).
-			Then(e.OpPut(key, string(kvp.Value), opts...)).
-			Commit()
-		cancel()
-		if txnErr != nil {
-			return nil, txnErr
-		}
-		if txnResponse.Succeeded == false {
-			if len(txnResponse.Responses) == 0 {
-				logrus.Infof("Etcd did not return any transaction responses for key (%v)", kvp.Key)
-			} else {
-				for i, responseOp := range txnResponse.Responses {
-					logrus.Infof("Etcd transaction Response: %v %v", i, responseOp.String())
-				}
-			}
-			return nil, kvdb.ErrModified
-		}
-
-	} else {
-		txnResponse, txnErr = et.kvClient.Txn(ctx).
-			If(e.Compare(e.Value(key), "=", string(prevValue))).
-			Then(e.OpPut(key, string(kvp.Value), opts...)).
-			Commit()
-		cancel()
-		if txnErr != nil {
-			return nil, txnErr
-		}
-		if txnResponse.Succeeded == false {
-			if len(txnResponse.Responses) == 0 {
-				logrus.Infof("Etcd did not return any transaction responses for key (%v)", kvp.Key)
-			} else {
-				for i, responseOp := range txnResponse.Responses {
-					logrus.Infof("Etcd transaction Response: %v %v", i, responseOp.String())
-				}
-			}
-			return nil, kvdb.ErrValueMismatch
-		}
+		cmp = e.Compare(e.ModRevision(key), "=", int64(kvp.ModifiedIndex))
 	}
+retry:
+	for i := 0; i < timeoutMaxRetry; i++ {
+		ctx, cancel := et.Context()
+		txnResponse, txnErr = et.kvClient.Txn(ctx).
+			If(cmp).
+			Then(e.OpPut(key, string(kvp.Value), opts...)).
+			Commit()
+		cancel()
+		if txnErr != nil {
+			if strings.Contains(txnErr.Error(), rpctypes.ErrGRPCTimeout.Error()) {
+				// server timeout
+				kvPair, err := et.Get(kvp.Key)
+				if err != nil {
+					return nil, txnErr
+				}
+				if kvPair.ModifiedIndex == kvp.ModifiedIndex {
+					// update did not succeed, retry
+					if i == (timeoutMaxRetry - 1) {
+						et.FatalCb("Too many server retries for CAS: %v", *kvp)
+					}
+					continue retry
+				} else if bytes.Compare(kvp.Value, kvPair.Value) == 0 {
+					return kvPair, nil
+				}
+				// else someone else updated the value, return error
+			}
+			return nil, txnErr
+		}
+		if txnResponse.Succeeded == false {
+			if len(txnResponse.Responses) == 0 {
+				logrus.Infof("Etcd did not return any transaction responses "+
+					"for key (%v)", kvp.Key)
+			} else {
+				for i, responseOp := range txnResponse.Responses {
+					logrus.Infof("Etcd transaction Response: %v %v", i,
+						responseOp.String())
+				}
+			}
+			if (flags & kvdb.KVModifiedIndex) != 0 {
+				return nil, kvdb.ErrModified
+			} else {
+				return nil, kvdb.ErrValueMismatch
+			}
+		}
+		break
+	}
+
 	kvPair, err := et.Get(kvp.Key)
 	if err != nil {
 		return nil, err
