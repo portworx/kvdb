@@ -34,7 +34,12 @@ const (
 	// defaultSessionTimeout in seconds is used for etcd watch
 	// to detect connectivity issues
 	defaultSessionTimeout = 120
-	urlPrefix             = "http://"
+	// All the below timeouts are similar to the ones set in etcdctl
+	// and are mainly used for etcd client's load balancing.
+	defaultDialTimeout      = 2 * time.Second
+	defaultKeepAliveTime    = 2 * time.Second
+	defaultKeepAliveTimeout = 6 * time.Second
+	urlPrefix               = "http://"
 	// timeoutMaxRetry is maximum retries before faulting
 	timeoutMaxRetry = 30
 )
@@ -123,11 +128,14 @@ func New(
 	}
 
 	cfg := e.Config{
-		Endpoints:   machines,
-		Username:    username,
-		Password:    password,
-		DialTimeout: ec.DefaultDialTimeout,
-		TLS:         tlsCfg,
+		Endpoints:            machines,
+		Username:             username,
+		Password:             password,
+		DialTimeout:          defaultDialTimeout,
+		TLS:                  tlsCfg,
+		DialKeepAliveTime:    defaultKeepAliveTime,
+		DialKeepAliveTimeout: defaultKeepAliveTimeout,
+
 		// The time required for a request to fail - 30 sec
 		//HeaderTimeoutPerRequest: time.Duration(10) * time.Second,
 	}
