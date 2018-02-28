@@ -516,14 +516,8 @@ retry:
 		if txnErr != nil {
 			// Check if we need to retry
 			switch txnErr {
-			case context.DeadlineExceeded:
-				logrus.Errorf("[cas %v]: kvdb deadline exceeded error: %v, retry count: %v\n", key, txnErr, i)
-				time.Sleep(ec.DefaultIntervalBetweenRetries)
-			case etcdserver.ErrTimeout:
-				logrus.Errorf("[cas: %v] kvdb error: %v, retry count: %v \n", key, txnErr, i)
-				time.Sleep(ec.DefaultIntervalBetweenRetries)
-			case etcdserver.ErrUnhealthy:
-				logrus.Errorf("[cas: %v] kvdb error: %v, retry count: %v \n", key, txnErr, i)
+			case context.DeadlineExceeded, etcdserver.ErrTimeout, etcdserver.ErrUnhealthy:
+				logrus.Errorf("[cas %v]: kvdb error: %v, retry count: %v\n", key, txnErr, i)
 				time.Sleep(ec.DefaultIntervalBetweenRetries)
 			default:
 				if err == rpctypes.ErrGRPCEmptyKey {
@@ -552,6 +546,7 @@ retry:
 				return kvPair, nil
 			}
 			// else someone else updated the value, return error
+			return nil, txnErr
 		}
 		if txnResponse.Succeeded == false {
 			if len(txnResponse.Responses) == 0 {
