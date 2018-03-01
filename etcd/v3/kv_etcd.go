@@ -514,23 +514,38 @@ retry:
 			Commit()
 		cancel()
 		if txnErr != nil {
-			if strings.Contains(txnErr.Error(), rpctypes.ErrGRPCTimeout.Error()) {
-				// server timeout
-				kvPair, err := et.Get(kvp.Key)
-				if err != nil {
+			// Check if we need to retry
+			switch txnErr {
+			case context.DeadlineExceeded, etcdserver.ErrTimeout, etcdserver.ErrUnhealthy:
+				logrus.Errorf("[cas %v]: kvdb error: %v, retry count: %v\n", key, txnErr, i)
+				time.Sleep(ec.DefaultIntervalBetweenRetries)
+			default:
+				if err == rpctypes.ErrGRPCEmptyKey {
+					return nil, kvdb.ErrNotFound
+				} else if strings.Contains(txnErr.Error(), rpctypes.ErrGRPCTimeout.Error()) {
+					logrus.Errorf("[cas: %v] kvdb grpc timeout: %v, retry count %v \n", key, txnErr, i)
+					time.Sleep(ec.DefaultIntervalBetweenRetries)
+				} else {
+					// For all other errors return immediately
 					return nil, txnErr
 				}
-				if kvPair.ModifiedIndex == kvp.ModifiedIndex {
-					// update did not succeed, retry
-					if i == (timeoutMaxRetry - 1) {
-						et.FatalCb("Too many server retries for CAS: %v", *kvp)
-					}
-					continue retry
-				} else if bytes.Compare(kvp.Value, kvPair.Value) == 0 {
-					return kvPair, nil
-				}
-				// else someone else updated the value, return error
 			}
+
+			// server timeout
+			kvPair, err := et.Get(kvp.Key)
+			if err != nil {
+				return nil, txnErr
+			}
+			if kvPair.ModifiedIndex == kvp.ModifiedIndex {
+				// update did not succeed, retry
+				if i == (timeoutMaxRetry - 1) {
+					et.FatalCb("Too many server retries for CAS: %v", *kvp)
+				}
+				continue retry
+			} else if bytes.Compare(kvp.Value, kvPair.Value) == 0 {
+				return kvPair, nil
+			}
+			// else someone else updated the value, return error
 			return nil, txnErr
 		}
 		if txnResponse.Succeeded == false {
