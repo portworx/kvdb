@@ -513,12 +513,24 @@ func (kv *consulKV) LockWithTimeout(
 		key = key[1:]
 	}
 
-	l, err := kv.getLock(key, lockerID, lockHoldDuration)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := l.lock.Lock(nil); err != nil {
-		return nil, err
+	timeout := time.After(lockTryDuration)
+	var (
+		l    *consulLock
+		err  error
+		done bool
+	)
+	for !done {
+		select {
+		case <-timeout:
+			return nil, err
+		default:
+			l, err = kv.getLock(key, lockerID, lockHoldDuration)
+			if err == nil {
+				done = true
+			} else {
+				time.Sleep(time.Second)
+			}
+		}
 	}
 	return &kvdb.KVPair{
 		Key:  key,
@@ -788,6 +800,7 @@ func (kv *consulKV) pairToKvs(
 func (kv *consulKV) renewLockSession(
 	key string,
 	initialTTL string,
+	lockTimeout time.Duration,
 	session string,
 	doneCh chan struct{},
 	tag interface{},
@@ -810,45 +823,55 @@ func (kv *consulKV) renewLockSession(
 	}
 }
 
-func (kv *consulKV) getLock(key string, tag interface{}, ttl time.Duration) (
-	*consulLock,
-	error,
-) {
+func (kv *consulKV) getLock(
+	key string,
+	tag interface{},
+	lockHoldDuration time.Duration,
+) (*consulLock, error) {
 	key = kv.domain + key
 	tagValue, err := common.ToBytes(tag)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to convert tag: %v, error: %v", tag,
 			err)
 	}
-	lockOpts := &api.LockOptions{
-		Key:   key,
-		Value: tagValue,
-	}
-	lock := &consulLock{}
+	// Since we need to extend lock hold time, we create a session
+	// which is refreshed every so often until we hit lockHoldDuration,
+	// when we run the FatalCb. Set the TTL to a smaller value so that
+	// the lock is released in case the locking process exits.
 	entry := &api.SessionEntry{
-		Behavior:  api.SessionBehaviorRelease, // Release the lock when the session expires
-		TTL:       (ttl / 2).String(),         // Consul multiplies the TTL by 2x
-		LockDelay: 0,                          // Virtually disable lock delay
+		Behavior:  api.SessionBehaviorRelease,  // Release the lock when the session expires
+		TTL:       (10 * time.Second).String(), // Consul multiplies the TTL by 2x
+		LockDelay: 0,                           // Virtually disable lock delay
 	}
-
-	// Create the key session
 	session, _, err := kv.client.Session().Create(entry, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	// Place the session on lock
-	lockOpts.Session = session
-	lock.doneCh = make(chan struct{})
-	lock.tag = tag
-
+	// create a lock handle
+	lockOpts := &api.LockOptions{
+		Key:          key,
+		Value:        tagValue,
+		LockTryOnce:  true, // give up if lock already exists
+		Session:      session,
+		LockWaitTime: time.Microsecond, // zero means default, so give a very small value
+	}
 	l, err := kv.client.LockOpts(lockOpts)
 	if err != nil {
 		return nil, err
 	}
+	if lockChan, err := l.Lock(nil); err != nil || lockChan == nil {
+		_, _ = kv.client.Session().Destroy(session, nil)
+		return nil, kvdb.ErrExist
+	}
 
-	kv.renewLockSession(key, entry.TTL, session, lock.doneCh, tag)
-	lock.lock = l
+	lock := &consulLock{
+		doneCh: make(chan struct{}),
+		tag:    tag,
+		lock:   l,
+	}
+
+	kv.renewLockSession(key, entry.TTL, lockHoldDuration, session, lock.doneCh, tag)
 	return lock, nil
 }
 

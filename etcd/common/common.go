@@ -32,8 +32,6 @@ const (
 	DefaultLockTTL = 16
 	// DefaultLockRefreshDuration is the time interval for refreshing an etcd lock
 	DefaultLockRefreshDuration = 2 * time.Second
-	// DefaultLockTryDuration is the maximum time spent trying to acquire lock
-	DefaultLockTryDuration = 300 * time.Second
 )
 
 // EtcdCommon defined the common functions between v2 and v3 etcd implementations.

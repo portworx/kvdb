@@ -75,6 +75,7 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop S
 	watchTree(kv, t)
 	watchWithIndex(kv, t)
 	collect(kv, t)
+	lockBasic(kv, t)
 	lock(kv, t)
 	lockBetweenRestarts(kv, t, start, stop)
 	serialization(kv, t)
@@ -753,6 +754,7 @@ func lockBetweenRestarts(kv kvdb.Kvdb, t *testing.T, start StartKvdb, stop StopK
 }
 
 func lockBasic(kv kvdb.Kvdb, t *testing.T) {
+
 	lockMethods := getLockMethods(kv)
 
 	for _, lockMethod := range lockMethods {
@@ -775,6 +777,29 @@ func lockBasic(kv kvdb.Kvdb, t *testing.T) {
 		err = kv.Unlock(kvPair)
 		assert.NoError(t, err, "Unexpected error from Unlock")
 	}
+
+	// lock with timeout
+	key := "testTimeoutKey"
+	holdDuration := 30 * time.Second
+	tryDuration := 5 * time.Second
+	kvPair, err := kv.LockWithTimeout(key, "test", tryDuration, holdDuration)
+	assert.NoError(t, err, "Unexpected error in lock")
+
+	tryStart := time.Now()
+	_, err = kv.LockWithTimeout(key, "test", tryDuration, holdDuration)
+	duration := time.Since(tryStart)
+	assert.True(t, duration < tryDuration+time.Second, "try duration")
+	assert.Error(t, err, "lock expired before timeout")
+
+	time.Sleep(holdDuration - time.Since(tryStart) - 5*time.Second)
+
+	_, err = kv.LockWithTimeout(key, "test", 1*time.Second, holdDuration)
+	duration = time.Since(tryStart)
+	assert.Error(t, err, "lock expired before timeout")
+
+	err = kv.Unlock(kvPair)
+	assert.NoError(t, err, "Unexpected error from Unlock")
+
 }
 
 func watchFn(
