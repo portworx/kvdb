@@ -498,13 +498,22 @@ func (kv *consulKV) LockWithID(key string, lockerID string) (
 	*kvdb.KVPair,
 	error,
 ) {
+	return kv.LockWithTimeout(key, lockerID, kvdb.DefaultLockTryDuration, kv.GetLockTimeout())
+}
+
+func (kv *consulKV) LockWithTimeout(
+	key string,
+	lockerID string,
+	lockTryDuration time.Duration,
+	lockHoldDuration time.Duration,
+) (*kvdb.KVPair, error) {
 	key = stripConsecutiveForwardslash(key)
 	// Strip of the leading slash or else consul throws error
 	if key[0] == '/' {
 		key = key[1:]
 	}
 
-	l, err := kv.getLock(key, lockerID, 20*time.Second)
+	l, err := kv.getLock(key, lockerID, lockHoldDuration)
 	if err != nil {
 		return nil, err
 	}
