@@ -18,19 +18,18 @@ var (
 func TestAll(t *testing.T) {
 	// Run the common test suite
 	test.Run(New, t, Start, Stop)
-	kv, err := New("pwx/test", nil, nil, nil)
-	createUsingCAS(kv, t)
 
-	return
 	// Run consul specific tests
-	err = Start()
+	err := Start()
 	assert.NoError(t, err, "Unable to start kvdb")
 	// Wait for kvdb to start
 	time.Sleep(5 * time.Second)
 
+	kv, err := New("pwx/test", nil, nil, nil)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
+	createUsingCAS(kv, t)
 	err = Stop()
 	assert.NoError(t, err, "Unable to stop kvdb")
 }
