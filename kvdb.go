@@ -279,6 +279,8 @@ type Kvdb interface {
 	SetFatalCb(f FatalErrorCB)
 	// SetLockTimeout sets maximum time a lock may be held
 	SetLockTimeout(timeout time.Duration)
+	// GetLockTimeout gets the currently set lock timeout
+	GetLockTimeout() time.Duration
 	// Serialize serializes all the keys under the domain and returns a byte array
 	Serialize() ([]byte, error)
 	// Deserialize deserializes the given byte array into a list of kv pairs
