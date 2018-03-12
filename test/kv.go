@@ -709,6 +709,7 @@ func lock(kv kvdb.Kvdb, t *testing.T) {
 		}
 		kv.SetFatalCb(fatalLockCb)
 		kv.SetLockTimeout(5 * time.Second)
+		assert.Equal(t, kv.GetLockTimeout(), 5*time.Second, "get lock timeout")
 		kvPair2, err = lockMethod("key2")
 		time.Sleep(15 * time.Second)
 		assert.True(t, lockTimedout, "lock timeout not called")
