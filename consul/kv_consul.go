@@ -514,11 +514,9 @@ func (kv *consulKV) LockWithTimeout(
 	}
 
 	timeout := time.After(lockTryDuration)
-	var (
-		l    *consulLock
-		err  error
-		done bool
-	)
+	var l *consulLock
+	err := fmt.Errorf("Timeout acquiring lock")
+	done := false
 	for !done {
 		select {
 		case <-timeout:
@@ -808,9 +806,9 @@ func (kv *consulKV) renewLockSession(
 	go func() {
 		_ = kv.client.Session().RenewPeriodic(initialTTL, session, nil, doneCh)
 	}()
-	if kv.LockTimeout > 0 {
+	if lockTimeout > 0 {
 		go func() {
-			timeout := time.After(kv.LockTimeout)
+			timeout := time.After(lockTimeout)
 			for {
 				select {
 				case <-timeout:
