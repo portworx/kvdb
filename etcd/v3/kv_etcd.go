@@ -488,7 +488,7 @@ func (et *etcdKV) CompareAndSet(
 	if (flags & kvdb.KVModifiedIndex) != 0 {
 		cmp = e.Compare(e.ModRevision(key), "=", int64(kvp.ModifiedIndex))
 	}
-retry:
+
 	for i := 0; i < timeoutMaxRetry; i++ {
 		ctx, cancel := et.Context()
 		txnResponse, txnErr = et.kvClient.Txn(ctx).
@@ -524,7 +524,7 @@ retry:
 				if i == (timeoutMaxRetry - 1) {
 					et.FatalCb("Too many server retries for CAS: %v", *kvp)
 				}
-				continue retry
+				continue
 			} else if bytes.Compare(kvp.Value, kvPair.Value) == 0 {
 				return kvPair, nil
 			}
@@ -568,8 +568,7 @@ func (et *etcdKV) CompareAndDelete(
 	if (flags & kvdb.KVModifiedIndex) != 0 {
 		cmp = e.Compare(e.ModRevision(key), "=", int64(kvp.ModifiedIndex))
 	}
-
-	for i := 0; i > timeoutMaxRetry; i++ {
+	for i := 0; i < timeoutMaxRetry; i++ {
 		txnResponse, txnErr := et.kvClient.Txn(ctx).
 			If(cmp).
 			Then(e.OpDelete(key)).
@@ -592,8 +591,18 @@ func (et *etcdKV) CompareAndDelete(
 					return nil, txnErr
 				}
 			}
-
-			return nil, txnErr
+			// server timeout
+			_, err := et.Get(kvp.Key)
+			if err == kvdb.ErrNotFound {
+				// Our command succeeded
+				return kvp, nil
+			} else if err != nil {
+				return nil, txnErr
+			}
+			if i == (timeoutMaxRetry - 1) {
+				et.FatalCb("Too many server retries for CAD: %v", *kvp)
+			}
+			continue
 		}
 		if txnResponse.Succeeded == false {
 			if len(txnResponse.Responses) == 0 {
@@ -609,6 +618,7 @@ func (et *etcdKV) CompareAndDelete(
 				return nil, kvdb.ErrValueMismatch
 			}
 		}
+		break
 	}
 	return kvp, nil
 }
