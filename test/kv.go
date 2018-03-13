@@ -62,6 +62,7 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop S
 	create(kv, t)
 	createWithTTL(kv, t)
 	cas(kv, t)
+	cad(kv, t)
 	snapshot(kv, t)
 	get(kv, t)
 	getInterface(kv, t)
@@ -1109,12 +1110,7 @@ func cas(kv kvdb.Kvdb, t *testing.T) {
 	assert.NoError(t, err, "CompareAndSet should succeed on an correct modified index")
 
 	kvPairNew, err := kv.CompareAndSet(kvPair, kvdb.KVFlags(0), []byte(val))
-	if err != nil {
-		// consul does not handle this kind of compare and set
-		assert.EqualError(t, err, kvdb.ErrNotSupported.Error(), "Invalid error returned : %v", err)
-	} else {
-		assert.NoError(t, err, "CompareAndSet should succeed on an correct value")
-	}
+	assert.NoError(t, err, "CompareAndSet should succeed on an correct value")
 
 	if kvPairNew != nil {
 		kvPair = kvPairNew
@@ -1122,6 +1118,43 @@ func cas(kv kvdb.Kvdb, t *testing.T) {
 
 	kvPair, err = kv.CompareAndSet(kvPair, kvdb.KVModifiedIndex, []byte(val))
 	assert.NoError(t, err, "CompareAndSet should succeed on an correct value and modified index")
+}
+
+func cad(kv kvdb.Kvdb, t *testing.T) {
+	fmt.Println("\ncad")
+
+	key := "foo/docker"
+	val := "great"
+	defer func() {
+		kv.DeleteTree(key)
+	}()
+
+	kvPair, err := kv.Put(key, []byte(val), 0)
+	assert.NoError(t, err, "Unxpected error in Put")
+
+	kvPair, err = kv.Get(key)
+	assert.NoError(t, err, "Failed in Get")
+
+	copyKVPair1 := *kvPair
+	copyKVPair1.Value = []byte("badval")
+	_, err = kv.CompareAndDelete(&copyKVPair1, kvdb.KVFlags(0))
+	assert.Error(t, err, "CompareAndDelete should fail on an incorrect previous value")
+
+	copyKVPair2 := *kvPair
+	copyKVPair2.ModifiedIndex++
+	_, err = kv.CompareAndDelete(&copyKVPair2, kvdb.KVModifiedIndex)
+	assert.Error(t, err, "CompareAndDelete should fail on an incorrect modified index")
+
+	//kvPair.ModifiedIndex--
+	copyKVPair2.ModifiedIndex--
+	kvPair, err = kv.CompareAndDelete(&copyKVPair2, kvdb.KVModifiedIndex)
+	assert.NoError(t, err, "CompareAndDelete should succeed on an correct modified index")
+
+	kvPair, err = kv.Put(key, []byte(val), 0)
+	assert.NoError(t, err, "Unxpected error in Put")
+
+	_, err = kv.CompareAndDelete(kvPair, kvdb.KVFlags(0))
+	assert.NoError(t, err, "CompareAndDelete should succeed on an correct value")
 }
 
 func addUser(kv kvdb.Kvdb, t *testing.T) {

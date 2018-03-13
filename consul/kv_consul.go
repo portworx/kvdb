@@ -429,10 +429,22 @@ func (kv *consulKV) CompareAndDelete(
 		Flags: api.LockFlagValue,
 	}
 
-	if (flags & kvdb.KVModifiedIndex) == 0 {
-		return nil, kvdb.ErrNotSupported
+	if (flags&kvdb.KVModifiedIndex) == 0 && kvp.Value != nil {
+		kvPair, err := kv.Get(kvp.Key)
+		if err != nil {
+			return nil, err
+		}
+
+		// Prev Value not equal to current value in etcd
+		if bytes.Compare(kvPair.Value, kvp.Value) != 0 {
+			return nil, kvdb.ErrValueMismatch
+		}
+		pair.ModifyIndex = kvPair.ModifiedIndex
+	} else if (flags & kvdb.KVModifiedIndex) != 0 {
+		pair.ModifyIndex = kvp.ModifiedIndex
+	} else {
+		pair.ModifyIndex = 0
 	}
-	pair.ModifyIndex = kvp.ModifiedIndex
 
 	ok, _, err := kv.client.KV().DeleteCAS(pair, nil)
 	if err != nil {
