@@ -191,16 +191,11 @@ func (et *etcdKV) Get(key string) (*kvdb.KVPair, error) {
 			return kvs[0], nil
 		}
 
-		switch err {
-		case context.DeadlineExceeded, etcdserver.ErrTimeout, transport.ErrStreamDrain, etcdserver.ErrUnhealthy:
-			logrus.Errorf("[get %v]: kvdb error: %v, retry count: %v\n", key, err, i)
-			time.Sleep(ec.DefaultIntervalBetweenRetries)
-		default:
-			if err == rpctypes.ErrGRPCEmptyKey {
-				return nil, kvdb.ErrNotFound
-			}
-			return nil, err
+		retry, err := isRetryNeeded(err, "get", key, i)
+		if retry {
+			continue
 		}
+		return nil, err
 	}
 	return nil, err
 }
@@ -338,16 +333,11 @@ func (et *etcdKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 			return kvs, nil
 		}
 
-		switch err {
-		case context.DeadlineExceeded, etcdserver.ErrTimeout, transport.ErrStreamDrain, etcdserver.ErrUnhealthy:
-			logrus.Errorf("[enumerate %v]: kvdb error: %v, retry count: %v\n", prefix, err, i)
-			time.Sleep(ec.DefaultIntervalBetweenRetries)
-		default:
-			if err == rpctypes.ErrGRPCEmptyKey {
-				return nil, kvdb.ErrNotFound
-			}
-			return nil, err
+		retry, err := isRetryNeeded(err, "enumerate", prefix, i)
+		if retry {
+			continue
 		}
+		return nil, err
 	}
 	return nil, err
 }
@@ -445,16 +435,14 @@ func (et *etcdKV) Keys(prefix, sep string) ([]string, error) {
 			}
 
 			cancel()
-			switch err {
-			case context.DeadlineExceeded, etcdserver.ErrTimeout, transport.ErrStreamDrain, etcdserver.ErrUnhealthy:
-				logrus.Errorf("[%v.%v]: kvdb error: %v, retry count: %v\n", prefix, sep, err, i)
-				time.Sleep(ec.DefaultIntervalBetweenRetries)
-			default:
-				if err == rpctypes.ErrGRPCEmptyKey {
-					break
-				}
-				return nil, err
+			retry, err := isRetryNeeded(err, "keys", prefix, i)
+			if retry {
+				continue
 			}
+			if err == kvdb.ErrNotFound {
+				break
+			}
+			return nil, err
 		}
 		return retList, nil
 	}
@@ -498,21 +486,11 @@ func (et *etcdKV) CompareAndSet(
 		cancel()
 		if txnErr != nil {
 			// Check if we need to retry
-			switch txnErr {
-			case context.DeadlineExceeded, etcdserver.ErrTimeout, etcdserver.ErrUnhealthy, transport.ErrStreamDrain:
-				logrus.Errorf("[cas %v]: kvdb error: %v, retry count: %v\n", key, txnErr, i)
-				time.Sleep(ec.DefaultIntervalBetweenRetries)
-			default:
-				if err == rpctypes.ErrGRPCEmptyKey {
-					return nil, kvdb.ErrNotFound
-				} else if strings.Contains(txnErr.Error(), rpctypes.ErrGRPCTimeout.Error()) {
-					logrus.Errorf("[cas: %v] kvdb grpc timeout: %v, retry count %v \n", key, txnErr, i)
-					time.Sleep(ec.DefaultIntervalBetweenRetries)
-				} else {
-					// For all other errors return immediately
-					return nil, txnErr
-				}
-			}
+			retry, txnErr := isRetryNeeded(txnErr, "cas", key, i)
+			if !retry {
+				// For all other errors return immediately
+				return nil, txnErr
+			} // retry is needed
 
 			// server timeout
 			kvPair, err := et.Get(kvp.Key)
@@ -576,21 +554,12 @@ func (et *etcdKV) CompareAndDelete(
 		cancel()
 		if txnErr != nil {
 			// Check if we need to retry
-			switch txnErr {
-			case context.DeadlineExceeded, etcdserver.ErrTimeout, etcdserver.ErrUnhealthy, transport.ErrStreamDrain:
-				logrus.Errorf("[cad %v]: kvdb error: %v, retry count: %v\n", key, txnErr, i)
-				time.Sleep(ec.DefaultIntervalBetweenRetries)
-			default:
-				if txnErr == rpctypes.ErrGRPCEmptyKey {
-					return nil, kvdb.ErrNotFound
-				} else if strings.Contains(txnErr.Error(), rpctypes.ErrGRPCTimeout.Error()) {
-					logrus.Errorf("[cad: %v] kvdb grpc timeout: %v, retry count %v \n", key, txnErr, i)
-					time.Sleep(ec.DefaultIntervalBetweenRetries)
-				} else {
-					// For all other errors return immediately
-					return nil, txnErr
-				}
-			}
+			retry, txnErr := isRetryNeeded(txnErr, "cad", key, i)
+			if !retry {
+				// For all other errors return immediately
+				return nil, txnErr
+			} // retry is needed
+
 			// server timeout
 			_, err := et.Get(kvp.Key)
 			if err == kvdb.ErrNotFound {
@@ -815,13 +784,12 @@ func (et *etcdKV) setWithRetry(key, value string, ttl uint64) (*kvdb.KVPair, err
 			goto handle_error
 		}
 	handle_error:
-		switch err {
-		case context.DeadlineExceeded, etcdserver.ErrTimeout, etcdserver.ErrUnhealthy, transport.ErrStreamDrain:
-			logrus.Errorf("[set %v]: kvdb error: %v, retry count: %v\n", key, err, i)
-			time.Sleep(ec.DefaultIntervalBetweenRetries)
-		default:
-			goto out
+		var retry bool
+		retry, err = isRetryNeeded(err, "set", key, i)
+		if retry {
+			continue
 		}
+		goto out
 	}
 
 out:
@@ -1402,5 +1370,27 @@ func getEtcdPermType(permType kvdb.PermissionType) (e.PermissionType, error) {
 		return e.PermissionType(e.PermReadWrite), nil
 	default:
 		return -1, kvdb.ErrUnknownPermission
+	}
+}
+
+// isRetryNeeded checks if for the given error does a kvdb retry required.
+// It returns the provided error.
+func isRetryNeeded(err error, fn string, key string, retryCount int) (bool, error) {
+	switch err {
+	case context.DeadlineExceeded, etcdserver.ErrTimeout, etcdserver.ErrUnhealthy, transport.ErrStreamDrain, transport.ErrConnClosing:
+		logrus.Errorf("[%v %v]: kvdb error: %v, retry count: %v\n", fn, key, err, retryCount)
+		time.Sleep(ec.DefaultIntervalBetweenRetries)
+		return true, err
+	case rpctypes.ErrGRPCEmptyKey:
+		return false, kvdb.ErrNotFound
+	default:
+		if strings.Contains(err.Error(), rpctypes.ErrGRPCTimeout.Error()) {
+			logrus.Errorf("[%v: %v] kvdb grpc timeout: %v, retry count %v \n", fn, key, err, retryCount)
+			time.Sleep(ec.DefaultIntervalBetweenRetries)
+			return true, err
+		} else {
+			// For all other errors return immediately
+			return false, err
+		}
 	}
 }
