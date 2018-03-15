@@ -732,7 +732,8 @@ func lockBetweenRestarts(kv kvdb.Kvdb, t *testing.T, start StartKvdb, stop StopK
 		err = stop()
 		assert.NoError(t, err, "Unable to stop kvdb")
 		// Unlock the key
-		kv.Unlock(kvPair3)
+		go func() { kv.Unlock(kvPair3) }()
+
 		time.Sleep(30 * time.Second)
 
 		fmt.Println("starting kvdb")

@@ -557,7 +557,9 @@ func (et *etcdKV) CompareAndDelete(
 		if txnErr != nil {
 			// Check if we need to retry
 			retry, txnErr := isRetryNeeded(txnErr, "cad", key, i)
-			if !retry {
+			if txnErr == kvdb.ErrNotFound {
+				return kvp, nil
+			} else if !retry {
 				// For all other errors return immediately
 				return nil, txnErr
 			} // retry is needed
@@ -1386,16 +1388,17 @@ func isRetryNeeded(err error, fn string, key string, retryCount int) (bool, erro
 	case rpctypes.ErrGRPCEmptyKey:
 		return false, kvdb.ErrNotFound
 	default:
-		grpcStatusErr, ok := status.FromError(err)
-		if ok {
-			// We have got a grpc error wrapped in grpc.Status
-			if grpcStatusErr.Code() == codes.Unavailable {
-				// grpc Unavailable code
-				// retry
-				logrus.Errorf("[%v: %v] kvdb grpc error: %v, retry count %v \n", fn, key, err, retryCount)
-				time.Sleep(ec.DefaultIntervalBetweenRetries)
-				return true, err
-			}
+		if grpcStatusErr, ok := status.FromError(err); ok && grpcStatusErr.Code() == codes.Unavailable {
+			// We have got a grpc error wrapped in grpc.Status with Code Unavailable
+			// From grpc golang docs : google.golang.org/grpc/codes/codes.go
+
+			// Unavailable indicates the service is currently unavailable.
+			// This is a most likely a transient condition and may be corrected
+			// by retrying with a backoff.
+
+			logrus.Errorf("[%v: %v] kvdb grpc error: %v, retry count %v \n", fn, key, err, retryCount)
+			time.Sleep(ec.DefaultIntervalBetweenRetries)
+			return true, err
 		}
 		if strings.Contains(err.Error(), rpctypes.ErrGRPCTimeout.Error()) {
 			logrus.Errorf("[%v: %v] kvdb grpc timeout: %v, retry count %v \n", fn, key, err, retryCount)

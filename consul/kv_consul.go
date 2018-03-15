@@ -429,7 +429,8 @@ func (kv *consulKV) CompareAndDelete(
 		Flags: api.LockFlagValue,
 	}
 
-	if (flags&kvdb.KVModifiedIndex) == 0 && kvp.Value != nil {
+	if (flags & kvdb.KVModifiedIndex) == 0 {
+		// Use value for comparison
 		kvPair, err := kv.Get(kvp.Key)
 		if err != nil {
 			return nil, err
@@ -440,10 +441,9 @@ func (kv *consulKV) CompareAndDelete(
 			return nil, kvdb.ErrValueMismatch
 		}
 		pair.ModifyIndex = kvPair.ModifiedIndex
-	} else if (flags & kvdb.KVModifiedIndex) != 0 {
-		pair.ModifyIndex = kvp.ModifiedIndex
 	} else {
-		pair.ModifyIndex = 0
+		// Use index for comparison
+		pair.ModifyIndex = kvp.ModifiedIndex
 	}
 
 	ok, _, err := kv.client.KV().DeleteCAS(pair, nil)
