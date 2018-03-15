@@ -10,6 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/Sirupsen/logrus"
 
 	"golang.org/x/net/context"
@@ -19,7 +22,6 @@ import (
 	"github.com/coreos/etcd/etcdserver"
 	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	"github.com/coreos/etcd/mvcc/mvccpb"
-	"google.golang.org/grpc/transport"
 
 	"github.com/portworx/kvdb"
 	"github.com/portworx/kvdb/common"
@@ -1377,13 +1379,24 @@ func getEtcdPermType(permType kvdb.PermissionType) (e.PermissionType, error) {
 // It returns the provided error.
 func isRetryNeeded(err error, fn string, key string, retryCount int) (bool, error) {
 	switch err {
-	case context.DeadlineExceeded, etcdserver.ErrTimeout, etcdserver.ErrUnhealthy, transport.ErrStreamDrain, transport.ErrConnClosing:
+	case context.DeadlineExceeded, etcdserver.ErrTimeout, etcdserver.ErrUnhealthy:
 		logrus.Errorf("[%v %v]: kvdb error: %v, retry count: %v\n", fn, key, err, retryCount)
 		time.Sleep(ec.DefaultIntervalBetweenRetries)
 		return true, err
 	case rpctypes.ErrGRPCEmptyKey:
 		return false, kvdb.ErrNotFound
 	default:
+		grpcStatusErr, ok := status.FromError(err)
+		if ok {
+			// We have got a grpc error wrapped in grpc.Status
+			if grpcStatusErr.Code() == codes.Unavailable {
+				// grpc Unavailable code
+				// retry
+				logrus.Errorf("[%v: %v] kvdb grpc error: %v, retry count %v \n", fn, key, err, retryCount)
+				time.Sleep(ec.DefaultIntervalBetweenRetries)
+				return true, err
+			}
+		}
 		if strings.Contains(err.Error(), rpctypes.ErrGRPCTimeout.Error()) {
 			logrus.Errorf("[%v: %v] kvdb grpc timeout: %v, retry count %v \n", fn, key, err, retryCount)
 			time.Sleep(ec.DefaultIntervalBetweenRetries)
