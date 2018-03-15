@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 	"github.com/portworx/kvdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
