@@ -168,7 +168,7 @@ func (et *etcdKV) Capabilities() int {
 }
 
 func (et *etcdKV) Context() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), defaultKvRequestTimeout)
+	return context.WithTimeout(getContextWithLeaderRequirement(), defaultKvRequestTimeout)
 }
 
 func (et *etcdKV) MaintenanceContext() (context.Context, context.CancelFunc) {
@@ -904,7 +904,7 @@ func (et *etcdKV) watchStart(
 		_ = cb(key, opaque, nil, kvdb.ErrWatchStopped)
 		return
 	}
-	ctx, watchCancel := context.WithCancel(context.Background())
+	ctx, watchCancel := et.Context()
 	watchRet := make(chan error)
 	watchChan := et.kvClient.Watch(ctx, key, opts...)
 	watchQ := newWatchQ(opaque, cb, watchRet)
