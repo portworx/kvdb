@@ -44,7 +44,8 @@ const (
 	defaultKeepAliveTimeout = 6 * time.Second
 	urlPrefix               = "http://"
 	// timeoutMaxRetry is maximum retries before faulting
-	timeoutMaxRetry = 30
+	timeoutMaxRetry  = 30
+	defaultSeparator = "/"
 )
 
 var (
@@ -377,6 +378,9 @@ func (et *etcdKV) Delete(key string) (*kvdb.KVPair, error) {
 
 func (et *etcdKV) DeleteTree(prefix string) error {
 	prefix = et.domain + prefix
+	if !strings.HasSuffix(prefix, defaultSeparator) {
+		prefix += defaultSeparator
+	}
 
 	ctx, cancel := et.Context()
 	_, err := et.kvClient.Delete(
