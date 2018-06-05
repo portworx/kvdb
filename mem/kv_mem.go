@@ -465,6 +465,10 @@ func (kv *memKV) DeleteTree(prefix string) error {
 	kv.mutex.Lock()
 	defer kv.mutex.Unlock()
 
+	if len(prefix) > 0 && !strings.HasSuffix(prefix, kvdb.DefaultSeparator) {
+		prefix += kvdb.DefaultSeparator
+	}
+
 	kvp, err := kv.enumerate(prefix)
 	if err != nil {
 		return err

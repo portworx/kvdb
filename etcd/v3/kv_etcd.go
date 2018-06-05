@@ -377,6 +377,9 @@ func (et *etcdKV) Delete(key string) (*kvdb.KVPair, error) {
 
 func (et *etcdKV) DeleteTree(prefix string) error {
 	prefix = et.domain + prefix
+	if !strings.HasSuffix(prefix, kvdb.DefaultSeparator) {
+		prefix += kvdb.DefaultSeparator
+	}
 
 	ctx, cancel := et.Context()
 	_, err := et.kvClient.Delete(
