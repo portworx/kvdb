@@ -83,6 +83,8 @@ const (
 const (
 	// DefaultLockTryDuration is the maximum time spent trying to acquire lock
 	DefaultLockTryDuration = 300 * time.Second
+	// DefaultSeparator separate key components
+	DefaultSeparator = "/"
 )
 
 var (

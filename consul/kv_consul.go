@@ -331,6 +331,9 @@ func (kv *consulKV) Delete(key string) (*kvdb.KVPair, error) {
 func (kv *consulKV) DeleteTree(key string) error {
 	key = kv.domain + key
 	key = stripConsecutiveForwardslash(key)
+	if !strings.HasSuffix(key, kvdb.DefaultSeparator) {
+		key += kvdb.DefaultSeparator
+	}
 	if _, err := kv.client.KV().DeleteTree(key, nil); err != nil {
 		return err
 	}
