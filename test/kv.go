@@ -13,8 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Sirupsen/logrus"
+	"path/filepath"
+
 	"github.com/portworx/kvdb"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -69,6 +71,7 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop S
 	snapshot(kv, t)
 	get(kv, t)
 	getInterface(kv, t)
+	createUpdateDeleteWatchInALoop(kv, t)
 	update(kv, t)
 	deleteKey(kv, t)
 	deleteTree(kv, t)
@@ -162,6 +165,47 @@ func RunAuth(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	addUser(kv, t)
 	grantRevokeUser(kv, datastoreInit, t)
 	removeUser(kv, t)
+}
+
+func createUpdateDeleteWatchInALoop(kv kvdb.Kvdb, t *testing.T) {
+	prefix := "/test"
+	key := "myKey"
+	n := 1000
+	counter := 0
+
+	if _, err := kv.Create(prefix, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := kv.WatchTree(prefix, 0, nil, watcherCreator("watcher0", &counter)); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < n; i++ {
+		if _, err := kv.Put(filepath.Join(prefix, key), i, 0); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := kv.Update(filepath.Join(prefix, key), i*10, 0); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := kv.Delete(filepath.Join(prefix, key)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// if sleep is not provided the test fails!
+	time.Sleep(time.Second)
+
+	if counter != n*3+1 {
+		t.Fatal("did not receive all updates. Expected:", n*3+1, ", Received:", counter)
+	}
+}
+
+func watcherCreator(name string, counter *int) func(prefix string, opaque interface{}, kvp *kvdb.KVPair, err error) error {
+	return func(prefix string, opaque interface{}, kvp *kvdb.KVPair, err error) error {
+		*counter++
+		return nil
+	}
 }
 
 func get(kv kvdb.Kvdb, t *testing.T) {
