@@ -274,10 +274,19 @@ func deleteKey(kv kvdb.Kvdb, t *testing.T) {
 	key := "delete_key"
 	_, err := kv.Delete(key)
 
+	key_with_same_prefix := key + "_some"
+	_, err = kv.Delete(key_with_same_prefix)
+
 	_, err = kv.Put(key, []byte("delete_me"), 0)
 	assert.NoError(t, err, "Unexpected error on Put")
 
+	_, err = kv.Put(key_with_same_prefix, []byte(key_with_same_prefix), 0)
+	assert.NoError(t, err, "Unexpected error on Put")
+
 	_, err = kv.Get(key)
+	assert.NoError(t, err, "Unexpected error on Get")
+
+	_, err = kv.Get(key_with_same_prefix)
 	assert.NoError(t, err, "Unexpected error on Get")
 
 	_, err = kv.Delete(key)
@@ -286,9 +295,15 @@ func deleteKey(kv kvdb.Kvdb, t *testing.T) {
 	_, err = kv.Get(key)
 	assert.Error(t, err, "Get should fail on deleted key")
 
+	_, err = kv.Get(key_with_same_prefix)
+	assert.NoError(t, err, "key with same prefix deleted")
+
 	_, err = kv.Delete(key)
 	assert.Error(t, err, "Delete should fail on non existent key")
 	assert.EqualError(t, err, kvdb.ErrNotFound.Error(), "Invalid error returned : %v", err)
+
+	_, err = kv.Delete(key_with_same_prefix)
+	assert.NoError(t, err, "Unexpected error on Delete")
 }
 
 func deleteTree(kv kvdb.Kvdb, t *testing.T) {
