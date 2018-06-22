@@ -361,8 +361,11 @@ func (et *etcdKV) Delete(key string) (*kvdb.KVPair, error) {
 	)
 	cancel()
 	if err == nil {
-		if result.Deleted != 1 {
-			return nil, fmt.Errorf("Incorrect number of keys: %v deleted", key)
+		if result.Deleted == 0 {
+			return nil, kvdb.ErrNotFound
+		} else if result.Deleted > 1 {
+			return nil, fmt.Errorf("Incorrect number of keys: %v deleted, result: %v",
+				key, result)
 		}
 		kvp.Action = kvdb.KVDelete
 		return kvp, nil
