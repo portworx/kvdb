@@ -178,11 +178,7 @@ func createUpdateDeleteWatchInALoop(kv kvdb.Kvdb, t *testing.T) {
 	if err := kv.DeleteTree(prefix); err != nil {
 		t.Fatal(err)
 	}
-
-	if _, err := kv.Create(prefix, nil, 0); err != nil {
-		t.Fatal(err)
-	}
-
+	
 	if err := kv.WatchTree(prefix, 0, nil, watcherCreator("watcher0", &counter)); err != nil {
 		t.Fatal(err)
 	}
