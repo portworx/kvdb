@@ -78,6 +78,8 @@ const (
 	EtcdVersion3 = "etcdv3"
 	// MemVersion1 key
 	MemVersion1 = "memv1"
+	// BoltVersion1 key
+	BoltVersion1 = "boltv1"
 )
 
 const (
