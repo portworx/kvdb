@@ -178,7 +178,7 @@ func createUpdateDeleteWatchInALoop(kv kvdb.Kvdb, t *testing.T) {
 	if err := kv.DeleteTree(prefix); err != nil {
 		t.Fatal(err)
 	}
-	
+
 	if err := kv.WatchTree(prefix, 0, nil, watcherCreator("watcher0", &counter)); err != nil {
 		t.Fatal(err)
 	}
@@ -198,8 +198,8 @@ func createUpdateDeleteWatchInALoop(kv kvdb.Kvdb, t *testing.T) {
 	// if sleep is not provided the test fails!
 	time.Sleep(time.Second)
 
-	if counter != n*3+1 {
-		t.Fatal("did not receive all updates. Expected:", n*3+1, ", Received:", counter)
+	if counter != n*3 {
+		t.Fatal("did not receive all updates. Expected:", n*3, ", Received:", counter)
 	}
 }
 
