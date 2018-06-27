@@ -46,7 +46,10 @@ func fatalErrorCb() kvdb.FatalErrorCB {
 	}
 }
 
+// StartKvdb is a func literal.
 type StartKvdb func() error
+
+// StopKvdb is a func literal.
 type StopKvdb func() error
 
 // Run runs the test suite.
@@ -311,11 +314,11 @@ func deleteTree(kv kvdb.Kvdb, t *testing.T) {
 		assert.NoError(t, err, "Unexpected error on Put")
 	}
 
-	key_with_same_prefix := prefix + "_some"
-	_, err := kv.Put(key_with_same_prefix, []byte("val"), 0)
+	keyWithSamePrefix := prefix + "_some"
+	_, err := kv.Put(keyWithSamePrefix, []byte("val"), 0)
 	assert.NoError(t, err, "Unexpected error on Put")
 
-	_, err = kv.Get(key_with_same_prefix)
+	_, err = kv.Get(keyWithSamePrefix)
 	assert.NoError(t, err, "Unexpected error on Get")
 
 	for key := range keys {
@@ -329,7 +332,7 @@ func deleteTree(kv kvdb.Kvdb, t *testing.T) {
 		_, err := kv.Get(key)
 		assert.Error(t, err, "Get should fail on all keys after DeleteTree")
 	}
-	_, err = kv.Get(key_with_same_prefix)
+	_, err = kv.Get(keyWithSamePrefix)
 	assert.NoError(t, err, "Unexpected error on Get")
 }
 
