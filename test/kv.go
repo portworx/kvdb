@@ -173,39 +173,63 @@ func createUpdateDeleteWatchInALoop(kv kvdb.Kvdb, t *testing.T) {
 	prefix := "/test"
 	key := "myKey"
 	n := 1000
-	counter := 0
+	ch := make(chan uint64)
 
 	if err := kv.DeleteTree(prefix); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := kv.WatchTree(prefix, 0, nil, watcherCreator("watcher0", &counter)); err != nil {
+	if err := kv.WatchTree(prefix, 0, nil, watcherCreator("watcher0", ch)); err != nil {
 		t.Fatal(err)
 	}
 
 	for i := 0; i < n; i++ {
-		if _, err := kv.Put(filepath.Join(prefix, key), i, 0); err != nil {
+		if kvp, err := kv.Put(filepath.Join(prefix, key), i, 0); err != nil {
 			t.Fatal(err)
+		} else {
+			select {
+			case modIndex := <-ch:
+				if kvp.ModifiedIndex != kvp.ModifiedIndex {
+					t.Fatal("expected", kvp.ModifiedIndex, "received in watch func", modIndex)
+				}
+			case <-time.After(time.Second * 45):
+				t.Fatal("timeout... updates to watch func taking too long")
+			}
 		}
-		if _, err := kv.Update(filepath.Join(prefix, key), i*10, 0); err != nil {
+		if kvp, err := kv.Update(filepath.Join(prefix, key), i*10, 0); err != nil {
 			t.Fatal(err)
+		} else {
+			select {
+			case modIndex := <-ch:
+				if kvp.ModifiedIndex != kvp.ModifiedIndex {
+					t.Fatal("expected", kvp.ModifiedIndex, "received in watch func", modIndex)
+				}
+			case <-time.After(time.Second * 45):
+				t.Fatal("timeout... updates to watch func taking too long")
+			}
 		}
-		if _, err := kv.Delete(filepath.Join(prefix, key)); err != nil {
+		if kvp, err := kv.Delete(filepath.Join(prefix, key)); err != nil {
 			t.Fatal(err)
+		} else {
+			select {
+			case modIndex := <-ch:
+				if kvp.ModifiedIndex != kvp.ModifiedIndex {
+					t.Fatal("expected", kvp.ModifiedIndex, "received in watch func", modIndex)
+				}
+			case <-time.After(time.Second * 45):
+				t.Fatal("timeout... updates to watch func taking too long")
+			}
 		}
-	}
-
-	// if sleep is not provided the test fails!
-	time.Sleep(time.Second)
-
-	if counter != n*3 {
-		t.Fatal("did not receive all updates. Expected:", n*3, ", Received:", counter)
 	}
 }
 
-func watcherCreator(name string, counter *int) func(prefix string, opaque interface{}, kvp *kvdb.KVPair, err error) error {
+func watcherCreator(name string, ch chan uint64) func(prefix string, opaque interface{}, kvp *kvdb.KVPair, err error) error {
 	return func(prefix string, opaque interface{}, kvp *kvdb.KVPair, err error) error {
-		*counter++
+		select {
+		case ch <- kvp.ModifiedIndex:
+		case <-time.After(time.Second * 45):
+			return fmt.Errorf("timeout... updates to watch func taking too long")
+		}
 		return nil
 	}
 }
