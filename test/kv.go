@@ -64,7 +64,7 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop S
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	createUpdateDeleteWatchInALoop(kv, t)
+	createUpdateDeleteWatchInALoopAsync(kv, t)
 	/*
 		create(kv, t)
 		createWithTTL(kv, t)
@@ -202,10 +202,74 @@ func createUpdateDeleteWatchInALoop(kv kvdb.Kvdb, t *testing.T) {
 		if kvp, err := kv.Delete(filepath.Join(prefix, key)); err != nil {
 			t.Fatal(err)
 		} else {
-			if err := validateModIndex("delete", kvp.ModifiedIndex, ch, timeout); err != nil {
+			// here we add +1 because delete returns the previous kv pair
+			if err := validateModIndex("delete", kvp.ModifiedIndex+1, ch, timeout); err != nil {
 				t.Fatal(err)
 			}
 		}
+	}
+}
+
+func createUpdateDeleteWatchInALoopAsync(kv kvdb.Kvdb, t *testing.T) {
+	prefix := "/test"
+	key := "myKey"
+	n := 1000
+	ch := make(chan uint64)
+	done := make(chan struct{})
+	timeout := time.Second * 45
+	indexMap := make(map[uint64]int)
+
+	if err := kv.DeleteTree(prefix); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := kv.WatchTree(prefix, 0, nil, watcherCreator("watcher0", ch, timeout)); err != nil {
+		t.Fatal(err)
+	}
+
+	// collect indices in map. their count should be 2 each
+	go func(c chan uint64, done chan struct{}, m map[uint64]int) {
+		for i := 0; i < 2*n; i++ {
+			indexMap[<-c] += 1
+		}
+		done <- struct{}{}
+	}(ch, done, indexMap)
+
+	for i := 0; i < n; i++ {
+		if kvp, err := kv.Put(filepath.Join(prefix, key), i, 0); err != nil {
+			t.Fatal(err)
+		} else {
+			go func(c chan uint64, index uint64) {
+				c <- index
+			}(ch, kvp.ModifiedIndex)
+		}
+		if kvp, err := kv.Update(filepath.Join(prefix, key), i*10, 0); err != nil {
+			t.Fatal(err)
+		} else {
+			go func(c chan uint64, index uint64) {
+				c <- index
+			}(ch, kvp.ModifiedIndex)
+		}
+		if kvp, err := kv.Delete(filepath.Join(prefix, key)); err != nil {
+			t.Fatal(err)
+		} else {
+			// here we add +1 because delete returns the previous kv pair
+			go func(c chan uint64, index uint64) {
+				c <- index
+			}(ch, kvp.ModifiedIndex+1)
+		}
+	}
+
+	// wait for processes to finish
+	select {
+	case <-done:
+		for _, val := range indexMap {
+			if val != 2 {
+				t.Fatal("expected count of each of the mod indices to be = 2. Saw: ", val)
+			}
+		}
+	case <-time.After(timeout):
+		t.Fatal("timeout occurred")
 	}
 }
 
