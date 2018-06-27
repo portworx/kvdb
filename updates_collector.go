@@ -2,9 +2,10 @@ package kvdb
 
 import (
 	"fmt"
-	"github.com/Sirupsen/logrus"
 	"strings"
 	"sync"
+
+	"github.com/Sirupsen/logrus"
 )
 
 type kvdbUpdate struct {
