@@ -38,12 +38,14 @@ type BaseKvdb struct {
 	lock sync.Mutex
 }
 
+// SetFatalCb sets fatal func callback.
 func (b *BaseKvdb) SetFatalCb(f kvdb.FatalErrorCB) {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 	b.FatalCb = f
 }
 
+// SetLockTimeout sets lock timeout.
 func (b *BaseKvdb) SetLockTimeout(timeout time.Duration) {
 	b.lock.Lock()
 	defer b.lock.Unlock()
@@ -51,6 +53,7 @@ func (b *BaseKvdb) SetLockTimeout(timeout time.Duration) {
 	b.LockTimeout = timeout
 }
 
+// CheckLockTimeout checks lock timeout.
 func (b *BaseKvdb) CheckLockTimeout(
 	key string,
 	startTime time.Time,
@@ -63,22 +66,26 @@ func (b *BaseKvdb) CheckLockTimeout(
 	}
 }
 
+// GetLockTimeout gets lock timeout.
 func (b *BaseKvdb) GetLockTimeout() time.Duration {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 	return b.LockTimeout
 }
 
+// LockTimedout does lock timedout.
 func (b *BaseKvdb) LockTimedout(key string) {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 	b.lockTimedout(key)
 }
 
+// lockTimedout does lock timedout.
 func (b *BaseKvdb) lockTimedout(key string) {
 	b.FatalCb("Lock %s hold timeout triggered", key)
 }
 
+// SerializeAll serializes all.
 func (b *BaseKvdb) SerializeAll(kvps kvdb.KVPairs) ([]byte, error) {
 	out, err := json.Marshal(kvps)
 	if err != nil {
@@ -87,6 +94,7 @@ func (b *BaseKvdb) SerializeAll(kvps kvdb.KVPairs) ([]byte, error) {
 	return out, nil
 }
 
+// DeserializeAll deserializes all.
 func (b *BaseKvdb) DeserializeAll(out []byte) (kvdb.KVPairs, error) {
 	var kvps kvdb.KVPairs
 	if err := json.Unmarshal(out, &kvps); err != nil {
@@ -133,6 +141,7 @@ func NewWatchUpdateQueue() WatchUpdateQueue {
 		updates: list.New()}
 }
 
+// Dequeue removes from queue.
 func (w *watchQueue) Dequeue() (string, *kvdb.KVPair, error) {
 	w.m.Lock()
 	for {
