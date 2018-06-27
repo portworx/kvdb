@@ -216,6 +216,7 @@ func Version(uri string, options map[string]string) (string, error) {
 	}
 }
 
+// TestStart starts test
 func TestStart() error {
 	dataDir := "/tmp/etcd"
 	os.RemoveAll(dataDir)
@@ -225,6 +226,7 @@ func TestStart() error {
 	return err
 }
 
+// TestStop stops test
 func TestStop() error {
 	return cmd.Process.Kill()
 }
