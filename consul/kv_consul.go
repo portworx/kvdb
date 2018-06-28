@@ -17,6 +17,7 @@ import (
 
 	"github.com/Sirupsen/logrus"
 
+	"github.com/google/uuid"
 	"github.com/hashicorp/consul/api"
 	"github.com/portworx/kvdb"
 	"github.com/portworx/kvdb/common"
@@ -149,8 +150,13 @@ func New(
 			machine = strings.TrimPrefix(machine, "https://")
 		}
 		if kv, err = newKv(domain, machine, options, fatalErrorCb); err == nil {
-			// return on success, otherwise keep trying next end points
-			return kv, nil
+			key := uuid.New().String()
+			if _, err = kv.Put(key, 0, 0); err == nil {
+				if _, err = kv.Delete(key); err == nil {
+					// return on success, otherwise keep trying next end points
+					return kv, nil
+				}
+			}
 		}
 	}
 	return kv, err
