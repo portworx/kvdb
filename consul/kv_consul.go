@@ -114,6 +114,11 @@ func newKv(domain, machine string, options map[string]string, fatalErrorCb kvdb.
 		return nil, err
 	}
 
+	// check heal to ensure communication with consul are working
+	if _, _, err := client.Health().State(api.HealthAny, nil); err != nil {
+		return nil, err
+	}
+
 	if domain != "" && !strings.HasSuffix(domain, "/") {
 		domain = domain + "/"
 	}
@@ -149,9 +154,7 @@ func New(
 			machine = strings.TrimPrefix(machine, "https://")
 		}
 		if kv, err = newKv(domain, machine, options, fatalErrorCb); err == nil {
-			if _, err = kv.Get("v1/agent/members"); err == nil {
-				return kv, nil
-			}
+			return kv, nil
 		}
 	}
 	return kv, err
