@@ -4,6 +4,7 @@ package bolt
 
 import (
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/portworx/kvdb"
@@ -13,6 +14,7 @@ import (
 
 func TestAll(t *testing.T) {
 	options := make(map[string]string)
+
 	// RunBasic with values as bytes
 	test.RunBasic(New, t, Start, Stop, options)
 	options[KvUseInterface] = ""
@@ -134,6 +136,7 @@ func testEnumerateWithSelect(kv kvdb.Kvdb, t *testing.T) {
 }
 
 func Start() error {
+	os.RemoveAll("px.db")
 	return nil
 }
 

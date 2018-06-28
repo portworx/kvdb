@@ -378,11 +378,14 @@ func (kv *boltKV) put(
 	kv.dist.NewUpdate(&watchUpdate{key, *kvp, nil})
 
 	if ttl != 0 {
-		time.AfterFunc(time.Second*time.Duration(ttl), func() {
+		// time.AfterFunc(time.Second*time.Duration(ttl), func() {
+		time.AfterFunc(time.Duration(ttl), func() {
 			// TODO: handle error
 			kv.mutex.Lock()
 			defer kv.mutex.Unlock()
-			_, _ = kv.delete(suffix)
+			if _, err := kv.delete(suffix); err != nil {
+				logrus.Fatalf("Error while performing a timed DB delete on key %v: %v", key, err)
+			}
 		})
 	}
 
@@ -460,7 +463,6 @@ func (kv *boltKV) delete(key string) (*kvdb.KVPair, error) {
 		return nil, kvdb.ErrNotFound
 	}
 
-	logrus.Warnf("Deleting %v", kv.domain+key)
 	if err = bucket.Delete([]byte(kv.domain + key)); err != nil {
 		logrus.Warnf("Requested KVP for delete could not be deleted from internal KVDB: %v (%v)",
 			kvp,
@@ -497,6 +499,7 @@ func (kv *boltKV) Get(key string) (*kvdb.KVPair, error) {
 
 func (kv *boltKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 	// XXX FIXME - see etcdv2 implementation
+	logrus.Warnf("Bolt snapshot not yet supported")
 	return nil, 0, kvdb.ErrNotSupported
 }
 
@@ -537,6 +540,7 @@ func (kv *boltKV) Create(
 	return result, kvdb.ErrExist
 }
 
+// XXX needs to be atomic
 func (kv *boltKV) Update(
 	key string,
 	value interface{},
@@ -548,7 +552,13 @@ func (kv *boltKV) Update(
 	if _, err := kv.exists(key); err != nil {
 		return nil, kvdb.ErrNotFound
 	}
-	return kv.put(key, value, ttl)
+	kvp, err := kv.put(key, value, ttl)
+	if err != nil {
+		return nil, err
+	}
+
+	kvp.Action = kvdb.KVSet
+	return kvp, nil
 }
 
 func (kv *boltKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
