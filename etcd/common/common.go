@@ -170,8 +170,7 @@ func Version(uri string, options map[string]string) (string, error) {
 	var client *http.Client
 	if useTLS {
 		tlsConfig.BuildNameToCertificate()
-		t := &http.Transport{TLSClientConfig: tlsConfig}
-		client = &http.Client{Transport: t}
+		client = &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig}}
 	} else {
 		tempURL, _ := url.Parse(uri)
 		if tempURL.Scheme == "https" {

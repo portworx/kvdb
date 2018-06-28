@@ -290,9 +290,7 @@ func (kv *consulKV) Create(
 			if ok && err == nil {
 				return kvPair, err
 			}
-			if _, err := kv.client.Session().Destroy(sessionPair.Session, nil); err != nil {
-				return nil, err
-			}
+			_, _ = kv.client.Session().Destroy(sessionPair.Session, nil)
 			if _, err := kv.Delete(key); err != nil {
 				return nil, err
 			}
