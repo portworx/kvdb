@@ -32,7 +32,8 @@ const (
 )
 
 var (
-	defaultMachines = []string{"127.0.0.1:8500"}
+	// an incorrect is added to check failover
+	defaultMachines = []string{"3.1.4.1:5926", "127.0.0.1:8500"}
 )
 
 // CKVPairs sortable KVPairs
@@ -135,26 +136,21 @@ func New(
 ) (kvdb.Kvdb, error) {
 	var kv kvdb.Kvdb
 	var err error
+
 	if len(machines) == 0 {
-		for _, machine := range defaultMachines {
-			machine := machine
-			if kv, err = newKv(domain, machine, options, fatalErrorCb); err == nil {
-				// return on success, otherwise keep trying next end points
-				return kv, nil
-			}
+		machines = defaultMachines
+	}
+
+	for _, machine := range machines {
+		machine := machine
+		if strings.HasPrefix(machine, "http://") {
+			machine = strings.TrimPrefix(machine, "http://")
+		} else if strings.HasPrefix(machine, "https://") {
+			machine = strings.TrimPrefix(machine, "https://")
 		}
-	} else {
-		for _, machine := range machines {
-			machine := machine
-			if strings.HasPrefix(machine, "http://") {
-				machine = strings.TrimPrefix(machine, "http://")
-			} else if strings.HasPrefix(machine, "https://") {
-				machine = strings.TrimPrefix(machine, "https://")
-			}
-			if kv, err = newKv(domain, machine, options, fatalErrorCb); err == nil {
-				// return on success, otherwise keep trying next end points
-				return kv, nil
-			}
+		if kv, err = newKv(domain, machine, options, fatalErrorCb); err == nil {
+			// return on success, otherwise keep trying next end points
+			return kv, nil
 		}
 	}
 	return kv, err
