@@ -149,7 +149,7 @@ func New(
 			machine = strings.TrimPrefix(machine, "https://")
 		}
 		if kv, err = newKv(domain, machine, options, fatalErrorCb); err == nil {
-			if _, err = kv.Get("version"); err == nil {
+			if _, err = kv.Get("agent/members"); err == nil {
 				return kv, nil
 			}
 		}
