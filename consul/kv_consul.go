@@ -76,23 +76,8 @@ type consulLock struct {
 	tag    interface{}
 }
 
-// New constructs a new kvdb.Kvdb.
-func New(
-	domain string,
-	machines []string,
-	options map[string]string,
-	fatalErrorCb kvdb.FatalErrorCB,
-) (kvdb.Kvdb, error) {
-	if len(machines) == 0 {
-		machines = defaultMachines
-	} else {
-		if strings.HasPrefix(machines[0], "http://") {
-			machines[0] = strings.TrimPrefix(machines[0], "http://")
-		} else if strings.HasPrefix(machines[0], "https://") {
-			machines[0] = strings.TrimPrefix(machines[0], "https://")
-		}
-	}
-
+// newKv constructs new kvdb.Kvdb given a single end-point to connect to.
+func newKv(domain, machine string, options map[string]string, fatalErrorCb kvdb.FatalErrorCB) (kvdb.Kvdb, error) {
 	var token string
 	// options provided. Probably auth options
 	if options != nil || len(options) > 0 {
@@ -119,7 +104,7 @@ func New(
 
 	config := api.DefaultConfig()
 	config.HttpClient = http.DefaultClient
-	config.Address = machines[0]
+	config.Address = machine
 	config.Scheme = "http"
 	config.Token = token
 
@@ -139,6 +124,40 @@ func New(
 		domain,
 		kvdb.ControllerNotSupported,
 	}, nil
+}
+
+// New constructs a new kvdb.Kvdb given a list of end points to conntect to.
+func New(
+	domain string,
+	machines []string,
+	options map[string]string,
+	fatalErrorCb kvdb.FatalErrorCB,
+) (kvdb.Kvdb, error) {
+	var kv kvdb.Kvdb
+	var err error
+	if len(machines) == 0 {
+		for _, machine := range defaultMachines {
+			machine := machine
+			if kv, err = newKv(domain, machine, options, fatalErrorCb); err == nil {
+				// return on success, otherwise keep trying next end points
+				return kv, nil
+			}
+		}
+	} else {
+		for _, machine := range machines {
+			machine := machine
+			if strings.HasPrefix(machine, "http://") {
+				machine = strings.TrimPrefix(machine, "http://")
+			} else if strings.HasPrefix(machine, "https://") {
+				machine = strings.TrimPrefix(machine, "https://")
+			}
+			if kv, err = newKv(domain, machine, options, fatalErrorCb); err == nil {
+				// return on success, otherwise keep trying next end points
+				return kv, nil
+			}
+		}
+	}
+	return kv, err
 }
 
 // Version returns the supported version for consul api
