@@ -93,9 +93,11 @@ func RunLock(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, st
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
+
 	lockBasic(kv, t)
 	lock(kv, t)
 	lockBetweenRestarts(kv, t, start, stop)
+
 	err = stop()
 	assert.NoError(t, err, "Unable to stop kvdb")
 }
@@ -618,6 +620,7 @@ func lock(kv kvdb.Kvdb, t *testing.T) {
 	lockMethods := getLockMethods(kv)
 
 	for _, lockMethod := range lockMethods {
+		kv.SetLockTimeout(time.Duration(0))
 		fmt.Println("lock")
 
 		key := "locktest"
@@ -665,6 +668,9 @@ func lock(kv kvdb.Kvdb, t *testing.T) {
 		kvPair, err = lockMethod(key)
 		assert.NoError(t, err, "Failed to lock")
 		assert.Equal(t, done, 1, "Locked before unlock")
+		if done != 1 {
+			logrus.Fatalf("Exiting because done != 1")
+		}
 		fmt.Println("repeat lock unlock twice")
 		err = kv.Unlock(kvPair)
 		assert.NoError(t, err, "Unexpected error from Unlock")
@@ -711,7 +717,6 @@ func lock(kv kvdb.Kvdb, t *testing.T) {
 		assert.True(t, lockTimedout, "lock timeout not called")
 		err = kv.Unlock(kvPair2)
 		kv.SetLockTimeout(5 * time.Second)
-
 	}
 }
 

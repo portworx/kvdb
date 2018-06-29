@@ -13,8 +13,8 @@ import (
 )
 
 func TestAll(t *testing.T) {
-	// test.Run(New, t, Start, Stop)
-	test.RunLock(New, t, Start, Stop)
+	test.Run(New, t, Start, Stop)
+	// test.RunLock(New, t, Start, Stop)
 }
 
 func testNoCopy(kv kvdb.Kvdb, t *testing.T) {
