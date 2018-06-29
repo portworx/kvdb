@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -58,8 +59,12 @@ type boltKV struct {
 
 	// db is the handle to the bolt DB.
 	db *bolt.DB
+
 	// locks is the map of currently held locks
 	locks map[string]chan int
+
+	// machines is a list of peers in the cluster
+	machines []string
 
 	// updates is the list of latest few updates
 	dist WatchDistributor
@@ -217,8 +222,16 @@ func New(
 		machines,
 	)
 
+	path := dbPath
+	if p, ok := options[KvSnap]; ok {
+		path = p
+		logrus.Infof("Creating a new Bolt KVDB using snapshot path %v", path)
+	} else {
+		logrus.Infof("Creating a new Bolt KVDB using path %v", path)
+	}
+
 	handle, err := bolt.Open(
-		dbPath,
+		path,
 		0777,
 		nil,
 		// &bolt.Options{Timeout: 1 * time.Second},
@@ -530,10 +543,61 @@ func (kv *boltKV) Get(key string) (*kvdb.KVPair, error) {
 	return v, nil
 }
 
+func (kv *boltKV) snapDB() (string, error) {
+	snapPath := dbPath + ".snap." + time.Now().String()
+
+	from, err := os.Open(dbPath)
+	if err != nil {
+		logrus.Fatalf("Could not open bolt DB: %v", err)
+		return "", err
+	}
+	defer from.Close()
+
+	to, err := os.OpenFile(snapPath, os.O_RDWR|os.O_CREATE, 0666)
+	if err != nil {
+		logrus.Fatalf("Could not create bolt DB snap: %v", err)
+		return "", err
+	}
+	defer to.Close()
+
+	_, err = io.Copy(to, from)
+	if err != nil {
+		logrus.Fatalf("Could not copy bolt DB snap: %v", err)
+		return "", err
+	}
+
+	return snapPath, nil
+}
+
 func (kv *boltKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
-	// XXX FIXME - see etcdv2 implementation
-	logrus.Warnf("Bolt snapshot not yet supported")
-	return nil, 0, kvdb.ErrNotSupported
+	kv.mutex.Lock()
+	defer kv.mutex.Unlock()
+
+	_, err := kv.put(bootstrapKey, time.Now().UnixNano(), 0)
+	if err != nil {
+		logrus.Fatalf("Could not create bootstrap key during snapshot: %v", err)
+		return nil, 0, err
+	}
+
+	snapPath, err := kv.snapDB()
+	if err != nil {
+		logrus.Fatalf("Could not create DB snapshot: %v", err)
+		return nil, 0, err
+	}
+
+	options := make(map[string]string)
+	options[KvSnap] = snapPath
+
+	snapKV, err := New(
+		kv.domain,
+		kv.machines,
+		options,
+		kv.FatalCb,
+	)
+
+	highestKvPair, _ := kv.delete(bootstrapKey)
+
+	return snapKV, highestKvPair.ModifiedIndex, nil
 }
 
 func (kv *boltKV) Put(
@@ -685,9 +749,6 @@ func (kv *boltKV) CompareAndSet(
 
 	logrus.Infof("XXX CompareAndSet %v", kvp)
 
-	// XXX FIXME some bug above this cases the prefix to be pre-loaded.
-	kvp.Key = strings.TrimPrefix(kvp.Key, kv.domain)
-
 	result, err := kv.exists(kvp.Key)
 	if err != nil {
 		return nil, err
@@ -737,9 +798,18 @@ func (kv *boltKV) WatchKey(
 	kv.mutex.Lock()
 	defer kv.mutex.Unlock()
 	key = kv.domain + key
-	go kv.watchCb(kv.dist.Add(), key,
-		&watchData{cb: cb, waitIndex: waitIndex, opaque: opaque},
-		false)
+
+	go kv.watchCb(
+		kv.dist.Add(),
+		key,
+		&watchData{
+			cb:        cb,
+			waitIndex: waitIndex,
+			opaque:    opaque,
+		},
+		false,
+	)
+
 	return nil
 }
 
@@ -751,10 +821,20 @@ func (kv *boltKV) WatchTree(
 ) error {
 	kv.mutex.Lock()
 	defer kv.mutex.Unlock()
+
 	prefix = kv.domain + prefix
-	go kv.watchCb(kv.dist.Add(), prefix,
-		&watchData{cb: cb, waitIndex: waitIndex, opaque: opaque},
-		true)
+
+	go kv.watchCb(
+		kv.dist.Add(),
+		prefix,
+		&watchData{
+			cb:        cb,
+			waitIndex: waitIndex,
+			opaque:    opaque,
+		},
+		true,
+	)
+
 	return nil
 }
 
@@ -775,9 +855,8 @@ func (kv *boltKV) LockWithTimeout(
 	lockTryDuration time.Duration,
 	lockHoldDuration time.Duration,
 ) (*kvdb.KVPair, error) {
-	logrus.Infof("XXX Lock  %v %v %v", key, lockTryDuration, lockHoldDuration)
+	logrus.Infof("XXX Lock %v %v %v", key, lockTryDuration, lockHoldDuration)
 
-	key = kv.domain + key
 	duration := time.Second
 
 	result, err := kv.Create(key, lockerID, uint64(duration*3))
