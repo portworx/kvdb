@@ -17,7 +17,6 @@ import (
 
 	"github.com/Sirupsen/logrus"
 
-	"github.com/google/uuid"
 	"github.com/hashicorp/consul/api"
 	"github.com/portworx/kvdb"
 	"github.com/portworx/kvdb/common"
@@ -115,6 +114,11 @@ func newKv(domain, machine string, options map[string]string, fatalErrorCb kvdb.
 		return nil, err
 	}
 
+	// check heal to ensure communication with consul are working
+	if _, _, err := client.Health().State(api.HealthAny, nil); err != nil {
+		return nil, err
+	}
+
 	if domain != "" && !strings.HasSuffix(domain, "/") {
 		domain = domain + "/"
 	}
@@ -150,13 +154,7 @@ func New(
 			machine = strings.TrimPrefix(machine, "https://")
 		}
 		if kv, err = newKv(domain, machine, options, fatalErrorCb); err == nil {
-			key := uuid.New().String()
-			if _, err = kv.Put(key, 0, 0); err == nil {
-				if _, err = kv.Delete(key); err == nil {
-					// return on success, otherwise keep trying next end points
-					return kv, nil
-				}
-			}
+			return kv, nil
 		}
 	}
 	return kv, err
