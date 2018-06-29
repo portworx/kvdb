@@ -73,7 +73,9 @@ type boltKV struct {
 	mutex sync.Mutex
 
 	// index current kvdb index
-	index  uint64
+	index uint64
+
+	// domain scoping for this KVDB instance
 	domain string
 
 	kvdb.Controller
@@ -320,6 +322,9 @@ func (kv *boltKV) get(key string) (*kvdb.KVPair, error) {
 		)
 		return nil, err
 	}
+
+	kv.normalize(kvp)
+
 	return kvp, nil
 }
 
@@ -341,8 +346,6 @@ func (kv *boltKV) put(
 	// XXX FIXME some bug above this cases the prefix to be pre-loaded.
 	key = strings.TrimPrefix(key, kv.domain)
 	key = kv.domain + key
-
-	suffix := key
 
 	tx, err := kv.db.Begin(true)
 	if err != nil {
@@ -387,7 +390,7 @@ func (kv *boltKV) put(
 		return nil, err
 	}
 
-	logrus.Warnf("XXX putting on %v", key)
+	logrus.Warnf("XXX putting on %v with %v %v", key, ttl, time.Duration(ttl))
 	if err = bucket.Put([]byte(key), enc); err != nil {
 		logrus.Warnf("Requested KVP could not be inserted into internal KVDB: %v (%v)",
 			kvp,
@@ -405,26 +408,21 @@ func (kv *boltKV) put(
 		return nil, err
 	}
 
-	kv.dist.NewUpdate(&watchUpdate{key, *kvp, nil})
+	kv.dist.NewUpdate(&watchUpdate{kvp.Key, *kvp, nil})
 
+	// XXX FIXME - need to re-instate the timers after a crash
 	if ttl != 0 {
 		// time.AfterFunc(time.Second*time.Duration(ttl), func() {
 		time.AfterFunc(time.Duration(ttl), func() {
 			// TODO: handle error
 			kv.mutex.Lock()
 			defer kv.mutex.Unlock()
-			if _, err := kv.delete(suffix); err != nil {
-				logrus.Warnf("Error while performing a timed DB delete on key %v: %v", suffix, err)
+			logrus.Warnf("XXX TRIGGERING auto delete on %v %v", key, ttl)
+			if _, err := kv.delete(key); err != nil {
+				logrus.Warnf("Error while performing a timed DB delete on key %v: %v", key, err)
 			}
 		})
 	}
-
-	/*
-		logrus.Warnf("PUT OP 0 %v %v %v", key, reflect.TypeOf(value), value)
-		logrus.Warnf("PUT OP 1 on %v %v %v", key, string(enc), ttl)
-		logrus.Warnf("PUT OP 2 RAW BYTES OK on %v %v", key, b)
-		logrus.Warnf("PUT OP 3 RAW BYTES OK on %v %v", key, kvp)
-	*/
 
 	return kvp, nil
 }
@@ -525,7 +523,7 @@ func (kv *boltKV) delete(key string) (*kvdb.KVPair, error) {
 		return nil, err
 	}
 
-	kv.dist.NewUpdate(&watchUpdate{key, *kvp, nil})
+	kv.dist.NewUpdate(&watchUpdate{kvp.Key, *kvp, nil})
 	return kvp, nil
 }
 
@@ -696,7 +694,11 @@ func (kv *boltKV) Keys(prefix, sep string) ([]string, error) {
 	if "" == sep {
 		sep = "/"
 	}
+
+	// XXX FIXME some bug above this cases the prefix to be pre-loaded.
+	prefix = strings.TrimPrefix(prefix, kv.domain)
 	prefix = kv.domain + prefix
+
 	lenPrefix := len(prefix)
 	lenSep := len(sep)
 	if prefix[lenPrefix-lenSep:] != sep {
@@ -732,7 +734,7 @@ func (kv *boltKV) Keys(prefix, sep string) ([]string, error) {
 	retList := make([]string, len(seen))
 	i := 0
 	for k := range seen {
-		retList[i] = k
+		retList[i] = strings.TrimPrefix(k, kv.domain)
 		i++
 	}
 
@@ -783,7 +785,14 @@ func (kv *boltKV) CompareAndDelete(
 		return nil, err
 	}
 
-	if !bytes.Equal(result.Value, kvp.Value) || kvp.ModifiedIndex != result.ModifiedIndex {
+	if !bytes.Equal(result.Value, kvp.Value) {
+		logrus.Warnf("CompareAndDelete failed because of value mismatch %v != %v",
+			result.Value, kvp.Value)
+		return nil, kvdb.ErrNotFound
+	}
+	if kvp.ModifiedIndex != result.ModifiedIndex {
+		logrus.Warnf("CompareAndDelete failed because of modified index mismatch %v != %v",
+			result.ModifiedIndex, kvp.ModifiedIndex)
 		return nil, kvdb.ErrNotFound
 	}
 	return kv.delete(kvp.Key)
@@ -797,7 +806,6 @@ func (kv *boltKV) WatchKey(
 ) error {
 	kv.mutex.Lock()
 	defer kv.mutex.Unlock()
-	key = kv.domain + key
 
 	go kv.watchCb(
 		kv.dist.Add(),
@@ -821,8 +829,6 @@ func (kv *boltKV) WatchTree(
 ) error {
 	kv.mutex.Lock()
 	defer kv.mutex.Unlock()
-
-	prefix = kv.domain + prefix
 
 	go kv.watchCb(
 		kv.dist.Add(),
@@ -859,11 +865,12 @@ func (kv *boltKV) LockWithTimeout(
 
 	duration := time.Second
 
-	result, err := kv.Create(key, lockerID, uint64(duration*3))
+	// XXX FIXME - if we crash, we need to cleanup this lock.
+	result, err := kv.Create(key, lockerID, uint64(lockHoldDuration))
 	startTime := time.Now()
 	for count := 0; err != nil; count++ {
 		time.Sleep(duration)
-		result, err = kv.Create(key, lockerID, uint64(duration*3))
+		result, err = kv.Create(key, lockerID, uint64(lockHoldDuration))
 		if err != nil && count > 0 && count%15 == 0 {
 			var currLockerID string
 			if _, errGet := kv.GetVal(key, currLockerID); errGet == nil {
@@ -871,15 +878,11 @@ func (kv *boltKV) LockWithTimeout(
 					key, count, currLockerID)
 			}
 		}
+
 		if err != nil && time.Since(startTime) > lockTryDuration {
-			logrus.Infof("XXX 1. RETURNING nil on %v %v %v", key, count, err)
+			logrus.Warnf("Timeout waiting for lock on %v: count=%v err=%v", key, count, err)
 			return nil, err
 		}
-	}
-
-	if err != nil {
-		logrus.Infof("XXX 2. RETURNING nil on %v %v", key, err)
-		return nil, err
 	}
 
 	lockChan := make(chan int)
@@ -893,8 +896,10 @@ func (kv *boltKV) LockWithTimeout(
 			for {
 				select {
 				case <-timeout:
+					logrus.Warnf("XXX LOCK timeout on %v after %v", key, lockHoldDuration)
 					kv.LockTimedout(key)
 				case <-lockChan:
+					logrus.Warnf("XXX LOCK chan wakeup on %v", key)
 					return
 				}
 			}
@@ -911,14 +916,18 @@ func (kv *boltKV) Unlock(kvp *kvdb.KVPair) error {
 	}
 	kv.mutex.Lock()
 	lockChan, ok := kv.locks[kvp.Key]
+	logrus.Warnf("XXX Unlock chan %v on %v", lockChan, kvp.Key)
 	if ok {
 		delete(kv.locks, kvp.Key)
 	}
 	kv.mutex.Unlock()
 	if lockChan != nil {
+		logrus.Warnf("XXX Waking up chan on %v", kvp.Key)
 		close(lockChan)
 	}
+
 	_, err := kv.CompareAndDelete(kvp, kvdb.KVFlags(0))
+
 	return err
 }
 

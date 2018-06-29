@@ -84,33 +84,19 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop S
 	assert.NoError(t, err, "Unable to stop kvdb")
 }
 
-// RunBasic runs the basic test suite.
-func RunBasic(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop StopKvdb, kvdbOptions map[string]string) {
+// RunLock runs the lock test suite.
+func RunLock(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop StopKvdb) {
 	err := start()
 	time.Sleep(3 * time.Second)
 	assert.NoError(t, err, "Unable to start kvdb")
-	kv, err := datastoreInit("pwx/test", nil, kvdbOptions, fatalErrorCb())
+	kv, err := datastoreInit("pwx/test", nil, nil, fatalErrorCb())
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	get(kv, t)
-	getInterface(kv, t)
-	create(kv, t)
-	createWithTTL(kv, t)
-	update(kv, t)
-	deleteKey(kv, t)
-	deleteTree(kv, t)
-	enumerate(kv, t)
-	keys(kv, t)
-	concurrentEnum(kv, t)
+	lockBasic(kv, t)
 	lock(kv, t)
 	lockBetweenRestarts(kv, t, start, stop)
-	snapshot(kv, t)
-	watchTree(kv, t)
-	watchKey(kv, t)
-	watchWithIndex(kv, t)
-	cas(kv, t)
-	serialization(kv, t)
+	err = stop()
 	assert.NoError(t, err, "Unable to stop kvdb")
 }
 
@@ -799,6 +785,9 @@ func lockBasic(kv kvdb.Kvdb, t *testing.T) {
 
 	tryStart := time.Now()
 	_, err = kv.LockWithTimeout(key, "test", tryDuration, holdDuration)
+	if err == nil {
+		logrus.Fatalf("Exiting because expected error %v %v", tryDuration, holdDuration)
+	}
 	duration := time.Since(tryStart)
 	assert.True(t, duration < tryDuration+time.Second, "try duration")
 	assert.Error(t, err, "lock expired before timeout")
