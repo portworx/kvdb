@@ -714,9 +714,7 @@ func (kv *boltKV) CompareAndDelete(
 	kv.mutex.Lock()
 	defer kv.mutex.Unlock()
 
-	if flags != kvdb.KVFlags(0) {
-		return nil, kvdb.ErrNotSupported
-	}
+	// XXX FIXME this needs to be atomic cluster wide
 
 	logrus.Warnf("XXX Checking %v", kvp.Key)
 	result, err := kv.exists(kvp.Key)
@@ -724,7 +722,7 @@ func (kv *boltKV) CompareAndDelete(
 		return nil, err
 	}
 
-	if !bytes.Equal(result.Value, kvp.Value) {
+	if !bytes.Equal(result.Value, kvp.Value) || kvp.ModifiedIndex != result.ModifiedIndex {
 		return nil, kvdb.ErrNotFound
 	}
 	return kv.delete(kvp.Key)
