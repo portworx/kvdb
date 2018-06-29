@@ -274,6 +274,9 @@ func (kv *boltKV) get(key string) (*kvdb.KVPair, error) {
 	if kv.db == nil {
 		return nil, kvdb.ErrNotFound
 	}
+
+	// XXX FIXME some bug above this cases the prefix to be pre-loaded.
+	key = strings.TrimPrefix(key, kv.domain)
 	key = kv.domain + key
 
 	tx, err := kv.db.Begin(false)
@@ -284,7 +287,12 @@ func (kv *boltKV) get(key string) (*kvdb.KVPair, error) {
 	defer tx.Rollback()
 
 	bucket := tx.Bucket(pxBucket)
+
+	if strings.HasPrefix(key, "pwx/test/pwx/test") {
+		logrus.Panicf("Double pre")
+	}
 	val := bucket.Get([]byte(key))
+	logrus.Warnf("XXX getting on %v = %v", key, string(val))
 	if val == nil {
 		return nil, kvdb.ErrNotFound
 	}
@@ -312,8 +320,16 @@ func (kv *boltKV) put(
 		b   []byte
 		err error
 	)
-	suffix := key
+
+	if kv.db == nil {
+		return nil, kvdb.ErrNotFound
+	}
+
+	// XXX FIXME some bug above this cases the prefix to be pre-loaded.
+	key = strings.TrimPrefix(key, kv.domain)
 	key = kv.domain + key
+
+	suffix := key
 
 	tx, err := kv.db.Begin(true)
 	if err != nil {
@@ -358,6 +374,7 @@ func (kv *boltKV) put(
 		return nil, err
 	}
 
+	logrus.Warnf("XXX putting on %v", key)
 	if err = bucket.Put([]byte(key), enc); err != nil {
 		logrus.Warnf("Requested KVP could not be inserted into internal KVDB: %v (%v)",
 			kvp,
@@ -384,7 +401,7 @@ func (kv *boltKV) put(
 			kv.mutex.Lock()
 			defer kv.mutex.Unlock()
 			if _, err := kv.delete(suffix); err != nil {
-				logrus.Fatalf("Error while performing a timed DB delete on key %v: %v", key, err)
+				logrus.Warnf("Error while performing a timed DB delete on key %v: %v", suffix, err)
 			}
 		})
 	}
@@ -401,8 +418,15 @@ func (kv *boltKV) put(
 
 // enumerate returns a list of values and creates a copy if specified
 func (kv *boltKV) enumerate(prefix string) (kvdb.KVPairs, error) {
-	var kvps = make(kvdb.KVPairs, 0, 100)
+	if kv.db == nil {
+		return nil, kvdb.ErrNotFound
+	}
+
+	// XXX FIXME some bug above this cases the prefix to be pre-loaded.
+	prefix = strings.TrimPrefix(prefix, kv.domain)
 	prefix = kv.domain + prefix
+
+	var kvps = make(kvdb.KVPairs, 0, 100)
 
 	kv.db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(pxBucket)
@@ -440,6 +464,14 @@ func (kv *boltKV) enumerate(prefix string) (kvdb.KVPairs, error) {
 }
 
 func (kv *boltKV) delete(key string) (*kvdb.KVPair, error) {
+	if kv.db == nil {
+		return nil, kvdb.ErrNotFound
+	}
+
+	// XXX FIXME some bug above this cases the prefix to be pre-loaded.
+	key = strings.TrimPrefix(key, kv.domain)
+	key = kv.domain + key
+
 	kvp, err := kv.get(key)
 	if err != nil {
 		return nil, err
@@ -463,7 +495,8 @@ func (kv *boltKV) delete(key string) (*kvdb.KVPair, error) {
 		return nil, kvdb.ErrNotFound
 	}
 
-	if err = bucket.Delete([]byte(kv.domain + key)); err != nil {
+	logrus.Warnf("XXX deleting on %v", key)
+	if err = bucket.Delete([]byte(key)); err != nil {
 		logrus.Warnf("Requested KVP for delete could not be deleted from internal KVDB: %v (%v)",
 			kvp,
 			err,
@@ -479,7 +512,7 @@ func (kv *boltKV) delete(key string) (*kvdb.KVPair, error) {
 		return nil, err
 	}
 
-	kv.dist.NewUpdate(&watchUpdate{kv.domain + key, *kvp, nil})
+	kv.dist.NewUpdate(&watchUpdate{key, *kvp, nil})
 	return kvp, nil
 }
 
@@ -610,18 +643,28 @@ func (kv *boltKV) Keys(prefix, sep string) ([]string, error) {
 	kv.mutex.Lock()
 	defer kv.mutex.Unlock()
 
-	// XXX
-	/*
-		for k := range kv.m {
-			if strings.HasPrefix(k, prefix) && !strings.Contains(k, "/_") {
+	kv.db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket(pxBucket)
+		if bucket == nil {
+			logrus.Warnf("Requested bucket not found in internal KVDB: %v",
+				pxBucket,
+			)
+			return kvdb.ErrNotFound
+		}
+
+		c := bucket.Cursor()
+		for k, _ := c.First(); k != nil; k, _ = c.Next() {
+			if strings.HasPrefix(string(k), prefix) && !strings.Contains(string(k), "/_") {
 				key := k[lenPrefix:]
-				if idx := strings.Index(key, sep); idx > 0 {
+				if idx := strings.Index(string(key), sep); idx > 0 {
 					key = key[:idx]
 				}
-				seen[key] = true
+				seen[string(key)] = true
 			}
 		}
-	*/
+		return nil
+	})
+
 	retList := make([]string, len(seen))
 	i := 0
 	for k := range seen {
@@ -639,6 +682,8 @@ func (kv *boltKV) CompareAndSet(
 ) (*kvdb.KVPair, error) {
 	kv.mutex.Lock()
 	defer kv.mutex.Unlock()
+
+	logrus.Infof("XXX CompareAndSet %v", kvp)
 
 	// XXX FIXME some bug above this cases the prefix to be pre-loaded.
 	kvp.Key = strings.TrimPrefix(kvp.Key, kv.domain)
@@ -664,19 +709,21 @@ func (kv *boltKV) CompareAndDelete(
 	kvp *kvdb.KVPair,
 	flags kvdb.KVFlags,
 ) (*kvdb.KVPair, error) {
+	logrus.Infof("XXX CompareAndDelete %v", kvp)
+
 	kv.mutex.Lock()
 	defer kv.mutex.Unlock()
-
-	// XXX FIXME some bug above this cases the prefix to be pre-loaded.
-	kvp.Key = strings.TrimPrefix(kvp.Key, kv.domain)
 
 	if flags != kvdb.KVFlags(0) {
 		return nil, kvdb.ErrNotSupported
 	}
+
+	logrus.Warnf("XXX Checking %v", kvp.Key)
 	result, err := kv.exists(kvp.Key)
 	if err != nil {
 		return nil, err
 	}
+
 	if !bytes.Equal(result.Value, kvp.Value) {
 		return nil, kvdb.ErrNotFound
 	}
@@ -730,6 +777,8 @@ func (kv *boltKV) LockWithTimeout(
 	lockTryDuration time.Duration,
 	lockHoldDuration time.Duration,
 ) (*kvdb.KVPair, error) {
+	logrus.Infof("XXX Lock  %v %v %v", key, lockTryDuration, lockHoldDuration)
+
 	key = kv.domain + key
 	duration := time.Second
 
@@ -746,16 +795,19 @@ func (kv *boltKV) LockWithTimeout(
 			}
 		}
 		if err != nil && time.Since(startTime) > lockTryDuration {
+			logrus.Infof("XXX 1. RETURNING nil on %v %v %v", key, count, err)
 			return nil, err
 		}
 	}
 
 	if err != nil {
+		logrus.Infof("XXX 2. RETURNING nil on %v %v", key, err)
 		return nil, err
 	}
 
 	lockChan := make(chan int)
 	kv.mutex.Lock()
+	logrus.Warnf("XXX Locked %v", key)
 	kv.locks[key] = lockChan
 	kv.mutex.Unlock()
 	if lockHoldDuration > 0 {
@@ -776,6 +828,10 @@ func (kv *boltKV) LockWithTimeout(
 }
 
 func (kv *boltKV) Unlock(kvp *kvdb.KVPair) error {
+	logrus.Warnf("XXX Unlocking %v", kvp)
+	if kvp == nil {
+		logrus.Panicf("Unlock on a nil kvp")
+	}
 	kv.mutex.Lock()
 	lockChan, ok := kv.locks[kvp.Key]
 	if ok {
