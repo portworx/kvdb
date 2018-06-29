@@ -48,12 +48,12 @@ gotest: testdeps
 test: pretest gotest
 
 docker-build-kvdb-dev:
-	docker build -t adityadani/kvdb:dev -f $(GOPATH)/src/github.com/portworx/kvdb/Dockerfile.kvdb .
+	docker build -t portworx/kvdb:test_container -f $(GOPATH)/src/github.com/portworx/kvdb/Dockerfile.kvdb .
 
 docker-test:
 	docker run \
 		-v $(GOPATH)/src/github.com/portworx/kvdb:/go/src/github.com/portworx/kvdb \
-		adityadani/kvdb:dev \
+		portworx/kvdb:test_container \
 			go test -v --timeout 1h ./...
 
 clean:
