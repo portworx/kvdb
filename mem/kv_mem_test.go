@@ -12,10 +12,10 @@ import (
 func TestAll(t *testing.T) {
 	options := make(map[string]string)
 	// RunBasic with values as bytes
-	test.RunBasic(New, t, Start, Stop, options)
+	test.Run(New, t, Start, Stop)
 	options[KvUseInterface] = ""
 	//  RunBasic with values as interface
-	test.RunBasic(New, t, Start, Stop, options)
+	test.Run(New, t, Start, Stop)
 	// Run mem specific tests
 	kv, err := New("pwx/test", nil, options, nil)
 	if err != nil {
