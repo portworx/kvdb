@@ -290,15 +290,17 @@ func (kv *consulKV) Create(
 			if ok && err == nil {
 				return kvPair, err
 			}
+			if _, err := kv.client.Session().Destroy(sessionPair.Session, nil); err != nil {
+				logrus.Error(err)
+			}
+			if _, err := kv.Delete(key); err != nil {
+				return nil, err
+			}
 			if err != nil {
 				return nil, err
 			}
 			if !ok {
 				return nil, fmt.Errorf("Failed to set ttl")
-			}
-			_, _ = kv.client.Session().Destroy(sessionPair.Session, nil)
-			if _, err := kv.Delete(key); err != nil {
-				return nil, err
 			}
 		}
 	}
