@@ -332,6 +332,7 @@ func (kv *boltKV) put(
 	key string,
 	value interface{},
 	ttl uint64,
+	action kvdb.KVAction,
 ) (*kvdb.KVPair, error) {
 	var (
 		kvp *kvdb.KVPair
@@ -362,6 +363,7 @@ func (kv *boltKV) put(
 		return nil, kvdb.ErrNotFound
 	}
 
+	// XXX FIXME is this going to work across restarts?
 	index := atomic.AddUint64(&kv.index, 1)
 
 	b, err = common.ToBytes(value)
@@ -376,7 +378,7 @@ func (kv *boltKV) put(
 		KVDBIndex:     index,
 		ModifiedIndex: index,
 		CreatedIndex:  index,
-		Action:        kvdb.KVCreate,
+		Action:        action,
 	}
 
 	kv.normalize(kvp)
@@ -571,7 +573,7 @@ func (kv *boltKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 	kv.mutex.Lock()
 	defer kv.mutex.Unlock()
 
-	_, err := kv.put(bootstrapKey, time.Now().UnixNano(), 0)
+	_, err := kv.put(bootstrapKey, time.Now().UnixNano(), 0, kvdb.KVCreate)
 	if err != nil {
 		logrus.Fatalf("Could not create bootstrap key during snapshot: %v", err)
 		return nil, 0, err
@@ -605,7 +607,7 @@ func (kv *boltKV) Put(
 ) (*kvdb.KVPair, error) {
 	kv.mutex.Lock()
 	defer kv.mutex.Unlock()
-	return kv.put(key, value, ttl)
+	return kv.put(key, value, ttl, kvdb.KVSet)
 }
 
 func (kv *boltKV) GetVal(key string, v interface{}) (*kvdb.KVPair, error) {
@@ -630,7 +632,7 @@ func (kv *boltKV) Create(
 
 	result, err := kv.exists(key)
 	if err != nil {
-		return kv.put(key, value, ttl)
+		return kv.put(key, value, ttl, kvdb.KVCreate)
 	}
 	return result, kvdb.ErrExist
 }
@@ -647,7 +649,7 @@ func (kv *boltKV) Update(
 	if _, err := kv.exists(key); err != nil {
 		return nil, kvdb.ErrNotFound
 	}
-	kvp, err := kv.put(key, value, ttl)
+	kvp, err := kv.put(key, value, ttl, kvdb.KVSet)
 	if err != nil {
 		return nil, err
 	}
@@ -765,7 +767,7 @@ func (kv *boltKV) CompareAndSet(
 			return nil, kvdb.ErrValueMismatch
 		}
 	}
-	return kv.put(kvp.Key, kvp.Value, 0)
+	return kv.put(kvp.Key, kvp.Value, 0, kvdb.KVSet)
 }
 
 func (kv *boltKV) CompareAndDelete(
@@ -971,10 +973,12 @@ func (kv *boltKV) watchCb(
 	treeWatch bool,
 ) {
 	for {
+		logrus.Warnf("XXX watchCb on %v", prefix)
 		update := q.Dequeue()
 		if ((treeWatch && strings.HasPrefix(update.key, prefix)) ||
 			(!treeWatch && update.key == prefix)) &&
 			(v.waitIndex == 0 || v.waitIndex < update.kvp.ModifiedIndex) {
+			logrus.Warnf("XXX watchCb FIRED on %v", prefix)
 			err := v.cb(update.key, v.opaque, &update.kvp, update.err)
 			if err != nil {
 				_ = v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)

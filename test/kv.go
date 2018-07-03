@@ -102,6 +102,24 @@ func RunLock(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, st
 	assert.NoError(t, err, "Unable to stop kvdb")
 }
 
+// RunWatch runs the watch test suite.
+func RunWatch(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop StopKvdb) {
+	err := start()
+	time.Sleep(3 * time.Second)
+	assert.NoError(t, err, "Unable to start kvdb")
+	kv, err := datastoreInit("pwx/test", nil, nil, fatalErrorCb())
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+
+	watchKey(kv, t)
+	// watchTree(kv, t)
+	// watchWithIndex(kv, t)
+
+	err = stop()
+	assert.NoError(t, err, "Unable to stop kvdb")
+}
+
 // RunAuth runs the authentication test suite for kvdb
 func RunAuth(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	options := make(map[string]string)
@@ -854,6 +872,11 @@ func watchFn(
 	assert.Equal(data.t, data.action, kvp.Action,
 		"For Key (%v) : Expected action %v actual %v",
 		kvp.Key, data.action, kvp.Action)
+	if data.action != kvp.Action {
+		value := string(kvp.Value)
+		logrus.Panicf("Aborting because (%v != %v) (%v) %v != %v (Value = %v)",
+			data.action, kvp.Action, prefix, data, kvp, value)
+	}
 
 	if string(kvp.Value) == data.stop {
 		return errors.New(data.stop)
@@ -874,6 +897,7 @@ func watchUpdate(kv kvdb.Kvdb, data *watchData) error {
 	atomic.SwapInt32(&data.whichKey, 1)
 	data.action = kvdb.KVCreate
 	fmt.Printf("-")
+	fmt.Printf("XXX Creating watchUpdate key %v\n", data.key)
 	kvp, err = kv.Create(data.key, []byte("bar"), 0)
 	for i := 0; i < data.iterations && err == nil; i++ {
 		fmt.Printf("-")
@@ -883,6 +907,7 @@ func watchUpdate(kv kvdb.Kvdb, data *watchData) error {
 		}
 		atomic.AddInt32(&data.writer, 1)
 		data.action = kvdb.KVSet
+		fmt.Printf("XXX Putting watchUpdate key %v\n", data.key)
 		kvp, err = kv.Put(data.key, []byte("bar"), 0)
 
 		data.updateIndex = kvp.KVDBIndex
