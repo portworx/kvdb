@@ -294,7 +294,7 @@ func (kv *consulKV) Create(
 				logrus.Error(err)
 			}
 			if _, err := kv.Delete(key); err != nil {
-				return nil, err
+				logrus.Error(err)
 			}
 			if err != nil {
 				return nil, err
