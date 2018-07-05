@@ -832,6 +832,9 @@ func (kv *boltKV) WatchTree(
 	kv.mutex.Lock()
 	defer kv.mutex.Unlock()
 
+	// XXX FIXME - some top level code has a bug and sends the prefix preloaded
+	prefix = strings.TrimPrefix(prefix, kv.domain)
+
 	go kv.watchCb(
 		kv.dist.Add(),
 		prefix,
@@ -975,6 +978,8 @@ func (kv *boltKV) watchCb(
 	for {
 		logrus.Warnf("XXX watchCb on %v", prefix)
 		update := q.Dequeue()
+		logrus.Warnf("XXX watchCb compare on %v %v %v %v %v",
+			treeWatch, update.key, prefix, v.waitIndex, update.kvp.ModifiedIndex)
 		if ((treeWatch && strings.HasPrefix(update.key, prefix)) ||
 			(!treeWatch && update.key == prefix)) &&
 			(v.waitIndex == 0 || v.waitIndex < update.kvp.ModifiedIndex) {

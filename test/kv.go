@@ -115,9 +115,12 @@ func RunWatch(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, s
 		t.Fatalf(err.Error())
 	}
 
-	watchKey(kv, t)
+	// watchKey(kv, t)
 	// watchTree(kv, t)
 	// watchWithIndex(kv, t)
+	collect(kv, t)
+	// serialization(kv, t)
+	// concurrentEnum(kv, t)
 
 	err = stop()
 	assert.NoError(t, err, "Unable to stop kvdb")
@@ -1267,6 +1270,7 @@ func collect(kv kvdb.Kvdb, t *testing.T) {
 
 		fmt.Println("collect")
 
+		// XXX FIXME this is a bug... root should not have the prefix
 		root := "pwx/test/collect"
 		firstLevel := root + "/first"
 		secondLevel := root + "/second"
@@ -1274,7 +1278,7 @@ func collect(kv kvdb.Kvdb, t *testing.T) {
 		kv.DeleteTree(root)
 
 		kvp, _ := kv.Create(firstLevel, []byte("bar"), 0)
-		fmt.Printf("KVP is %v", kvp)
+		fmt.Printf("KVP is %v and KV is %v\n", kvp, kv)
 		collector, _ := kvdb.NewUpdatesCollector(kv, secondLevel,
 			startVersion(kvp.CreatedIndex))
 		time.Sleep(time.Second)
@@ -1345,6 +1349,9 @@ func collect(kv kvdb.Kvdb, t *testing.T) {
 		assert.True(t, err == nil, "Replay encountered error %v", err)
 		assert.True(t, lastLeafIndex == 9, "Last leaf index %v, expected : 9",
 			lastLeafIndex)
+		if lastLeafIndex != 9 {
+			logrus.Fatalf("lastLeafIndex is %v", lastLeafIndex)
+		}
 
 		// Test with kvdb returning error because update index was too old.
 		fourthLevel := root + "/fourth"
