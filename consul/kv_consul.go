@@ -36,6 +36,7 @@ var (
 	defaultMachines = []string{"3.1.4.1:5926", "127.0.0.1:8500"}
 )
 
+// param stores init paramaters for consul kv.
 type param struct {
 	domain       string
 	machines     []string
@@ -44,6 +45,7 @@ type param struct {
 }
 
 var (
+	// myParams is a global var used to access kv init params.
 	myParams param
 )
 
@@ -150,8 +152,8 @@ func New(
 	options map[string]string,
 	fatalErrorCb kvdb.FatalErrorCB,
 ) (kvdb.Kvdb, error) {
-	// save the input params into global var
-	// these will be used to reinit kv during failover
+	// save the input params into global var.
+	// these will be used to reinit kv during failover.
 	myParams.domain = domain
 	myParams.machines = machines
 	myParams.options = options
@@ -222,6 +224,8 @@ func (kv *consulKV) Get(key string) (*kvdb.KVPair, error) {
 				*kv = *(k.(*consulKV))
 				continue
 			}
+		} else {
+			break
 		}
 	}
 
@@ -234,8 +238,6 @@ func (kv *consulKV) Get(key string) (*kvdb.KVPair, error) {
 		return nil, kvdb.ErrNotFound
 	}
 	return kv.pairToKv("get", pair, meta), nil
-
-	return nil, err
 }
 
 func (kv *consulKV) GetVal(key string, val interface{}) (*kvdb.KVPair, error) {
@@ -306,6 +308,8 @@ func (kv *consulKV) Put(
 					*kv = *(k.(*consulKV))
 					continue
 				}
+			} else {
+				break
 			}
 		}
 
@@ -326,6 +330,8 @@ func (kv *consulKV) Put(
 					*kv = *(k.(*consulKV))
 					continue
 				}
+			} else {
+				break
 			}
 		}
 
@@ -362,19 +368,30 @@ func (kv *consulKV) Create(
 		kvPair.Action = kvdb.KVCreate
 		if ttl > 0 {
 			var ok bool
-			ok, _, err = kv.client.KV().Acquire(sessionPair, nil)
-			if ok && err == nil {
-				return kvPair, err
+
+			for range myParams.machines {
+				ok, _, err = kv.client.KV().Acquire(sessionPair, nil)
+				if ok && err == nil {
+					return kvPair, err
+				}
+				if _, err := kv.client.Session().Destroy(sessionPair.Session, nil); err != nil {
+					logrus.Error(err)
+				}
+				if _, err := kv.Delete(key); err != nil {
+					logrus.Error(err)
+				}
+				if err != nil {
+					if k, e := initKv(myParams); e != nil {
+						return nil, e
+					} else {
+						*kv = *(k.(*consulKV))
+						continue
+					}
+				} else {
+					break
+				}
 			}
-			if _, err := kv.client.Session().Destroy(sessionPair.Session, nil); err != nil {
-				logrus.Error(err)
-			}
-			if _, err := kv.Delete(key); err != nil {
-				logrus.Error(err)
-			}
-			if err != nil {
-				return nil, err
-			}
+
 			if !ok {
 				return nil, fmt.Errorf("Failed to set ttl")
 			}
@@ -400,6 +417,7 @@ func (kv *consulKV) Update(
 	if err != nil {
 		return nil, err
 	}
+
 	kvPair.Action = kvdb.KVSet
 	return kvPair, nil
 }
@@ -407,10 +425,29 @@ func (kv *consulKV) Update(
 func (kv *consulKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 	prefix = kv.domain + prefix
 	prefix = stripConsecutiveForwardslash(prefix)
-	pairs, meta, err := kv.client.KV().List(prefix, nil)
+	var pairs api.KVPairs
+	var meta *api.QueryMeta
+	var err error
+	for range myParams.machines {
+		pairs, meta, err = kv.client.KV().List(prefix, nil)
+		// *** check error post loop
+		if err != nil {
+			if k, e := initKv(myParams); e != nil {
+				return nil, e
+			} else {
+				*kv = *(k.(*consulKV))
+				continue
+			}
+		} else {
+			break
+		}
+	}
+
+	// *** check error created in the loop
 	if err != nil {
 		return nil, err
 	}
+
 	return kv.pairToKvs("enumerate", pairs, meta), nil
 }
 
@@ -421,9 +458,26 @@ func (kv *consulKV) Delete(key string) (*kvdb.KVPair, error) {
 	}
 	key = kv.domain + key
 	key = stripConsecutiveForwardslash(key)
-	if _, err := kv.client.KV().Delete(key, nil); err != nil {
+
+	for range myParams.machines {
+		// *** also check this err after loop is over
+		if _, err = kv.client.KV().Delete(key, nil); err != nil {
+			if k, e := initKv(myParams); e != nil {
+				return nil, e
+			} else {
+				*kv = *(k.(*consulKV))
+				continue
+			}
+		} else {
+			break
+		}
+	}
+
+	// *** check err created in the loop
+	if err != nil {
 		return nil, err
 	}
+
 	return pair, nil
 }
 
@@ -433,10 +487,23 @@ func (kv *consulKV) DeleteTree(key string) error {
 	if !strings.HasSuffix(key, kvdb.DefaultSeparator) {
 		key += kvdb.DefaultSeparator
 	}
-	if _, err := kv.client.KV().DeleteTree(key, nil); err != nil {
-		return err
+	var err error
+	for range myParams.machines {
+		// *** also check this error after the loop is over
+		if _, err = kv.client.KV().DeleteTree(key, nil); err != nil {
+			if k, e := initKv(myParams); e != nil {
+				return e
+			} else {
+				*kv = *(k.(*consulKV))
+				continue
+			}
+		} else {
+			break
+		}
 	}
-	return nil
+
+	// *** return err created in the loop
+	return err
 }
 
 func (kv *consulKV) Keys(prefix, sep string) ([]string, error) {
@@ -451,10 +518,29 @@ func (kv *consulKV) Keys(prefix, sep string) ([]string, error) {
 		prefix += sep
 		lenPrefix += lenSep
 	}
-	list, _, err := kv.client.KV().Keys(prefix, sep, nil)
+	var list []string
+	var err error
+
+	for range myParams.machines {
+		list, _, err = kv.client.KV().Keys(prefix, sep, nil)
+		// *** also check this error after the loop
+		if err != nil {
+			if k, e := initKv(myParams); e != nil {
+				return nil, e
+			} else {
+				*kv = *(k.(*consulKV))
+				continue
+			}
+		} else {
+			break
+		}
+	}
+
+	// *** check err created in the loop
 	if err != nil {
 		return nil, err
 	}
+
 	var retList []string
 	if len(list) > 0 {
 		retList = make([]string, len(list))
@@ -500,7 +586,24 @@ func (kv *consulKV) CompareAndSet(
 		pair.ModifyIndex = 0
 	}
 
-	ok, _, err := kv.client.KV().CAS(pair, nil)
+	var ok bool
+	var err error
+
+	for range myParams.machines {
+		// *** also check this error after the loop is over.
+		if ok, _, err = kv.client.KV().CAS(pair, nil); err != nil {
+			if k, e := initKv(myParams); e != nil {
+				return nil, e
+			} else {
+				*kv = *(k.(*consulKV))
+				continue
+			}
+		} else {
+			break
+		}
+	}
+
+	// *** check err created in the loop
 	if err != nil {
 		return nil, err
 	}
@@ -548,7 +651,24 @@ func (kv *consulKV) CompareAndDelete(
 		pair.ModifyIndex = kvp.ModifiedIndex
 	}
 
-	ok, _, err := kv.client.KV().DeleteCAS(pair, nil)
+	var ok bool
+	var err error
+
+	for range myParams.machines {
+		// *** also check this error after the loop
+		if ok, _, err = kv.client.KV().DeleteCAS(pair, nil); err != nil {
+			if k, e := initKv(myParams); e != nil {
+				return nil, e
+			} else {
+				*kv = *(k.(*consulKV))
+				continue
+			}
+		} else {
+			break
+		}
+	}
+
+	// *** check err created in the loop
 	if err != nil {
 		return nil, err
 	}
@@ -692,7 +812,23 @@ func (kv *consulKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 
 	listKey := kv.domain + prefix
 	listKey = stripConsecutiveForwardslash(listKey)
-	pairs, _, err := kv.client.KV().List(listKey, options)
+
+	var pairs api.KVPairs
+	for range myParams.machines {
+		// *** also check this err post loop
+		if pairs, _, err = kv.client.KV().List(listKey, options); err != nil {
+			if k, e := initKv(myParams); e != nil {
+				return nil, 0, e
+			} else {
+				*kv = *(k.(*consulKV))
+				continue
+			}
+		} else {
+			break
+		}
+	}
+
+	// *** check err created in the loop
 	if err != nil {
 		return nil, 0, err
 	}
