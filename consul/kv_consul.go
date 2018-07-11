@@ -36,6 +36,17 @@ var (
 	defaultMachines = []string{"3.1.4.1:5926", "127.0.0.1:8500"}
 )
 
+type param struct {
+	domain       string
+	machines     []string
+	options      map[string]string
+	fatalErrorCb kvdb.FatalErrorCB
+}
+
+var (
+	myParams param
+)
+
 // CKVPairs sortable KVPairs
 type CKVPairs api.KVPairs
 
@@ -139,6 +150,22 @@ func New(
 	options map[string]string,
 	fatalErrorCb kvdb.FatalErrorCB,
 ) (kvdb.Kvdb, error) {
+	// save the input params into global var
+	// these will be used to reinit kv during failover
+	myParams.domain = domain
+	myParams.machines = machines
+	myParams.options = options
+	myParams.fatalErrorCb = fatalErrorCb
+
+	return initKv(myParams)
+}
+
+func initKv(p param) (kvdb.Kvdb, error) {
+	domain := p.domain
+	machines := p.machines
+	options := p.options
+	fatalErrorCb := p.fatalErrorCb
+
 	var kv kvdb.Kvdb
 	var err error
 
@@ -181,14 +208,34 @@ func (kv *consulKV) Get(key string) (*kvdb.KVPair, error) {
 	}
 	key = kv.domain + key
 	key = stripConsecutiveForwardslash(key)
-	pair, meta, err := kv.client.KV().Get(key, options)
+
+	var pair *api.KVPair
+	var meta *api.QueryMeta
+	var err error
+	// try as many times as there are machines
+	for range myParams.machines {
+		pair, meta, err = kv.client.KV().Get(key, options)
+		if err != nil { // *** this error is checked below post loop
+			if k, e := initKv(myParams); e != nil {
+				return nil, e
+			} else {
+				*kv = *(k.(*consulKV))
+				continue
+			}
+		}
+	}
+
+	// this err is created in loop ***
 	if err != nil {
 		return nil, err
 	}
+
 	if pair == nil {
 		return nil, kvdb.ErrNotFound
 	}
 	return kv.pairToKv("get", pair, meta), nil
+
+	return nil, err
 }
 
 func (kv *consulKV) GetVal(key string, val interface{}) (*kvdb.KVPair, error) {
@@ -247,17 +294,46 @@ func (kv *consulKV) Put(
 	if err != nil {
 		return nil, err
 	}
+
+	var ok bool
 	if ttl == 0 {
-		if _, err := kv.client.KV().Put(pair, nil); err != nil {
+		for range myParams.machines {
+			// *** this error is checked below post loop
+			if _, err = kv.client.KV().Put(pair, nil); err != nil {
+				if k, e := initKv(myParams); e != nil {
+					return nil, e
+				} else {
+					*kv = *(k.(*consulKV))
+					continue
+				}
+			}
+		}
+
+		// *** this error is created in loop above
+		if err != nil {
 			return nil, err
 		}
 	} else {
 		// It is unclear why err == nil but ok == false. We always
 		// delete any existing sessions on Put, so this should work fine.
-		ok, _, err := kv.client.KV().Acquire(pair, nil)
+		for range myParams.machines {
+			// *** this error is checked below post loop
+			ok, _, err = kv.client.KV().Acquire(pair, nil)
+			if err != nil {
+				if k, e := initKv(myParams); e != nil {
+					return nil, e
+				} else {
+					*kv = *(k.(*consulKV))
+					continue
+				}
+			}
+		}
+
+		// *** this error is created in loop above
 		if err != nil {
 			return nil, err
 		}
+
 		if !ok {
 			return nil, fmt.Errorf("Acquire failed")
 		}
