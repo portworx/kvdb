@@ -1228,7 +1228,30 @@ func (kv *consulKV) watchTreeStart(
 
 	for {
 		// Make a blocking List query
-		kvPairs, meta, err := kv.client.KV().List(prefix, opts)
+		var kvPairs api.KVPairs
+		var meta *api.QueryMeta
+		var err error
+
+	Loop:
+		for range kv.myParams.machines {
+			kvPairs, meta, err = kv.client.KV().List(prefix, opts)
+			if err != nil {
+				if isHttpError(err) {
+					if clientErr := kv.refreshClient(); clientErr != nil {
+						logrus.Error(clientErr)
+						return
+					} else {
+						continue Loop
+					}
+				} else {
+					logrus.Error(err)
+					return
+				}
+			} else {
+				break Loop
+			}
+		}
+
 		pairs := CKVPairs(kvPairs)
 		sort.Sort(pairs)
 		if err != nil {
@@ -1336,8 +1359,32 @@ func (kv *consulKV) watchKeyStart(
 	keyDeleted := false
 	var cbErr error
 	for {
+		var pair *api.KVPair
+		var meta *api.QueryMeta
+		var err error
+	Loop:
 		// Make a blocking Get query
-		pair, meta, err := kv.client.KV().Get(key, opts)
+		for range kv.myParams.machines {
+			pair, meta, err = kv.client.KV().Get(key, opts)
+			if err != nil && strings.Contains(err.Error(), HTTPError) {
+				err = errors.New(HTTPError)
+			}
+			switch err {
+			case nil:
+				break Loop
+			case errors.New(HTTPError):
+				if clientErr := kv.refreshClient(); clientErr != nil {
+					logrus.Error(clientErr)
+					return
+				} else {
+					continue Loop
+				}
+			default:
+				logrus.Error(err)
+				return
+			}
+		}
+
 		if err != nil {
 			logrus.Errorf("Consul returned an error : %s\n", err.Error())
 			cbErr = cb(key, opaque, nil, err)
@@ -1440,7 +1487,30 @@ func (kv *consulKV) renewSession(
 // getActiveSession checks if the key already has
 // a session attached
 func (kv *consulKV) getActiveSession(key string) (string, error) {
-	pair, _, err := kv.client.KV().Get(key, nil)
+	var pair *api.KVPair
+	var err error
+Loop:
+	for range kv.myParams.machines {
+		pair, _, err = kv.client.KV().Get(key, nil)
+		if err != nil && strings.Contains(err.Error(), HTTPError) {
+			err = errors.New(HTTPError)
+		}
+		switch err {
+		case nil:
+			break Loop
+		case errors.New(HTTPError):
+			if clientErr := kv.refreshClient(); clientErr != nil {
+				logrus.Error(clientErr)
+				return "", clientErr
+			} else {
+				continue Loop
+			}
+		default:
+			logrus.Error(err)
+			return "", err
+		}
+	}
+
 	if err != nil {
 		return "", err
 	}
