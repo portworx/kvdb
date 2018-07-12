@@ -1271,7 +1271,7 @@ func (kv *consulKV) watchTreeStart(
 	checkIndex := func(prevIndex *uint64, pair *api.KVPair, newIndex uint64,
 		msg string, lastIndex, waitIndex uint64) {
 		if *prevIndex != 0 && newIndex <= *prevIndex {
-			kv.FatalCb(msg+" with index invoked twice: %v, prevIndex: %d"+
+			logrus.Infof(msg+" with index invoked twice: %v, prevIndex: %d"+
 				" newIndex: %d, lastIndex: %d, waitIndex: %d", *pair,
 				*prevIndex, newIndex, lastIndex, waitIndex)
 		}
