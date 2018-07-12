@@ -5,6 +5,7 @@ package consul
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -14,8 +15,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"errors"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/hashicorp/consul/api"
@@ -116,6 +115,14 @@ func newKvClient(machine string, p param) (*api.Config, *api.Client, error) {
 	return config, client, nil
 }
 
+// shuffle list of input strings
+func shuffle(input []string) {
+	for i := range input {
+		j := rand.Intn(i + 1)
+		input[i], input[j] = input[j], input[i]
+	}
+}
+
 // New constructs a new kvdb.Kvdb given a list of end points to conntect to.
 func New(
 	domain string,
@@ -129,6 +136,9 @@ func New(
 	if domain != "" && !strings.HasSuffix(domain, "/") {
 		domain = domain + "/"
 	}
+
+	// shuffle ordering of machines
+	shuffle(machines)
 
 	myParams.domain = domain
 	myParams.machines = machines
