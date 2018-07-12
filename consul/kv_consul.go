@@ -15,8 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Sirupsen/logrus"
+	"errors"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/hashicorp/consul/api"
 	"github.com/portworx/kvdb"
 	"github.com/portworx/kvdb/common"
@@ -29,6 +30,7 @@ const (
 	bootstrap = "kvdb/bootstrap"
 	// MaxRenewRetries to renew TTL.
 	MaxRenewRetries = 5
+	HTTPError       = "Unexpected response code: 500"
 )
 
 var (
@@ -43,11 +45,6 @@ type param struct {
 	options      map[string]string
 	fatalErrorCb kvdb.FatalErrorCB
 }
-
-var (
-	// myParams is a global var used to access kv init params.
-	myParams param
-)
 
 // CKVPairs sortable KVPairs
 type CKVPairs api.KVPairs
@@ -82,6 +79,9 @@ type consulKV struct {
 	config *api.Config
 	domain string
 	kvdb.Controller
+	// myParams holds all params required to obtain new api client
+	myParams param
+	mu       sync.Mutex
 }
 
 type consulLock struct {
@@ -90,9 +90,47 @@ type consulLock struct {
 	tag    interface{}
 }
 
-// newKv constructs new kvdb.Kvdb given a single end-point to connect to.
-func newKv(domain, machine string, options map[string]string, fatalErrorCb kvdb.FatalErrorCB) (kvdb.Kvdb, error) {
-	var token string
+// newKvClient constructs new kvdb.Kvdb given a single end-point to connect to.
+func newKvClient(machine string, p param) (*api.Config, *api.Client, error) {
+	config := api.DefaultConfig()
+	config.HttpClient = http.DefaultClient
+	config.Address = machine
+	config.Scheme = "http"
+	// Get the ACL token if provided
+	config.Token = p.options[kvdb.ACLTokenKey]
+
+	client, err := api.NewClient(config)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// check heal to ensure communication with consul are working
+	if _, _, err := client.Health().State(api.HealthAny, nil); err != nil {
+		return nil, nil, err
+	}
+
+	return config, client, nil
+}
+
+// New constructs a new kvdb.Kvdb given a list of end points to conntect to.
+func New(
+	domain string,
+	machines []string,
+	options map[string]string,
+	fatalErrorCb kvdb.FatalErrorCB,
+) (kvdb.Kvdb, error) {
+	// save the input params into global var.
+	// these will be used to reinit kv during failover.
+	var myParams param
+	if domain != "" && !strings.HasSuffix(domain, "/") {
+		domain = domain + "/"
+	}
+
+	myParams.domain = domain
+	myParams.machines = machines
+	myParams.options = options
+	myParams.fatalErrorCb = fatalErrorCb
+
 	// options provided. Probably auth options
 	if options != nil || len(options) > 0 {
 		var ok bool
@@ -111,82 +149,63 @@ func newKv(domain, machine string, options map[string]string, fatalErrorCb kvdb.
 		if ok {
 			return nil, kvdb.ErrAuthNotSupported
 		}
-		// Get the ACL token if provided
-		token, ok = options[kvdb.ACLTokenKey]
-
 	}
-
-	config := api.DefaultConfig()
-	config.HttpClient = http.DefaultClient
-	config.Address = machine
-	config.Scheme = "http"
-	config.Token = token
-
-	client, err := api.NewClient(config)
-	if err != nil {
-		return nil, err
-	}
-
-	// check heal to ensure communication with consul are working
-	if _, _, err := client.Health().State(api.HealthAny, nil); err != nil {
-		return nil, err
-	}
-
-	if domain != "" && !strings.HasSuffix(domain, "/") {
-		domain = domain + "/"
-	}
-
-	return &consulKV{
-		common.BaseKvdb{FatalCb: fatalErrorCb},
-		client,
-		config,
-		domain,
-		kvdb.ControllerNotSupported,
-	}, nil
-}
-
-// New constructs a new kvdb.Kvdb given a list of end points to conntect to.
-func New(
-	domain string,
-	machines []string,
-	options map[string]string,
-	fatalErrorCb kvdb.FatalErrorCB,
-) (kvdb.Kvdb, error) {
-	// save the input params into global var.
-	// these will be used to reinit kv during failover.
-	myParams.domain = domain
-	myParams.machines = machines
-	myParams.options = options
-	myParams.fatalErrorCb = fatalErrorCb
 
 	return initKv(myParams)
 }
 
-func initKv(p param) (kvdb.Kvdb, error) {
-	domain := p.domain
-	machines := p.machines
-	options := p.options
-	fatalErrorCb := p.fatalErrorCb
-
-	var kv kvdb.Kvdb
-	var err error
-
-	if len(machines) == 0 {
-		machines = defaultMachines
+func initKv(p param) (*consulKV, error) {
+	if len(p.machines) == 0 {
+		p.machines = defaultMachines
 	}
 
-	for _, machine := range machines {
+	var err error
+	var config *api.Config
+	var client *api.Client
+
+	for _, machine := range p.machines {
 		machine := machine
 		if strings.HasPrefix(machine, "http://") {
 			machine = strings.TrimPrefix(machine, "http://")
 		} else if strings.HasPrefix(machine, "https://") {
 			machine = strings.TrimPrefix(machine, "https://")
 		}
-		if kv, err = newKv(domain, machine, options, fatalErrorCb); err == nil {
-			return kv, nil
+		if config, client, err = newKvClient(machine, p); err == nil {
+			return &consulKV{
+				BaseKvdb:   common.BaseKvdb{FatalCb: p.fatalErrorCb},
+				client:     client,
+				config:     config,
+				domain:     p.domain,
+				Controller: kvdb.ControllerNotSupported,
+				myParams:   p,
+			}, nil
 		}
 	}
-	return kv, err
+	return nil, err
+}
+
+func (kv *consulKV) refreshClient() error {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+
+	var err error
+	var config *api.Config
+	var client *api.Client
+
+	for _, machine := range kv.myParams.machines {
+		machine := machine
+		if strings.HasPrefix(machine, "http://") {
+			machine = strings.TrimPrefix(machine, "http://")
+		} else if strings.HasPrefix(machine, "https://") {
+			machine = strings.TrimPrefix(machine, "https://")
+		}
+		if config, client, err = newKvClient(machine, kv.myParams); err == nil {
+			kv.client = client
+			kv.config = config
+			return nil
+		}
+	}
+	return err
 }
 
 // Version returns the supported version for consul api
@@ -214,18 +233,24 @@ func (kv *consulKV) Get(key string) (*kvdb.KVPair, error) {
 	var pair *api.KVPair
 	var meta *api.QueryMeta
 	var err error
-	// try as many times as there are machines
-	for range myParams.machines {
+
+Loop:
+	for range kv.myParams.machines {
 		pair, meta, err = kv.client.KV().Get(key, options)
-		if err != nil { // *** this error is checked below post loop
-			if k, e := initKv(myParams); e != nil {
-				return nil, e
+		if err != nil && strings.Contains(err.Error(), HTTPError) {
+			err = errors.New(HTTPError)
+		}
+		switch err {
+		case nil:
+			break Loop
+		case errors.New(HTTPError):
+			if clientErr := kv.refreshClient(); clientErr != nil {
+				return nil, clientErr
 			} else {
-				*kv = *(k.(*consulKV))
-				continue
+				continue Loop
 			}
-		} else {
-			break
+		default:
+			return nil, err
 		}
 	}
 
@@ -299,17 +324,21 @@ func (kv *consulKV) Put(
 
 	var ok bool
 	if ttl == 0 {
-		for range myParams.machines {
-			// *** this error is checked below post loop
-			if _, err = kv.client.KV().Put(pair, nil); err != nil {
-				if k, e := initKv(myParams); e != nil {
-					return nil, e
+
+	Loop:
+		for range kv.myParams.machines {
+			_, err = kv.client.KV().Put(pair, nil)
+			switch err {
+			case nil:
+				break Loop
+			case errors.New(HTTPError):
+				if clientErr := kv.refreshClient(); clientErr != nil {
+					return nil, clientErr
 				} else {
-					*kv = *(k.(*consulKV))
-					continue
+					continue Loop
 				}
-			} else {
-				break
+			default:
+				return nil, err
 			}
 		}
 
@@ -320,18 +349,20 @@ func (kv *consulKV) Put(
 	} else {
 		// It is unclear why err == nil but ok == false. We always
 		// delete any existing sessions on Put, so this should work fine.
-		for range myParams.machines {
-			// *** this error is checked below post loop
+	Loop2:
+		for range kv.myParams.machines {
 			ok, _, err = kv.client.KV().Acquire(pair, nil)
-			if err != nil {
-				if k, e := initKv(myParams); e != nil {
-					return nil, e
+			switch err {
+			case nil:
+				break Loop2
+			case errors.New(HTTPError):
+				if clientErr := kv.refreshClient(); clientErr != nil {
+					return nil, clientErr
 				} else {
-					*kv = *(k.(*consulKV))
-					continue
+					continue Loop2
 				}
-			} else {
-				break
+			default:
+				return nil, err
 			}
 		}
 
@@ -368,8 +399,8 @@ func (kv *consulKV) Create(
 		kvPair.Action = kvdb.KVCreate
 		if ttl > 0 {
 			var ok bool
-
-			for range myParams.machines {
+		Loop:
+			for range kv.myParams.machines {
 				ok, _, err = kv.client.KV().Acquire(sessionPair, nil)
 				if ok && err == nil {
 					return kvPair, err
@@ -380,15 +411,17 @@ func (kv *consulKV) Create(
 				if _, err := kv.Delete(key); err != nil {
 					logrus.Error(err)
 				}
-				if err != nil {
-					if k, e := initKv(myParams); e != nil {
-						return nil, e
+				switch err {
+				case nil:
+					break Loop
+				case errors.New(HTTPError):
+					if clientErr := kv.refreshClient(); clientErr != nil {
+						return nil, clientErr
 					} else {
-						*kv = *(k.(*consulKV))
-						continue
+						continue Loop
 					}
-				} else {
-					break
+				default:
+					return nil, err
 				}
 			}
 
@@ -428,18 +461,24 @@ func (kv *consulKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 	var pairs api.KVPairs
 	var meta *api.QueryMeta
 	var err error
-	for range myParams.machines {
+
+Loop:
+	for range kv.myParams.machines {
 		pairs, meta, err = kv.client.KV().List(prefix, nil)
-		// *** check error post loop
-		if err != nil {
-			if k, e := initKv(myParams); e != nil {
-				return nil, e
+		if err != nil && strings.Contains(err.Error(), HTTPError) {
+			err = errors.New(HTTPError)
+		}
+		switch err {
+		case nil:
+			break Loop
+		case errors.New(HTTPError):
+			if clientErr := kv.refreshClient(); clientErr != nil {
+				return nil, clientErr
 			} else {
-				*kv = *(k.(*consulKV))
-				continue
+				continue Loop
 			}
-		} else {
-			break
+		default:
+			return nil, err
 		}
 	}
 
@@ -459,17 +498,23 @@ func (kv *consulKV) Delete(key string) (*kvdb.KVPair, error) {
 	key = kv.domain + key
 	key = stripConsecutiveForwardslash(key)
 
-	for range myParams.machines {
-		// *** also check this err after loop is over
-		if _, err = kv.client.KV().Delete(key, nil); err != nil {
-			if k, e := initKv(myParams); e != nil {
-				return nil, e
+Loop:
+	for range kv.myParams.machines {
+		_, err = kv.client.KV().Delete(key, nil)
+		if err != nil && strings.Contains(err.Error(), HTTPError) {
+			err = errors.New(HTTPError)
+		}
+		switch err {
+		case nil:
+			break Loop
+		case errors.New(HTTPError):
+			if clientErr := kv.refreshClient(); clientErr != nil {
+				return nil, clientErr
 			} else {
-				*kv = *(k.(*consulKV))
-				continue
+				continue Loop
 			}
-		} else {
-			break
+		default:
+			return nil, err
 		}
 	}
 
@@ -488,17 +533,24 @@ func (kv *consulKV) DeleteTree(key string) error {
 		key += kvdb.DefaultSeparator
 	}
 	var err error
-	for range myParams.machines {
-		// *** also check this error after the loop is over
-		if _, err = kv.client.KV().DeleteTree(key, nil); err != nil {
-			if k, e := initKv(myParams); e != nil {
-				return e
+
+Loop:
+	for range kv.myParams.machines {
+		_, err = kv.client.KV().DeleteTree(key, nil)
+		if err != nil && strings.Contains(err.Error(), HTTPError) {
+			err = errors.New(HTTPError)
+		}
+		switch err {
+		case nil:
+			break Loop
+		case errors.New(HTTPError):
+			if clientErr := kv.refreshClient(); clientErr != nil {
+				return clientErr
 			} else {
-				*kv = *(k.(*consulKV))
-				continue
+				continue Loop
 			}
-		} else {
-			break
+		default:
+			return err
 		}
 	}
 
@@ -521,18 +573,23 @@ func (kv *consulKV) Keys(prefix, sep string) ([]string, error) {
 	var list []string
 	var err error
 
-	for range myParams.machines {
+Loop:
+	for range kv.myParams.machines {
 		list, _, err = kv.client.KV().Keys(prefix, sep, nil)
-		// *** also check this error after the loop
-		if err != nil {
-			if k, e := initKv(myParams); e != nil {
-				return nil, e
+		if err != nil && strings.Contains(err.Error(), HTTPError) {
+			err = errors.New(HTTPError)
+		}
+		switch err {
+		case nil:
+			break Loop
+		case errors.New(HTTPError):
+			if clientErr := kv.refreshClient(); clientErr != nil {
+				return nil, clientErr
 			} else {
-				*kv = *(k.(*consulKV))
-				continue
+				continue Loop
 			}
-		} else {
-			break
+		default:
+			return nil, err
 		}
 	}
 
@@ -589,17 +646,23 @@ func (kv *consulKV) CompareAndSet(
 	var ok bool
 	var err error
 
-	for range myParams.machines {
-		// *** also check this error after the loop is over.
-		if ok, _, err = kv.client.KV().CAS(pair, nil); err != nil {
-			if k, e := initKv(myParams); e != nil {
-				return nil, e
+Loop:
+	for range kv.myParams.machines {
+		ok, _, err = kv.client.KV().CAS(pair, nil)
+		if err != nil && strings.Contains(err.Error(), HTTPError) {
+			err = errors.New(HTTPError)
+		}
+		switch err {
+		case nil:
+			break Loop
+		case errors.New(HTTPError):
+			if clientErr := kv.refreshClient(); clientErr != nil {
+				return nil, clientErr
 			} else {
-				*kv = *(k.(*consulKV))
-				continue
+				continue Loop
 			}
-		} else {
-			break
+		default:
+			return nil, err
 		}
 	}
 
@@ -654,17 +717,23 @@ func (kv *consulKV) CompareAndDelete(
 	var ok bool
 	var err error
 
-	for range myParams.machines {
-		// *** also check this error after the loop
-		if ok, _, err = kv.client.KV().DeleteCAS(pair, nil); err != nil {
-			if k, e := initKv(myParams); e != nil {
-				return nil, e
+Loop:
+	for range kv.myParams.machines {
+		ok, _, err = kv.client.KV().DeleteCAS(pair, nil)
+		if err != nil && strings.Contains(err.Error(), HTTPError) {
+			err = errors.New(HTTPError)
+		}
+		switch err {
+		case nil:
+			break Loop
+		case errors.New(HTTPError):
+			if clientErr := kv.refreshClient(); clientErr != nil {
+				return nil, clientErr
 			} else {
-				*kv = *(k.(*consulKV))
-				continue
+				continue Loop
 			}
-		} else {
-			break
+		default:
+			return nil, err
 		}
 	}
 
@@ -814,17 +883,23 @@ func (kv *consulKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 	listKey = stripConsecutiveForwardslash(listKey)
 
 	var pairs api.KVPairs
-	for range myParams.machines {
-		// *** also check this err post loop
-		if pairs, _, err = kv.client.KV().List(listKey, options); err != nil {
-			if k, e := initKv(myParams); e != nil {
-				return nil, 0, e
+Loop:
+	for range kv.myParams.machines {
+		pairs, _, err = kv.client.KV().List(listKey, options)
+		if err != nil && strings.Contains(err.Error(), HTTPError) {
+			err = errors.New(HTTPError)
+		}
+		switch err {
+		case nil:
+			break Loop
+		case errors.New(HTTPError):
+			if clientErr := kv.refreshClient(); clientErr != nil {
+				return nil, 0, clientErr
 			} else {
-				*kv = *(k.(*consulKV))
-				continue
+				continue Loop
 			}
-		} else {
-			break
+		default:
+			return nil, 0, err
 		}
 	}
 
