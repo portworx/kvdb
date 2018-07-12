@@ -5,7 +5,6 @@ package consul
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -29,7 +28,12 @@ const (
 	bootstrap = "kvdb/bootstrap"
 	// MaxRenewRetries to renew TTL.
 	MaxRenewRetries = 5
-	HTTPError       = "Unexpected response code: 500"
+
+	// HTTPError is a substring returned by consul during such http errors.
+	// Ideally such errors should be provided as consul constants
+	HTTPError = "Unexpected response code: 500"
+	// EOFError is also a substring returned by consul during EOF errors.
+	EOFError = "EOF"
 )
 
 var (
@@ -89,8 +93,10 @@ type consulLock struct {
 	tag    interface{}
 }
 
-func isHttpError(err error) bool {
-	return strings.Contains(err.Error(), HTTPError)
+// isConsulErrNeedingRetry is a type of consul error on which we should try refreshing consul client.
+func isConsulErrNeedingRetry(err error) bool {
+	return strings.Contains(err.Error(), HTTPError) ||
+		strings.Contains(err.Error(), EOFError)
 }
 
 // newKvClient constructs new kvdb.Kvdb given a single end-point to connect to.
@@ -248,21 +254,20 @@ func (kv *consulKV) Get(key string) (*kvdb.KVPair, error) {
 	var meta *api.QueryMeta
 	var err error
 
-Loop:
 	for range kv.myParams.machines {
 		pair, meta, err = kv.client.KV().Get(key, options)
 		if err != nil {
-			if isHttpError(err) {
+			if isConsulErrNeedingRetry(err) {
 				if clientErr := kv.refreshClient(); clientErr != nil {
 					return nil, clientErr
 				} else {
-					continue Loop
+					continue
 				}
 			} else {
 				return nil, err
 			}
 		} else {
-			break Loop
+			break
 		}
 	}
 
@@ -337,20 +342,20 @@ func (kv *consulKV) Put(
 	var ok bool
 	if ttl == 0 {
 
-	Loop:
 		for range kv.myParams.machines {
 			_, err = kv.client.KV().Put(pair, nil)
-			switch err {
-			case nil:
-				break Loop
-			case errors.New(HTTPError):
-				if clientErr := kv.refreshClient(); clientErr != nil {
-					return nil, clientErr
+			if err != nil {
+				if isConsulErrNeedingRetry(err) {
+					if clientErr := kv.refreshClient(); clientErr != nil {
+						return nil, clientErr
+					} else {
+						continue
+					}
 				} else {
-					continue Loop
+					return nil, err
 				}
-			default:
-				return nil, err
+			} else {
+				break
 			}
 		}
 
@@ -361,20 +366,20 @@ func (kv *consulKV) Put(
 	} else {
 		// It is unclear why err == nil but ok == false. We always
 		// delete any existing sessions on Put, so this should work fine.
-	Loop2:
 		for range kv.myParams.machines {
 			ok, _, err = kv.client.KV().Acquire(pair, nil)
-			switch err {
-			case nil:
-				break Loop2
-			case errors.New(HTTPError):
-				if clientErr := kv.refreshClient(); clientErr != nil {
-					return nil, clientErr
+			if err != nil {
+				if isConsulErrNeedingRetry(err) {
+					if clientErr := kv.refreshClient(); clientErr != nil {
+						return nil, clientErr
+					} else {
+						continue
+					}
 				} else {
-					continue Loop2
+					return nil, err
 				}
-			default:
-				return nil, err
+			} else {
+				break
 			}
 		}
 
@@ -411,7 +416,6 @@ func (kv *consulKV) Create(
 		kvPair.Action = kvdb.KVCreate
 		if ttl > 0 {
 			var ok bool
-		Loop:
 			for range kv.myParams.machines {
 				ok, _, err = kv.client.KV().Acquire(sessionPair, nil)
 				if ok && err == nil {
@@ -423,17 +427,18 @@ func (kv *consulKV) Create(
 				if _, err := kv.Delete(key); err != nil {
 					logrus.Error(err)
 				}
-				switch err {
-				case nil:
-					break Loop
-				case errors.New(HTTPError):
-					if clientErr := kv.refreshClient(); clientErr != nil {
-						return nil, clientErr
+				if err != nil {
+					if isConsulErrNeedingRetry(err) {
+						if clientErr := kv.refreshClient(); clientErr != nil {
+							return nil, clientErr
+						} else {
+							continue
+						}
 					} else {
-						continue Loop
+						return nil, err
 					}
-				default:
-					return nil, err
+				} else {
+					break
 				}
 			}
 
@@ -474,21 +479,20 @@ func (kv *consulKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 	var meta *api.QueryMeta
 	var err error
 
-Loop:
 	for range kv.myParams.machines {
 		pairs, meta, err = kv.client.KV().List(prefix, nil)
 		if err != nil {
-			if isHttpError(err) {
+			if isConsulErrNeedingRetry(err) {
 				if clientErr := kv.refreshClient(); clientErr != nil {
 					return nil, clientErr
 				} else {
-					continue Loop
+					continue
 				}
 			} else {
 				return nil, err
 			}
 		} else {
-			break Loop
+			break
 		}
 	}
 
@@ -508,21 +512,20 @@ func (kv *consulKV) Delete(key string) (*kvdb.KVPair, error) {
 	key = kv.domain + key
 	key = stripConsecutiveForwardslash(key)
 
-Loop:
 	for range kv.myParams.machines {
 		_, err = kv.client.KV().Delete(key, nil)
 		if err != nil {
-			if isHttpError(err) {
+			if isConsulErrNeedingRetry(err) {
 				if clientErr := kv.refreshClient(); clientErr != nil {
 					return nil, clientErr
 				} else {
-					continue Loop
+					continue
 				}
 			} else {
 				return nil, err
 			}
 		} else {
-			break Loop
+			break
 		}
 	}
 
@@ -542,23 +545,20 @@ func (kv *consulKV) DeleteTree(key string) error {
 	}
 	var err error
 
-Loop:
 	for range kv.myParams.machines {
 		_, err = kv.client.KV().DeleteTree(key, nil)
-		if err != nil && strings.Contains(err.Error(), HTTPError) {
-			err = errors.New(HTTPError)
-		}
-		switch err {
-		case nil:
-			break Loop
-		case errors.New(HTTPError):
-			if clientErr := kv.refreshClient(); clientErr != nil {
-				return clientErr
+		if err != nil {
+			if isConsulErrNeedingRetry(err) {
+				if clientErr := kv.refreshClient(); clientErr != nil {
+					return clientErr
+				} else {
+					continue
+				}
 			} else {
-				continue Loop
+				return err
 			}
-		default:
-			return err
+		} else {
+			break
 		}
 	}
 
@@ -581,21 +581,20 @@ func (kv *consulKV) Keys(prefix, sep string) ([]string, error) {
 	var list []string
 	var err error
 
-Loop:
 	for range kv.myParams.machines {
 		list, _, err = kv.client.KV().Keys(prefix, sep, nil)
 		if err != nil {
-			if isHttpError(err) {
+			if isConsulErrNeedingRetry(err) {
 				if clientErr := kv.refreshClient(); clientErr != nil {
 					return nil, clientErr
 				} else {
-					continue Loop
+					continue
 				}
 			} else {
 				return nil, err
 			}
 		} else {
-			break Loop
+			break
 		}
 	}
 
@@ -652,21 +651,20 @@ func (kv *consulKV) CompareAndSet(
 	var ok bool
 	var err error
 
-Loop:
 	for range kv.myParams.machines {
 		ok, _, err = kv.client.KV().CAS(pair, nil)
 		if err != nil {
-			if isHttpError(err) {
+			if isConsulErrNeedingRetry(err) {
 				if clientErr := kv.refreshClient(); clientErr != nil {
 					return nil, clientErr
 				} else {
-					continue Loop
+					continue
 				}
 			} else {
 				return nil, err
 			}
 		} else {
-			break Loop
+			break
 		}
 	}
 
@@ -676,6 +674,12 @@ Loop:
 	}
 
 	if !ok {
+		kvp, getErr := kv.Get(pair.Key)
+		if getErr == nil {
+			if bytes.Compare(kvp.Value, pair.Value) == 0 {
+				return kvp, nil
+			}
+		}
 		if (flags & kvdb.KVModifiedIndex) == 0 {
 			return nil, kvdb.ErrValueMismatch
 		}
@@ -721,21 +725,20 @@ func (kv *consulKV) CompareAndDelete(
 	var ok bool
 	var err error
 
-Loop:
 	for range kv.myParams.machines {
 		ok, _, err = kv.client.KV().DeleteCAS(pair, nil)
 		if err != nil {
-			if isHttpError(err) {
+			if isConsulErrNeedingRetry(err) {
 				if clientErr := kv.refreshClient(); clientErr != nil {
 					return nil, clientErr
 				} else {
-					continue Loop
+					continue
 				}
 			} else {
 				return nil, err
 			}
 		} else {
-			break Loop
+			break
 		}
 	}
 
@@ -885,23 +888,21 @@ func (kv *consulKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 	listKey = stripConsecutiveForwardslash(listKey)
 
 	var pairs api.KVPairs
-Loop:
+
 	for range kv.myParams.machines {
 		pairs, _, err = kv.client.KV().List(listKey, options)
-		if err != nil && strings.Contains(err.Error(), HTTPError) {
-			err = errors.New(HTTPError)
-		}
-		switch err {
-		case nil:
-			break Loop
-		case errors.New(HTTPError):
-			if clientErr := kv.refreshClient(); clientErr != nil {
-				return nil, 0, clientErr
+		if err != nil {
+			if isConsulErrNeedingRetry(err) {
+				if clientErr := kv.refreshClient(); clientErr != nil {
+					return nil, 0, clientErr
+				} else {
+					continue
+				}
 			} else {
-				continue Loop
+				return nil, 0, err
 			}
-		default:
-			return nil, 0, err
+		} else {
+			break
 		}
 	}
 
@@ -1131,7 +1132,25 @@ func (kv *consulKV) renewLockSession(
 	tag interface{},
 ) {
 	go func() {
-		_ = kv.client.Session().RenewPeriodic(initialTTL, session, nil, doneCh)
+		var err error
+		for range kv.myParams.machines {
+			err = kv.client.Session().RenewPeriodic(initialTTL, session, nil, doneCh)
+			if err != nil {
+				if isConsulErrNeedingRetry(err) {
+					if clientErr := kv.refreshClient(); clientErr != nil {
+						logrus.Error(clientErr)
+						return
+					} else {
+						continue
+					}
+				} else {
+					logrus.Error(err)
+					return
+				}
+			} else {
+				break
+			}
+		}
 	}()
 	if lockTimeout > 0 {
 		go func() {
@@ -1168,9 +1187,25 @@ func (kv *consulKV) getLock(
 		TTL:       (10 * time.Second).String(), // Consul multiplies the TTL by 2x
 		LockDelay: 0,                           // Virtually disable lock delay
 	}
-	session, _, err := kv.client.Session().Create(entry, nil)
-	if err != nil {
-		return nil, err
+
+	var session string
+	for range kv.myParams.machines {
+		session, _, err = kv.client.Session().Create(entry, nil)
+		if err != nil {
+			if isConsulErrNeedingRetry(err) {
+				if clientErr := kv.refreshClient(); clientErr != nil {
+					logrus.Error(clientErr)
+					return nil, clientErr
+				} else {
+					continue
+				}
+			} else {
+				logrus.Error(err)
+				return nil, err
+			}
+		} else {
+			break
+		}
 	}
 
 	// create a lock handle
@@ -1186,7 +1221,24 @@ func (kv *consulKV) getLock(
 		return nil, err
 	}
 	if lockChan, err := l.Lock(nil); err != nil || lockChan == nil {
-		_, _ = kv.client.Session().Destroy(session, nil)
+		for range kv.myParams.machines {
+			_, err = kv.client.Session().Destroy(session, nil)
+			if err != nil {
+				if isConsulErrNeedingRetry(err) {
+					if clientErr := kv.refreshClient(); clientErr != nil {
+						logrus.Error(clientErr)
+						return nil, clientErr
+					} else {
+						continue
+					}
+				} else {
+					logrus.Error(err)
+					return nil, err
+				}
+			} else {
+				break
+			}
+		}
 		return nil, kvdb.ErrExist
 	}
 
@@ -1232,23 +1284,22 @@ func (kv *consulKV) watchTreeStart(
 		var meta *api.QueryMeta
 		var err error
 
-	Loop:
 		for range kv.myParams.machines {
 			kvPairs, meta, err = kv.client.KV().List(prefix, opts)
 			if err != nil {
-				if isHttpError(err) {
+				if isConsulErrNeedingRetry(err) {
 					if clientErr := kv.refreshClient(); clientErr != nil {
 						logrus.Error(clientErr)
 						return
 					} else {
-						continue Loop
+						continue
 					}
 				} else {
 					logrus.Error(err)
 					return
 				}
 			} else {
-				break Loop
+				break
 			}
 		}
 
@@ -1362,26 +1413,22 @@ func (kv *consulKV) watchKeyStart(
 		var pair *api.KVPair
 		var meta *api.QueryMeta
 		var err error
-	Loop:
-		// Make a blocking Get query
 		for range kv.myParams.machines {
 			pair, meta, err = kv.client.KV().Get(key, opts)
-			if err != nil && strings.Contains(err.Error(), HTTPError) {
-				err = errors.New(HTTPError)
-			}
-			switch err {
-			case nil:
-				break Loop
-			case errors.New(HTTPError):
-				if clientErr := kv.refreshClient(); clientErr != nil {
-					logrus.Error(clientErr)
-					return
+			if err != nil {
+				if isConsulErrNeedingRetry(err) {
+					if clientErr := kv.refreshClient(); clientErr != nil {
+						logrus.Error(clientErr)
+						return
+					} else {
+						continue
+					}
 				} else {
-					continue Loop
+					logrus.Error(err)
+					return
 				}
-			default:
-				logrus.Error(err)
-				return
+			} else {
+				break
 			}
 		}
 
@@ -1459,9 +1506,23 @@ func (kv *consulKV) renewSession(
 			return "", kvdb.ErrModified
 		}
 		// Destroy the existing session associated with the key
-		_, err := kv.client.Session().Destroy(session, nil)
-		if err != nil {
-			return "", err
+		for range kv.myParams.machines {
+			_, err = kv.client.Session().Destroy(session, nil)
+			if err != nil {
+				if isConsulErrNeedingRetry(err) {
+					if clientErr := kv.refreshClient(); clientErr != nil {
+						logrus.Error(clientErr)
+						return "", clientErr
+					} else {
+						continue
+					}
+				} else {
+					logrus.Error(err)
+					return "", err
+				}
+			} else {
+				break
+			}
 		}
 	}
 
@@ -1474,13 +1535,44 @@ func (kv *consulKV) renewSession(
 	}
 
 	// Create the key session
-	session, _, err = kv.client.Session().Create(entry, nil)
-	if err != nil {
-		return "", err
+	for range kv.myParams.machines {
+		session, _, err = kv.client.Session().Create(entry, nil)
+		if err != nil {
+			if isConsulErrNeedingRetry(err) {
+				if clientErr := kv.refreshClient(); clientErr != nil {
+					logrus.Error(clientErr)
+					return "", clientErr
+				} else {
+					continue
+				}
+			} else {
+				logrus.Error(err)
+				return "", err
+			}
+		} else {
+			break
+		}
 	}
 
 	// Session timer is started after a call to "Renew"
-	_, _, err = kv.client.Session().Renew(session, nil)
+	for range kv.myParams.machines {
+		_, _, err = kv.client.Session().Renew(session, nil)
+		if err != nil {
+			if isConsulErrNeedingRetry(err) {
+				if clientErr := kv.refreshClient(); clientErr != nil {
+					logrus.Error(clientErr)
+					return "", clientErr
+				} else {
+					continue
+				}
+			} else {
+				logrus.Error(err)
+				return "", err
+			}
+		} else {
+			break
+		}
+	}
 	return session, err
 }
 
@@ -1489,25 +1581,23 @@ func (kv *consulKV) renewSession(
 func (kv *consulKV) getActiveSession(key string) (string, error) {
 	var pair *api.KVPair
 	var err error
-Loop:
+
 	for range kv.myParams.machines {
 		pair, _, err = kv.client.KV().Get(key, nil)
-		if err != nil && strings.Contains(err.Error(), HTTPError) {
-			err = errors.New(HTTPError)
-		}
-		switch err {
-		case nil:
-			break Loop
-		case errors.New(HTTPError):
-			if clientErr := kv.refreshClient(); clientErr != nil {
-				logrus.Error(clientErr)
-				return "", clientErr
+		if err != nil {
+			if isConsulErrNeedingRetry(err) {
+				if clientErr := kv.refreshClient(); clientErr != nil {
+					logrus.Error(clientErr)
+					return "", clientErr
+				} else {
+					continue
+				}
 			} else {
-				continue Loop
+				logrus.Error(err)
+				return "", err
 			}
-		default:
-			logrus.Error(err)
-			return "", err
+		} else {
+			break
 		}
 	}
 
