@@ -90,6 +90,10 @@ type consulLock struct {
 	tag    interface{}
 }
 
+func isHttpError(err error) bool {
+	return strings.Contains(err.Error(), HTTPError)
+}
+
 // newKvClient constructs new kvdb.Kvdb given a single end-point to connect to.
 func newKvClient(machine string, p param) (*api.Config, *api.Client, error) {
 	config := api.DefaultConfig()
@@ -237,20 +241,18 @@ func (kv *consulKV) Get(key string) (*kvdb.KVPair, error) {
 Loop:
 	for range kv.myParams.machines {
 		pair, meta, err = kv.client.KV().Get(key, options)
-		if err != nil && strings.Contains(err.Error(), HTTPError) {
-			err = errors.New(HTTPError)
-		}
-		switch err {
-		case nil:
-			break Loop
-		case errors.New(HTTPError):
-			if clientErr := kv.refreshClient(); clientErr != nil {
-				return nil, clientErr
+		if err != nil {
+			if isHttpError(err) {
+				if clientErr := kv.refreshClient(); clientErr != nil {
+					return nil, clientErr
+				} else {
+					continue Loop
+				}
 			} else {
-				continue Loop
+				return nil, err
 			}
-		default:
-			return nil, err
+		} else {
+			break Loop
 		}
 	}
 
@@ -465,20 +467,18 @@ func (kv *consulKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 Loop:
 	for range kv.myParams.machines {
 		pairs, meta, err = kv.client.KV().List(prefix, nil)
-		if err != nil && strings.Contains(err.Error(), HTTPError) {
-			err = errors.New(HTTPError)
-		}
-		switch err {
-		case nil:
-			break Loop
-		case errors.New(HTTPError):
-			if clientErr := kv.refreshClient(); clientErr != nil {
-				return nil, clientErr
+		if err != nil {
+			if isHttpError(err) {
+				if clientErr := kv.refreshClient(); clientErr != nil {
+					return nil, clientErr
+				} else {
+					continue Loop
+				}
 			} else {
-				continue Loop
+				return nil, err
 			}
-		default:
-			return nil, err
+		} else {
+			break Loop
 		}
 	}
 
@@ -501,20 +501,18 @@ func (kv *consulKV) Delete(key string) (*kvdb.KVPair, error) {
 Loop:
 	for range kv.myParams.machines {
 		_, err = kv.client.KV().Delete(key, nil)
-		if err != nil && strings.Contains(err.Error(), HTTPError) {
-			err = errors.New(HTTPError)
-		}
-		switch err {
-		case nil:
-			break Loop
-		case errors.New(HTTPError):
-			if clientErr := kv.refreshClient(); clientErr != nil {
-				return nil, clientErr
+		if err != nil {
+			if isHttpError(err) {
+				if clientErr := kv.refreshClient(); clientErr != nil {
+					return nil, clientErr
+				} else {
+					continue Loop
+				}
 			} else {
-				continue Loop
+				return nil, err
 			}
-		default:
-			return nil, err
+		} else {
+			break Loop
 		}
 	}
 
@@ -576,20 +574,18 @@ func (kv *consulKV) Keys(prefix, sep string) ([]string, error) {
 Loop:
 	for range kv.myParams.machines {
 		list, _, err = kv.client.KV().Keys(prefix, sep, nil)
-		if err != nil && strings.Contains(err.Error(), HTTPError) {
-			err = errors.New(HTTPError)
-		}
-		switch err {
-		case nil:
-			break Loop
-		case errors.New(HTTPError):
-			if clientErr := kv.refreshClient(); clientErr != nil {
-				return nil, clientErr
+		if err != nil {
+			if isHttpError(err) {
+				if clientErr := kv.refreshClient(); clientErr != nil {
+					return nil, clientErr
+				} else {
+					continue Loop
+				}
 			} else {
-				continue Loop
+				return nil, err
 			}
-		default:
-			return nil, err
+		} else {
+			break Loop
 		}
 	}
 
@@ -649,20 +645,18 @@ func (kv *consulKV) CompareAndSet(
 Loop:
 	for range kv.myParams.machines {
 		ok, _, err = kv.client.KV().CAS(pair, nil)
-		if err != nil && strings.Contains(err.Error(), HTTPError) {
-			err = errors.New(HTTPError)
-		}
-		switch err {
-		case nil:
-			break Loop
-		case errors.New(HTTPError):
-			if clientErr := kv.refreshClient(); clientErr != nil {
-				return nil, clientErr
+		if err != nil {
+			if isHttpError(err) {
+				if clientErr := kv.refreshClient(); clientErr != nil {
+					return nil, clientErr
+				} else {
+					continue Loop
+				}
 			} else {
-				continue Loop
+				return nil, err
 			}
-		default:
-			return nil, err
+		} else {
+			break Loop
 		}
 	}
 
@@ -720,20 +714,18 @@ func (kv *consulKV) CompareAndDelete(
 Loop:
 	for range kv.myParams.machines {
 		ok, _, err = kv.client.KV().DeleteCAS(pair, nil)
-		if err != nil && strings.Contains(err.Error(), HTTPError) {
-			err = errors.New(HTTPError)
-		}
-		switch err {
-		case nil:
-			break Loop
-		case errors.New(HTTPError):
-			if clientErr := kv.refreshClient(); clientErr != nil {
-				return nil, clientErr
+		if err != nil {
+			if isHttpError(err) {
+				if clientErr := kv.refreshClient(); clientErr != nil {
+					return nil, clientErr
+				} else {
+					continue Loop
+				}
 			} else {
-				continue Loop
+				return nil, err
 			}
-		default:
-			return nil, err
+		} else {
+			break Loop
 		}
 	}
 
