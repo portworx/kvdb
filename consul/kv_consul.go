@@ -697,7 +697,7 @@ func (kv *consulKV) CompareAndSet(
 				continue
 			}
 
-		} else if isKeyIndexMismatchErr(err) && retried {
+		} else if err != nil && isKeyIndexMismatchErr(err) && retried {
 			kvPair, getErr := kv.Get(kvp.Key)
 			if getErr != nil {
 				// failed to get value from kvdb
@@ -784,7 +784,7 @@ func (kv *consulKV) CompareAndDelete(
 			} else {
 				continue
 			}
-		} else if isKeyIndexMismatchErr(err) && retried {
+		} else if err != nil && isKeyIndexMismatchErr(err) && retried {
 			kvPair, getErr := kv.Get(kvp.Key)
 			if getErr != nil {
 				// failed to get value from kvdb
