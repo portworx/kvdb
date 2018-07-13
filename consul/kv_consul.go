@@ -35,6 +35,8 @@ const (
 	httpError = "Unexpected response code: 500"
 	// eofError is also a substring returned by consul during EOF errors.
 	eofError = "EOF"
+	// keyIndexMismatch indicates consul error for key index mismatch
+	keyIndexMismatch = "Key Index mismatch"
 	// refreshDelay is the wait to wait before testing connection with a machine
 	refreshDelay = 5 * time.Second
 )
@@ -103,6 +105,11 @@ type consulLock struct {
 func isConsulErrNeedingRetry(err error) bool {
 	return strings.Contains(err.Error(), httpError) ||
 		strings.Contains(err.Error(), eofError)
+}
+
+// isKeyIndexMismatchErr returns true if error contains key index mismatch substring
+func isKeyIndexMismatchErr(err error) bool {
+	return strings.Contains(err.Error(), keyIndexMismatch)
 }
 
 // newKvClient constructs new kvdb.Kvdb given a single end-point to connect to.
@@ -678,18 +685,32 @@ func (kv *consulKV) CompareAndSet(
 
 	var ok bool
 	var err error
+	retried := false
 
 	for i := 0; i < refreshCount; i++ {
 		ok, _, err = kv.client.KV().CAS(pair, nil)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-					return nil, clientErr
-				} else {
-					continue
-				}
+		if err != nil && isConsulErrNeedingRetry(err) {
+			retried = true
+			if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
+				return nil, clientErr
 			} else {
+				continue
+			}
+
+		} else if isKeyIndexMismatchErr(err) && retried {
+			kvPair, getErr := kv.Get(kvp.Key)
+			if getErr != nil {
+				// failed to get value from kvdb
 				return nil, err
+			}
+
+			// Prev Value not equal to current value in etcd
+			if bytes.Compare(kvPair.Value, kvp.Value) != 0 {
+				return nil, err
+			} else {
+				// kvdb has the new value that we are trying to set
+				err = nil
+				break
 			}
 		} else {
 			break
@@ -752,18 +773,31 @@ func (kv *consulKV) CompareAndDelete(
 
 	var ok bool
 	var err error
+	retried := false
 
 	for i := 0; i < refreshCount; i++ {
 		ok, _, err = kv.client.KV().DeleteCAS(pair, nil)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-					return nil, clientErr
-				} else {
-					continue
-				}
+		if err != nil && isConsulErrNeedingRetry(err) {
+			retried = true
+			if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
+				return nil, clientErr
 			} else {
+				continue
+			}
+		} else if isKeyIndexMismatchErr(err) && retried {
+			kvPair, getErr := kv.Get(kvp.Key)
+			if getErr != nil {
+				// failed to get value from kvdb
 				return nil, err
+			}
+
+			// Prev Value not equal to current value in etcd
+			if bytes.Compare(kvPair.Value, kvp.Value) != 0 {
+				return nil, err
+			} else {
+				// kvdb has the new value that we are trying to set
+				err = nil
+				break
 			}
 		} else {
 			break
