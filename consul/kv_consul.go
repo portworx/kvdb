@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/google/uuid"
 	"github.com/hashicorp/consul/api"
 	"github.com/portworx/kvdb"
 	"github.com/portworx/kvdb/common"
@@ -217,6 +218,7 @@ func initKv(p param) (*consulKV, error) {
 func (kv *consulKV) refreshClient(timeDelay time.Duration) error {
 	var err error
 	var executed bool
+	threadID := uuid.New().String()
 
 	// once.Do executes func() only once across concurrently executing threads
 	kv.once.Do(func() {
@@ -227,7 +229,7 @@ func (kv *consulKV) refreshClient(timeDelay time.Duration) error {
 		for _, machine := range kv.myParams.machines {
 			machine := machine
 
-			logrus.Info("trying to refresh client with machine:", machine)
+			logrus.Infof("%s: %s: %s\n", threadID, "trying to refresh client with machine", machine)
 
 			if strings.HasPrefix(machine, "http://") {
 				machine = strings.TrimPrefix(machine, "http://")
@@ -240,7 +242,7 @@ func (kv *consulKV) refreshClient(timeDelay time.Duration) error {
 			if config, client, err = newKvClient(machine, kv.myParams); err == nil {
 				kv.client = client
 				kv.config = config
-				logrus.Info("client now points to machine:", machine)
+				logrus.Infof("%s: %s: %s\n", threadID, "successfully connected to", machine)
 				return
 			}
 		}
