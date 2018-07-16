@@ -20,8 +20,6 @@ type clientConsuler interface {
 	KV() *api.KV
 	// Session returns pointer to underlying Session object.
 	Session() *api.Session
-	// LockOpts returns pointer to underlying Lock object and an error.
-	LockOpts(opts *api.LockOptions) (*api.Lock, error)
 	// Refresh is PX specific op. It refreshes consul client on failover.
 	Refresh() error
 	// kvConsuler includes methods from that interface.
@@ -30,6 +28,8 @@ type clientConsuler interface {
 	sessionConsuler
 	// metaConsuler includes methods from that interface.
 	metaConsuler
+	// lockOptsConsuler includes methods from that interface.
+	lockOptsConsuler
 }
 
 type kvConsuler interface {
@@ -70,6 +70,8 @@ type metaConsuler interface {
 }
 
 type lockOptsConsuler interface {
+	// LockOpts returns pointer to underlying Lock object and an error.
+	LockOpts(opts *api.LockOptions) (*api.Lock, error)
 }
 
 // consulClient wraps config information and consul client along with sync functionality to refresh it once.
