@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
-	"net/http"
 	"regexp"
 	"sort"
 	"strconv"
@@ -16,7 +15,6 @@ import (
 	"time"
 
 	"github.com/Sirupsen/logrus"
-	"github.com/google/uuid"
 	"github.com/hashicorp/consul/api"
 	"github.com/portworx/kvdb"
 	"github.com/portworx/kvdb/common"
@@ -44,8 +42,6 @@ const (
 var (
 	// an incorrect is added to check failover
 	defaultMachines = []string{"3.1.4.1:5926", "127.0.0.1:8500"}
-	// refreshCount is the number of times to try establishing valid conn
-	refreshCount = 3
 )
 
 // param stores init paramaters for consul kv.
@@ -85,14 +81,13 @@ func stripConsecutiveForwardslash(key string) string {
 
 type consulKV struct {
 	common.BaseKvdb
-	client *api.Client
-	once   *sync.Once
-	config *api.Config
+	// client is an instance of clientConsuler, which is a px defined interface.
+	// clientConsuler wraps pointer to client from consul api but also provides
+	// methods to refresh it during failover.
+	client clientConsuler
 	domain string
 	kvdb.Controller
-	// myParams holds all params required to obtain new api client
-	myParams param
-	mu       sync.Mutex
+	mu sync.Mutex
 }
 
 type consulLock struct {
@@ -110,28 +105,6 @@ func isConsulErrNeedingRetry(err error) bool {
 // isKeyIndexMismatchErr returns true if error contains key index mismatch substring
 func isKeyIndexMismatchErr(err error) bool {
 	return strings.Contains(err.Error(), keyIndexMismatch)
-}
-
-// newKvClient constructs new kvdb.Kvdb given a single end-point to connect to.
-func newKvClient(machine string, p param) (*api.Config, *api.Client, error) {
-	config := api.DefaultConfig()
-	config.HttpClient = http.DefaultClient
-	config.Address = machine
-	config.Scheme = "http"
-	// Get the ACL token if provided
-	config.Token = p.options[kvdb.ACLTokenKey]
-
-	client, err := api.NewClient(config)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// check health to ensure communication with consul are working
-	if _, _, err := client.Health().State(api.HealthAny, nil); err != nil {
-		return nil, nil, err
-	}
-
-	return config, client, nil
 }
 
 // shuffle list of input strings
@@ -196,10 +169,6 @@ func initKv(p param) (*consulKV, error) {
 	var config *api.Config
 	var client *api.Client
 
-	if refreshCount < len(p.machines) {
-		refreshCount = len(p.machines)
-	}
-
 	for _, machine := range p.machines {
 		machine := machine
 		if strings.HasPrefix(machine, "http://") {
@@ -210,57 +179,13 @@ func initKv(p param) (*consulKV, error) {
 		if config, client, err = newKvClient(machine, p); err == nil {
 			return &consulKV{
 				BaseKvdb:   common.BaseKvdb{FatalCb: p.fatalErrorCb},
-				client:     client,
-				once:       new(sync.Once),
-				config:     config,
 				domain:     p.domain,
 				Controller: kvdb.ControllerNotSupported,
-				myParams:   p,
+				client:     newConsulClienter(config, client, refreshDelay, p),
 			}, nil
 		}
 	}
 	return nil, err
-}
-
-func (kv *consulKV) refreshClient(timeDelay time.Duration) error {
-	var err error
-	var executed bool
-	threadID := uuid.New().String()
-
-	// once.Do executes func() only once across concurrently executing threads
-	kv.once.Do(func() {
-		executed = true
-		var config *api.Config
-		var client *api.Client
-
-		for _, machine := range kv.myParams.machines {
-			machine := machine
-
-			logrus.Infof("%s: %s: %s\n", threadID, "trying to refresh client with machine", machine)
-
-			if strings.HasPrefix(machine, "http://") {
-				machine = strings.TrimPrefix(machine, "http://")
-			} else if strings.HasPrefix(machine, "https://") {
-				machine = strings.TrimPrefix(machine, "https://")
-			}
-
-			// sleep for requested delay before testing new connection
-			time.Sleep(timeDelay)
-			if config, client, err = newKvClient(machine, kv.myParams); err == nil {
-				kv.client = client
-				kv.config = config
-				logrus.Infof("%s: %s: %s\n", threadID, "successfully connected to", machine)
-				return
-			}
-		}
-	})
-
-	// update once only if the func above was executed
-	if executed {
-		kv.once = new(sync.Once)
-	}
-
-	return err
 }
 
 // Version returns the supported version for consul api
@@ -285,28 +210,7 @@ func (kv *consulKV) Get(key string) (*kvdb.KVPair, error) {
 	key = kv.domain + key
 	key = stripConsecutiveForwardslash(key)
 
-	var pair *api.KVPair
-	var meta *api.QueryMeta
-	var err error
-
-	for i := 0; i < refreshCount; i++ {
-		pair, meta, err = kv.client.KV().Get(key, options)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-					return nil, clientErr
-				} else {
-					continue
-				}
-			} else {
-				return nil, err
-			}
-		} else {
-			break
-		}
-	}
-
-	// this err is created in loop ***
+	pair, meta, err := kv.client.Get(key, options)
 	if err != nil {
 		return nil, err
 	}
@@ -374,57 +278,16 @@ func (kv *consulKV) Put(
 		return nil, err
 	}
 
-	var ok bool
 	if ttl == 0 {
 
-		for i := 0; i < refreshCount; i++ {
-			_, err = kv.client.KV().Put(pair, nil)
-			if err != nil {
-				if isConsulErrNeedingRetry(err) {
-					if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-						return nil, clientErr
-					} else {
-						continue
-					}
-				} else {
-					return nil, err
-				}
-			} else {
-				break
-			}
-		}
-
-		// *** this error is created in loop above
-		if err != nil {
+		if _, err := kv.client.Put(pair, nil); err != nil {
 			return nil, err
 		}
 	} else {
 		// It is unclear why err == nil but ok == false. We always
 		// delete any existing sessions on Put, so this should work fine.
-		for i := 0; i < refreshCount; i++ {
-			ok, _, err = kv.client.KV().Acquire(pair, nil)
-			if err != nil {
-				if isConsulErrNeedingRetry(err) {
-					if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-						return nil, clientErr
-					} else {
-						continue
-					}
-				} else {
-					return nil, err
-				}
-			} else {
-				break
-			}
-		}
-
-		// *** this error is created in loop above
-		if err != nil {
+		if _, err := kv.client.Acquire(pair, nil); err != nil {
 			return nil, err
-		}
-
-		if !ok {
-			return nil, fmt.Errorf("Acquire failed")
 		}
 	}
 
@@ -450,35 +313,10 @@ func (kv *consulKV) Create(
 	if err == nil {
 		kvPair.Action = kvdb.KVCreate
 		if ttl > 0 {
-			var ok bool
-			for i := 0; i < refreshCount; i++ {
-				ok, _, err = kv.client.KV().Acquire(sessionPair, nil)
-				if ok && err == nil {
-					return kvPair, err
-				}
-				if _, err := kv.client.Session().Destroy(sessionPair.Session, nil); err != nil {
-					logrus.Error(err)
-				}
-				if _, err := kv.Delete(key); err != nil {
-					logrus.Error(err)
-				}
-				if err != nil {
-					if isConsulErrNeedingRetry(err) {
-						if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-							return nil, clientErr
-						} else {
-							continue
-						}
-					} else {
-						return nil, err
-					}
-				} else {
-					break
-				}
-			}
-
-			if !ok {
-				return nil, fmt.Errorf("Failed to set ttl")
+			if _, ok, err := kv.client.CreateMeta(key, sessionPair, nil); ok && cerr == nil {
+				return kvPair, err
+			} else if err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -510,28 +348,8 @@ func (kv *consulKV) Update(
 func (kv *consulKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 	prefix = kv.domain + prefix
 	prefix = stripConsecutiveForwardslash(prefix)
-	var pairs api.KVPairs
-	var meta *api.QueryMeta
-	var err error
 
-	for i := 0; i < refreshCount; i++ {
-		pairs, meta, err = kv.client.KV().List(prefix, nil)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-					return nil, clientErr
-				} else {
-					continue
-				}
-			} else {
-				return nil, err
-			}
-		} else {
-			break
-		}
-	}
-
-	// *** check error created in the loop
+	pairs, meta, err := kv.client.List(prefix, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -547,25 +365,7 @@ func (kv *consulKV) Delete(key string) (*kvdb.KVPair, error) {
 	key = kv.domain + key
 	key = stripConsecutiveForwardslash(key)
 
-	for i := 0; i < refreshCount; i++ {
-		_, err = kv.client.KV().Delete(key, nil)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-					return nil, clientErr
-				} else {
-					continue
-				}
-			} else {
-				return nil, err
-			}
-		} else {
-			break
-		}
-	}
-
-	// *** check err created in the loop
-	if err != nil {
+	if _, err := kv.client.Delete(key, nil); err != nil {
 		return nil, err
 	}
 
@@ -578,26 +378,8 @@ func (kv *consulKV) DeleteTree(key string) error {
 	if !strings.HasSuffix(key, kvdb.DefaultSeparator) {
 		key += kvdb.DefaultSeparator
 	}
-	var err error
 
-	for i := 0; i < refreshCount; i++ {
-		_, err = kv.client.KV().DeleteTree(key, nil)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-					return clientErr
-				} else {
-					continue
-				}
-			} else {
-				return err
-			}
-		} else {
-			break
-		}
-	}
-
-	// *** return err created in the loop
+	_, err := kv.client.DeleteTree(key, nil)
 	return err
 }
 
@@ -613,27 +395,8 @@ func (kv *consulKV) Keys(prefix, sep string) ([]string, error) {
 		prefix += sep
 		lenPrefix += lenSep
 	}
-	var list []string
-	var err error
 
-	for i := 0; i < refreshCount; i++ {
-		list, _, err = kv.client.KV().Keys(prefix, sep, nil)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-					return nil, clientErr
-				} else {
-					continue
-				}
-			} else {
-				return nil, err
-			}
-		} else {
-			break
-		}
-	}
-
-	// *** check err created in the loop
+	list, _, err := kv.client.Keys(prefix, sep, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -683,41 +446,7 @@ func (kv *consulKV) CompareAndSet(
 		pair.ModifyIndex = 0
 	}
 
-	var ok bool
-	var err error
-	retried := false
-
-	for i := 0; i < refreshCount; i++ {
-		ok, _, err = kv.client.KV().CAS(pair, nil)
-		if err != nil && isConsulErrNeedingRetry(err) {
-			retried = true
-			if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-				return nil, clientErr
-			} else {
-				continue
-			}
-
-		} else if err != nil && isKeyIndexMismatchErr(err) && retried {
-			kvPair, getErr := kv.Get(kvp.Key)
-			if getErr != nil {
-				// failed to get value from kvdb
-				return nil, err
-			}
-
-			// Prev Value not equal to current value in etcd
-			if bytes.Compare(kvPair.Value, kvp.Value) != 0 {
-				return nil, err
-			} else {
-				// kvdb has the new value that we are trying to set
-				err = nil
-				break
-			}
-		} else {
-			break
-		}
-	}
-
-	// *** check err created in the loop
+	ok, _, err := kv.client.CompareAndSet(kvp.Key, kvp.Value, pair, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -771,40 +500,7 @@ func (kv *consulKV) CompareAndDelete(
 		pair.ModifyIndex = kvp.ModifiedIndex
 	}
 
-	var ok bool
-	var err error
-	retried := false
-
-	for i := 0; i < refreshCount; i++ {
-		ok, _, err = kv.client.KV().DeleteCAS(pair, nil)
-		if err != nil && isConsulErrNeedingRetry(err) {
-			retried = true
-			if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-				return nil, clientErr
-			} else {
-				continue
-			}
-		} else if err != nil && isKeyIndexMismatchErr(err) && retried {
-			kvPair, getErr := kv.Get(kvp.Key)
-			if getErr != nil {
-				// failed to get value from kvdb
-				return nil, err
-			}
-
-			// Prev Value not equal to current value in etcd
-			if bytes.Compare(kvPair.Value, kvp.Value) != 0 {
-				return nil, err
-			} else {
-				// kvdb has the new value that we are trying to set
-				err = nil
-				break
-			}
-		} else {
-			break
-		}
-	}
-
-	// *** check err created in the loop
+	ok, _, err := kv.client.CompareAndDelete(kvp.Key, kvp.Value, pair, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -949,26 +645,7 @@ func (kv *consulKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 	listKey := kv.domain + prefix
 	listKey = stripConsecutiveForwardslash(listKey)
 
-	var pairs api.KVPairs
-
-	for i := 0; i < refreshCount; i++ {
-		pairs, _, err = kv.client.KV().List(listKey, options)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-					return nil, 0, clientErr
-				} else {
-					continue
-				}
-			} else {
-				return nil, 0, err
-			}
-		} else {
-			break
-		}
-	}
-
-	// *** check err created in the loop
+	pairs, _, err := kv.client.List(listKey, options)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1194,25 +871,7 @@ func (kv *consulKV) renewLockSession(
 	tag interface{},
 ) {
 	go func() {
-		var err error
-		for i := 0; i < refreshCount; i++ {
-			err = kv.client.Session().RenewPeriodic(initialTTL, session, nil, doneCh)
-			if err != nil {
-				if isConsulErrNeedingRetry(err) {
-					if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-						logrus.Error(clientErr)
-						return
-					} else {
-						continue
-					}
-				} else {
-					logrus.Error(err)
-					return
-				}
-			} else {
-				break
-			}
-		}
+		kv.client.RenewPeriodic(initialTTL, session, nil, doneCh)
 	}()
 	if lockTimeout > 0 {
 		go func() {
@@ -1250,25 +909,7 @@ func (kv *consulKV) getLock(
 		LockDelay: 0,                           // Virtually disable lock delay
 	}
 
-	var session string
-	for i := 0; i < refreshCount; i++ {
-		session, _, err = kv.client.Session().Create(entry, nil)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-					logrus.Error(clientErr)
-					return nil, clientErr
-				} else {
-					continue
-				}
-			} else {
-				logrus.Error(err)
-				return nil, err
-			}
-		} else {
-			break
-		}
-	}
+	session, _, err := kv.client.Create(entry, nil)
 
 	// create a lock handle
 	lockOpts := &api.LockOptions{
@@ -1283,24 +924,7 @@ func (kv *consulKV) getLock(
 		return nil, err
 	}
 	if lockChan, err := l.Lock(nil); err != nil || lockChan == nil {
-		for i := 0; i < refreshCount; i++ {
-			_, err = kv.client.Session().Destroy(session, nil)
-			if err != nil {
-				if isConsulErrNeedingRetry(err) {
-					if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-						logrus.Error(clientErr)
-						return nil, clientErr
-					} else {
-						continue
-					}
-				} else {
-					logrus.Error(err)
-					return nil, err
-				}
-			} else {
-				break
-			}
-		}
+		kv.client.Destroy(session, nil)
 		return nil, kvdb.ErrExist
 	}
 
@@ -1342,28 +966,7 @@ func (kv *consulKV) watchTreeStart(
 
 	for {
 		// Make a blocking List query
-		var kvPairs api.KVPairs
-		var meta *api.QueryMeta
-		var err error
-
-		for i := 0; i < refreshCount; i++ {
-			kvPairs, meta, err = kv.client.KV().List(prefix, opts)
-			if err != nil {
-				if isConsulErrNeedingRetry(err) {
-					if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-						logrus.Error(clientErr)
-						return
-					} else {
-						continue
-					}
-				} else {
-					logrus.Error(err)
-					return
-				}
-			} else {
-				break
-			}
-		}
+		kvPairs, meta, err := kv.client.List(prefix, opts)
 
 		pairs := CKVPairs(kvPairs)
 		sort.Sort(pairs)
@@ -1472,27 +1075,7 @@ func (kv *consulKV) watchKeyStart(
 	keyDeleted := false
 	var cbErr error
 	for {
-		var pair *api.KVPair
-		var meta *api.QueryMeta
-		var err error
-		for i := 0; i < refreshCount; i++ {
-			pair, meta, err = kv.client.KV().Get(key, opts)
-			if err != nil {
-				if isConsulErrNeedingRetry(err) {
-					if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-						logrus.Error(clientErr)
-						return
-					} else {
-						continue
-					}
-				} else {
-					logrus.Error(err)
-					return
-				}
-			} else {
-				break
-			}
-		}
+		pair, meta, err := kv.client.Get(key, opts)
 
 		if err != nil {
 			logrus.Errorf("Consul returned an error : %s\n", err.Error())
@@ -1568,24 +1151,7 @@ func (kv *consulKV) renewSession(
 			return "", kvdb.ErrModified
 		}
 		// Destroy the existing session associated with the key
-		for i := 0; i < refreshCount; i++ {
-			_, err = kv.client.Session().Destroy(session, nil)
-			if err != nil {
-				if isConsulErrNeedingRetry(err) {
-					if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-						logrus.Error(clientErr)
-						return "", clientErr
-					} else {
-						continue
-					}
-				} else {
-					logrus.Error(err)
-					return "", err
-				}
-			} else {
-				break
-			}
-		}
+		kv.client.Destroy(session, nil)
 	}
 
 	durationTTL := time.Duration(int64(ttl)) * time.Second
@@ -1597,72 +1163,18 @@ func (kv *consulKV) renewSession(
 	}
 
 	// Create the key session
-	for i := 0; i < refreshCount; i++ {
-		session, _, err = kv.client.Session().Create(entry, nil)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-					logrus.Error(clientErr)
-					return "", clientErr
-				} else {
-					continue
-				}
-			} else {
-				logrus.Error(err)
-				return "", err
-			}
-		} else {
-			break
-		}
-	}
+	session, _, err = kv.client.Create(entry, nil)
 
 	// Session timer is started after a call to "Renew"
-	for i := 0; i < refreshCount; i++ {
-		_, _, err = kv.client.Session().Renew(session, nil)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-					logrus.Error(clientErr)
-					return "", clientErr
-				} else {
-					continue
-				}
-			} else {
-				logrus.Error(err)
-				return "", err
-			}
-		} else {
-			break
-		}
-	}
+	kv.client.Renew(session, nil)
+
 	return session, err
 }
 
 // getActiveSession checks if the key already has
 // a session attached
 func (kv *consulKV) getActiveSession(key string) (string, error) {
-	var pair *api.KVPair
-	var err error
-
-	for i := 0; i < refreshCount; i++ {
-		pair, _, err = kv.client.KV().Get(key, nil)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := kv.refreshClient(refreshDelay); clientErr != nil {
-					logrus.Error(clientErr)
-					return "", clientErr
-				} else {
-					continue
-				}
-			} else {
-				logrus.Error(err)
-				return "", err
-			}
-		} else {
-			break
-		}
-	}
-
+	pair, _, err := kv.client.Get(key, nil)
 	if err != nil {
 		return "", err
 	}
