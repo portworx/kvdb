@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/Sirupsen/logrus"
-	"github.com/google/uuid"
 	"github.com/hashicorp/consul/api"
 	"github.com/portworx/kvdb"
 )
@@ -128,7 +127,6 @@ func (c *consulClient) LockOpts(opts *api.LockOptions) (*api.Lock, error) {
 func (c *consulClient) Refresh() error {
 	var err error
 	var executed bool
-	threadID := uuid.New().String()
 
 	// once.Do executes func() only once across concurrently executing threads
 	c.once.Do(func() {
@@ -139,7 +137,7 @@ func (c *consulClient) Refresh() error {
 		for _, machine := range c.myParams.machines {
 			machine := machine
 
-			logrus.Infof("%s: %s: %s\n", threadID, "trying to refresh client with machine", machine)
+			logrus.Infof("%s: %s\n", "trying to refresh client with machine", machine)
 
 			if strings.HasPrefix(machine, "http://") {
 				machine = strings.TrimPrefix(machine, "http://")
@@ -152,7 +150,7 @@ func (c *consulClient) Refresh() error {
 			if config, client, err = newKvClient(machine, c.myParams); err == nil {
 				c.client = client
 				c.config = config
-				logrus.Infof("%s: %s: %s\n", threadID, "successfully connected to", machine)
+				logrus.Infof("%s: %s\n", "successfully connected to", machine)
 				return
 			}
 		}
