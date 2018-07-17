@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/google/uuid"
 	"github.com/hashicorp/consul/api"
 	"github.com/portworx/kvdb"
-	"github.com/sirupsen/logrus"
 )
 
 // clientConsuler defines methods that a px based consul client should satisfy.
