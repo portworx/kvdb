@@ -175,13 +175,11 @@ func (c *consulClient) writeRetryFunc(f writeFunc) (*api.WriteMeta, error) {
 	var err error
 	var meta *api.WriteMeta
 	retry := false
-	for i := 0; i < c.refreshCount; i++ {
+	c.runWithRetry(func() bool {
 		meta, err = f()
-		if retry, err = c.checkAndRefresh(err); !retry {
-			break
-		}
-
-	}
+		retry, err = c.checkAndRefresh(err)
+		return retry
+	})
 	return meta, err
 }
 
@@ -200,18 +198,28 @@ func (c *consulClient) checkAndRefresh(err error) (bool, error) {
 	}
 }
 
+/// consulFunc runs a consulFunc operation and returns true if needs to be retried
+type consulFunc func() bool
+
+func (c *consulClient) runWithRetry(f consulFunc) {
+	for i := 0; i < c.refreshCount; i++ {
+		if !f() {
+			break
+		}
+	}
+}
+
 func (c *consulClient) Get(key string, q *api.QueryOptions) (*api.KVPair, *api.QueryMeta, error) {
 	var pair *api.KVPair
 	var meta *api.QueryMeta
 	var err error
 	retry := false
 
-	for i := 0; i < c.refreshCount; i++ {
+	c.runWithRetry(func() bool {
 		pair, meta, err = c.client.KV().Get(key, q)
-		if retry, err = c.checkAndRefresh(err); !retry {
-			break
-		}
-	}
+		retry, err = c.checkAndRefresh(err)
+		return retry
+	})
 
 	return pair, meta, err
 }
@@ -234,12 +242,11 @@ func (c *consulClient) Keys(prefix, separator string, q *api.QueryOptions) ([]st
 	var err error
 	retry := false
 
-	for i := 0; i < c.refreshCount; i++ {
+	c.runWithRetry(func() bool {
 		list, meta, err = c.client.KV().Keys(prefix, separator, nil)
-		if retry, err = c.checkAndRefresh(err); !retry {
-			break
-		}
-	}
+		retry, err = c.checkAndRefresh(err)
+		return retry
+	})
 
 	return list, meta, err
 }
@@ -250,12 +257,11 @@ func (c *consulClient) List(prefix string, q *api.QueryOptions) (api.KVPairs, *a
 	var err error
 	retry := false
 
-	for i := 0; i < c.refreshCount; i++ {
+	c.runWithRetry(func() bool {
 		pairs, meta, err = c.client.KV().List(prefix, nil)
-		if retry, err = c.checkAndRefresh(err); !retry {
-			break
-		}
-	}
+		retry, err = c.checkAndRefresh(err)
+		return retry
+	})
 
 	return pairs, meta, err
 }
@@ -266,12 +272,11 @@ func (c *consulClient) Acquire(p *api.KVPair, q *api.WriteOptions) (*api.WriteMe
 	var ok bool
 
 	retry := false
-	for i := 0; i < c.refreshCount; i++ {
+	c.runWithRetry(func() bool {
 		ok, meta, err = c.client.KV().Acquire(p, nil)
-		if retry, err = c.checkAndRefresh(err); !retry {
-			break
-		}
-	}
+		retry, err = c.checkAndRefresh(err)
+		return retry
+	})
 
 	// *** this error is created in loop above
 	if err != nil {
@@ -291,12 +296,11 @@ func (c *consulClient) Create(se *api.SessionEntry, q *api.WriteOptions) (string
 	var err error
 	retry := false
 
-	for i := 0; i < c.refreshCount; i++ {
+	c.runWithRetry(func() bool {
 		session, meta, err = c.client.Session().Create(se, q)
-		if retry, err = c.checkAndRefresh(err); !retry {
-			break
-		}
-	}
+		retry, err = c.checkAndRefresh(err)
+		return retry
+	})
 
 	return session, meta, err
 }
@@ -311,12 +315,11 @@ func (c *consulClient) Renew(id string, q *api.WriteOptions) (*api.SessionEntry,
 	var err error
 	retry := false
 
-	for i := 0; i < c.refreshCount; i++ {
+	c.runWithRetry(func() bool {
 		entry, meta, err = c.client.Session().Renew(id, q)
-		if retry, err = c.checkAndRefresh(err); !retry {
-			break
-		}
-	}
+		retry, err = c.checkAndRefresh(err)
+		return retry
+	})
 
 	return entry, meta, err
 }
@@ -325,12 +328,11 @@ func (c *consulClient) RenewPeriodic(initialTTL string, id string, q *api.WriteO
 	var err error
 	retry := false
 
-	for i := 0; i < c.refreshCount; i++ {
+	c.runWithRetry(func() bool {
 		err = c.client.Session().RenewPeriodic(initialTTL, id, nil, doneCh)
-		if retry, err = c.checkAndRefresh(err); !retry {
-			break
-		}
-	}
+		retry, err = c.checkAndRefresh(err)
+		return retry
+	})
 
 	return err
 }
