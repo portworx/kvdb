@@ -87,7 +87,6 @@ type consulKV struct {
 	client clientConsuler
 	domain string
 	kvdb.Controller
-	mu sync.Mutex
 }
 
 type consulLock struct {

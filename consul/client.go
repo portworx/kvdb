@@ -15,13 +15,6 @@ import (
 
 // clientConsuler defines methods that a px based consul client should satisfy.
 type clientConsuler interface {
-	// KV returns pointer to underlying consul KV object.
-	KV() *api.KV
-	// Session returns pointer to underlying Session object.
-	Session() *api.Session
-	// Refresh is PX specific op. It refreshes consul client on failover.
-	Refresh() error
-	// kvConsuler includes methods from that interface.
 	kvConsuler
 	// sessionConsuler includes methods methods from that interface.
 	sessionConsuler
@@ -106,16 +99,6 @@ func newConsulClienter(config *api.Config,
 		c.refreshCount = len(c.myParams.machines)
 	}
 	return c
-}
-
-// KV returns pointer to underlying consul KV object.
-func (c *consulClient) KV() *api.KV {
-	return c.client.KV()
-}
-
-// Session returns pointer to underlying Session object.
-func (c *consulClient) Session() *api.Session {
-	return c.client.Session()
 }
 
 // LockOpts returns pointer to underlying Lock object and an error.
