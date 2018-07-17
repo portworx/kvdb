@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
-	"net/http"
 	"regexp"
 	"sort"
 	"strconv"
@@ -16,7 +15,6 @@ import (
 	"time"
 
 	"github.com/Sirupsen/logrus"
-
 	"github.com/hashicorp/consul/api"
 	"github.com/portworx/kvdb"
 	"github.com/portworx/kvdb/common"
@@ -29,12 +27,30 @@ const (
 	bootstrap = "kvdb/bootstrap"
 	// MaxRenewRetries to renew TTL.
 	MaxRenewRetries = 5
+
+	// httpError is a substring returned by consul during such http errors.
+	// Ideally such errors should be provided as consul constants
+	httpError = "Unexpected response code: 500"
+	// eofError is also a substring returned by consul during EOF errors.
+	eofError = "EOF"
+	// keyIndexMismatch indicates consul error for key index mismatch
+	keyIndexMismatch = "Key Index mismatch"
+	// refreshDelay is the wait to wait before testing connection with a machine
+	refreshDelay = 5 * time.Second
 )
 
 var (
 	// an incorrect is added to check failover
 	defaultMachines = []string{"3.1.4.1:5926", "127.0.0.1:8500"}
 )
+
+// param stores init paramaters for consul kv.
+type param struct {
+	domain       string
+	machines     []string
+	options      map[string]string
+	fatalErrorCb kvdb.FatalErrorCB
+}
 
 // CKVPairs sortable KVPairs
 type CKVPairs api.KVPairs
@@ -65,10 +81,13 @@ func stripConsecutiveForwardslash(key string) string {
 
 type consulKV struct {
 	common.BaseKvdb
-	client *api.Client
-	config *api.Config
+	// client is an instance of clientConsuler, which is a px defined interface.
+	// clientConsuler wraps pointer to client from consul api but also provides
+	// methods to refresh it during failover.
+	client clientConsuler
 	domain string
 	kvdb.Controller
+	mu sync.Mutex
 }
 
 type consulLock struct {
@@ -77,9 +96,47 @@ type consulLock struct {
 	tag    interface{}
 }
 
-// newKv constructs new kvdb.Kvdb given a single end-point to connect to.
-func newKv(domain, machine string, options map[string]string, fatalErrorCb kvdb.FatalErrorCB) (kvdb.Kvdb, error) {
-	var token string
+// isConsulErrNeedingRetry is a type of consul error on which we should try refreshing consul client.
+func isConsulErrNeedingRetry(err error) bool {
+	return strings.Contains(err.Error(), httpError) ||
+		strings.Contains(err.Error(), eofError)
+}
+
+// isKeyIndexMismatchErr returns true if error contains key index mismatch substring
+func isKeyIndexMismatchErr(err error) bool {
+	return strings.Contains(err.Error(), keyIndexMismatch)
+}
+
+// shuffle list of input strings
+func shuffle(input []string) {
+	for i := range input {
+		j := rand.Intn(i + 1)
+		input[i], input[j] = input[j], input[i]
+	}
+}
+
+// New constructs a new kvdb.Kvdb given a list of end points to conntect to.
+func New(
+	domain string,
+	machines []string,
+	options map[string]string,
+	fatalErrorCb kvdb.FatalErrorCB,
+) (kvdb.Kvdb, error) {
+	// save the input params into global var.
+	// these will be used to reinit kv during failover.
+	var myParams param
+	if domain != "" && !strings.HasSuffix(domain, "/") {
+		domain = domain + "/"
+	}
+
+	// shuffle ordering of machines
+	shuffle(machines)
+
+	myParams.domain = domain
+	myParams.machines = machines
+	myParams.options = options
+	myParams.fatalErrorCb = fatalErrorCb
+
 	// options provided. Probably auth options
 	if options != nil || len(options) > 0 {
 		var ok bool
@@ -98,66 +155,37 @@ func newKv(domain, machine string, options map[string]string, fatalErrorCb kvdb.
 		if ok {
 			return nil, kvdb.ErrAuthNotSupported
 		}
-		// Get the ACL token if provided
-		token, ok = options[kvdb.ACLTokenKey]
-
 	}
 
-	config := api.DefaultConfig()
-	config.HttpClient = http.DefaultClient
-	config.Address = machine
-	config.Scheme = "http"
-	config.Token = token
-
-	client, err := api.NewClient(config)
-	if err != nil {
-		return nil, err
-	}
-
-	// check heal to ensure communication with consul are working
-	if _, _, err := client.Health().State(api.HealthAny, nil); err != nil {
-		return nil, err
-	}
-
-	if domain != "" && !strings.HasSuffix(domain, "/") {
-		domain = domain + "/"
-	}
-
-	return &consulKV{
-		common.BaseKvdb{FatalCb: fatalErrorCb},
-		client,
-		config,
-		domain,
-		kvdb.ControllerNotSupported,
-	}, nil
+	return initKv(myParams)
 }
 
-// New constructs a new kvdb.Kvdb given a list of end points to conntect to.
-func New(
-	domain string,
-	machines []string,
-	options map[string]string,
-	fatalErrorCb kvdb.FatalErrorCB,
-) (kvdb.Kvdb, error) {
-	var kv kvdb.Kvdb
-	var err error
-
-	if len(machines) == 0 {
-		machines = defaultMachines
+func initKv(p param) (*consulKV, error) {
+	if len(p.machines) == 0 {
+		p.machines = defaultMachines
 	}
 
-	for _, machine := range machines {
+	var err error
+	var config *api.Config
+	var client *api.Client
+
+	for _, machine := range p.machines {
 		machine := machine
 		if strings.HasPrefix(machine, "http://") {
 			machine = strings.TrimPrefix(machine, "http://")
 		} else if strings.HasPrefix(machine, "https://") {
 			machine = strings.TrimPrefix(machine, "https://")
 		}
-		if kv, err = newKv(domain, machine, options, fatalErrorCb); err == nil {
-			return kv, nil
+		if config, client, err = newKvClient(machine, p); err == nil {
+			return &consulKV{
+				BaseKvdb:   common.BaseKvdb{FatalCb: p.fatalErrorCb},
+				domain:     p.domain,
+				Controller: kvdb.ControllerNotSupported,
+				client:     newConsulClienter(config, client, refreshDelay, p),
+			}, nil
 		}
 	}
-	return kv, err
+	return nil, err
 }
 
 // Version returns the supported version for consul api
@@ -181,10 +209,12 @@ func (kv *consulKV) Get(key string) (*kvdb.KVPair, error) {
 	}
 	key = kv.domain + key
 	key = stripConsecutiveForwardslash(key)
-	pair, meta, err := kv.client.KV().Get(key, options)
+
+	pair, meta, err := kv.client.Get(key, options)
 	if err != nil {
 		return nil, err
 	}
+
 	if pair == nil {
 		return nil, kvdb.ErrNotFound
 	}
@@ -247,19 +277,17 @@ func (kv *consulKV) Put(
 	if err != nil {
 		return nil, err
 	}
+
 	if ttl == 0 {
-		if _, err := kv.client.KV().Put(pair, nil); err != nil {
+
+		if _, err := kv.client.Put(pair, nil); err != nil {
 			return nil, err
 		}
 	} else {
 		// It is unclear why err == nil but ok == false. We always
 		// delete any existing sessions on Put, so this should work fine.
-		ok, _, err := kv.client.KV().Acquire(pair, nil)
-		if err != nil {
+		if _, err := kv.client.Acquire(pair, nil); err != nil {
 			return nil, err
-		}
-		if !ok {
-			return nil, fmt.Errorf("Acquire failed")
 		}
 	}
 
@@ -285,22 +313,10 @@ func (kv *consulKV) Create(
 	if err == nil {
 		kvPair.Action = kvdb.KVCreate
 		if ttl > 0 {
-			var ok bool
-			ok, _, err = kv.client.KV().Acquire(sessionPair, nil)
-			if ok && err == nil {
+			if _, ok, err := kv.client.CreateMeta(key, sessionPair, nil); ok && err == nil {
 				return kvPair, err
-			}
-			if _, err := kv.client.Session().Destroy(sessionPair.Session, nil); err != nil {
-				logrus.Error(err)
-			}
-			if _, err := kv.Delete(key); err != nil {
-				logrus.Error(err)
-			}
-			if err != nil {
+			} else if err != nil {
 				return nil, err
-			}
-			if !ok {
-				return nil, fmt.Errorf("Failed to set ttl")
 			}
 		}
 	}
@@ -324,6 +340,7 @@ func (kv *consulKV) Update(
 	if err != nil {
 		return nil, err
 	}
+
 	kvPair.Action = kvdb.KVSet
 	return kvPair, nil
 }
@@ -331,10 +348,12 @@ func (kv *consulKV) Update(
 func (kv *consulKV) Enumerate(prefix string) (kvdb.KVPairs, error) {
 	prefix = kv.domain + prefix
 	prefix = stripConsecutiveForwardslash(prefix)
-	pairs, meta, err := kv.client.KV().List(prefix, nil)
+
+	pairs, meta, err := kv.client.List(prefix, nil)
 	if err != nil {
 		return nil, err
 	}
+
 	return kv.pairToKvs("enumerate", pairs, meta), nil
 }
 
@@ -345,9 +364,11 @@ func (kv *consulKV) Delete(key string) (*kvdb.KVPair, error) {
 	}
 	key = kv.domain + key
 	key = stripConsecutiveForwardslash(key)
-	if _, err := kv.client.KV().Delete(key, nil); err != nil {
+
+	if _, err := kv.client.Delete(key, nil); err != nil {
 		return nil, err
 	}
+
 	return pair, nil
 }
 
@@ -357,10 +378,9 @@ func (kv *consulKV) DeleteTree(key string) error {
 	if !strings.HasSuffix(key, kvdb.DefaultSeparator) {
 		key += kvdb.DefaultSeparator
 	}
-	if _, err := kv.client.KV().DeleteTree(key, nil); err != nil {
-		return err
-	}
-	return nil
+
+	_, err := kv.client.DeleteTree(key, nil)
+	return err
 }
 
 func (kv *consulKV) Keys(prefix, sep string) ([]string, error) {
@@ -375,10 +395,12 @@ func (kv *consulKV) Keys(prefix, sep string) ([]string, error) {
 		prefix += sep
 		lenPrefix += lenSep
 	}
-	list, _, err := kv.client.KV().Keys(prefix, sep, nil)
+
+	list, _, err := kv.client.Keys(prefix, sep, nil)
 	if err != nil {
 		return nil, err
 	}
+
 	var retList []string
 	if len(list) > 0 {
 		retList = make([]string, len(list))
@@ -424,12 +446,18 @@ func (kv *consulKV) CompareAndSet(
 		pair.ModifyIndex = 0
 	}
 
-	ok, _, err := kv.client.KV().CAS(pair, nil)
+	ok, _, err := kv.client.CompareAndSet(kvp.Key, kvp.Value, pair, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	if !ok {
+		kvp, getErr := kv.Get(pair.Key)
+		if getErr == nil {
+			if bytes.Compare(kvp.Value, pair.Value) == 0 {
+				return kvp, nil
+			}
+		}
 		if (flags & kvdb.KVModifiedIndex) == 0 {
 			return nil, kvdb.ErrValueMismatch
 		}
@@ -472,7 +500,7 @@ func (kv *consulKV) CompareAndDelete(
 		pair.ModifyIndex = kvp.ModifiedIndex
 	}
 
-	ok, _, err := kv.client.KV().DeleteCAS(pair, nil)
+	ok, _, err := kv.client.CompareAndDelete(kvp.Key, kvp.Value, pair, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -616,7 +644,8 @@ func (kv *consulKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 
 	listKey := kv.domain + prefix
 	listKey = stripConsecutiveForwardslash(listKey)
-	pairs, _, err := kv.client.KV().List(listKey, options)
+
+	pairs, _, err := kv.client.List(listKey, options)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -842,7 +871,7 @@ func (kv *consulKV) renewLockSession(
 	tag interface{},
 ) {
 	go func() {
-		_ = kv.client.Session().RenewPeriodic(initialTTL, session, nil, doneCh)
+		kv.client.RenewPeriodic(initialTTL, session, nil, doneCh)
 	}()
 	if lockTimeout > 0 {
 		go func() {
@@ -879,10 +908,8 @@ func (kv *consulKV) getLock(
 		TTL:       (10 * time.Second).String(), // Consul multiplies the TTL by 2x
 		LockDelay: 0,                           // Virtually disable lock delay
 	}
-	session, _, err := kv.client.Session().Create(entry, nil)
-	if err != nil {
-		return nil, err
-	}
+
+	session, _, err := kv.client.Create(entry, nil)
 
 	// create a lock handle
 	lockOpts := &api.LockOptions{
@@ -897,7 +924,7 @@ func (kv *consulKV) getLock(
 		return nil, err
 	}
 	if lockChan, err := l.Lock(nil); err != nil || lockChan == nil {
-		_, _ = kv.client.Session().Destroy(session, nil)
+		kv.client.Destroy(session, nil)
 		return nil, kvdb.ErrExist
 	}
 
@@ -930,7 +957,7 @@ func (kv *consulKV) watchTreeStart(
 	checkIndex := func(prevIndex *uint64, pair *api.KVPair, newIndex uint64,
 		msg string, lastIndex, waitIndex uint64) {
 		if *prevIndex != 0 && newIndex <= *prevIndex {
-			kv.FatalCb(msg+" with index invoked twice: %v, prevIndex: %d"+
+			logrus.Infof(msg+" with index invoked twice: %v, prevIndex: %d"+
 				" newIndex: %d, lastIndex: %d, waitIndex: %d", *pair,
 				*prevIndex, newIndex, lastIndex, waitIndex)
 		}
@@ -939,7 +966,8 @@ func (kv *consulKV) watchTreeStart(
 
 	for {
 		// Make a blocking List query
-		kvPairs, meta, err := kv.client.KV().List(prefix, opts)
+		kvPairs, meta, err := kv.client.List(prefix, opts)
+
 		pairs := CKVPairs(kvPairs)
 		sort.Sort(pairs)
 		if err != nil {
@@ -1047,8 +1075,8 @@ func (kv *consulKV) watchKeyStart(
 	keyDeleted := false
 	var cbErr error
 	for {
-		// Make a blocking Get query
-		pair, meta, err := kv.client.KV().Get(key, opts)
+		pair, meta, err := kv.client.Get(key, opts)
+
 		if err != nil {
 			logrus.Errorf("Consul returned an error : %s\n", err.Error())
 			cbErr = cb(key, opaque, nil, err)
@@ -1123,10 +1151,7 @@ func (kv *consulKV) renewSession(
 			return "", kvdb.ErrModified
 		}
 		// Destroy the existing session associated with the key
-		_, err := kv.client.Session().Destroy(session, nil)
-		if err != nil {
-			return "", err
-		}
+		kv.client.Destroy(session, nil)
 	}
 
 	durationTTL := time.Duration(int64(ttl)) * time.Second
@@ -1138,20 +1163,18 @@ func (kv *consulKV) renewSession(
 	}
 
 	// Create the key session
-	session, _, err = kv.client.Session().Create(entry, nil)
-	if err != nil {
-		return "", err
-	}
+	session, _, err = kv.client.Create(entry, nil)
 
 	// Session timer is started after a call to "Renew"
-	_, _, err = kv.client.Session().Renew(session, nil)
+	kv.client.Renew(session, nil)
+
 	return session, err
 }
 
 // getActiveSession checks if the key already has
 // a session attached
 func (kv *consulKV) getActiveSession(key string) (string, error) {
-	pair, _, err := kv.client.KV().Get(key, nil)
+	pair, _, err := kv.client.Get(key, nil)
 	if err != nil {
 		return "", err
 	}
