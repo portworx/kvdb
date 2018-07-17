@@ -66,15 +66,21 @@ type lockOptsConsuler interface {
 	LockOpts(opts *api.LockOptions) (*api.Lock, error)
 }
 
-// consulClient wraps config information and consul client along with sync functionality to refresh it once.
-// consulClient also satisfies interface defined above.
-type consulClient struct {
+// consulConnection stores current consul connection state
+type consulConnection struct {
 	// config is the configuration used to create consulClient
 	config *api.Config
 	// client provides access to consul api
 	client *api.Client
 	// once is used to refresh consulClient only once among concurrently running threads
 	once *sync.Once
+}
+
+// consulClient wraps config information and consul client along with sync functionality to refresh it once.
+// consulClient also satisfies interface defined above.
+type consulClient struct {
+	// conn current consul connection state
+	conn *consulConnection
 	// myParams holds all params required to obtain new api client
 	myParams param
 	// refreshDelay is the time duration to wait between machines
@@ -87,12 +93,14 @@ type consulClient struct {
 func newConsulClienter(config *api.Config,
 	client *api.Client,
 	refreshDelay time.Duration, p param) clientConsuler {
-	c := new(consulClient)
-	c.config = config
-	c.client = client
-	c.once = new(sync.Once)
-	c.myParams = p
-	c.refreshDelay = refreshDelay
+	c := &consulClient{
+		conn: &consulConnection{
+			config: config,
+			client: client,
+			once:   new(sync.Once)},
+		myParams:     p,
+		refreshDelay: refreshDelay,
+	}
 	if len(c.myParams.machines) < 3 {
 		c.refreshCount = 3
 	} else {
@@ -103,22 +111,19 @@ func newConsulClienter(config *api.Config,
 
 // LockOpts returns pointer to underlying Lock object and an error.
 func (c *consulClient) LockOpts(opts *api.LockOptions) (*api.Lock, error) {
-	return c.client.LockOpts(opts)
+	return c.conn.client.LockOpts(opts)
 }
 
 // Refresh is PX specific op. It refreshes consul client on failover.
-func (c *consulClient) Refresh() error {
+func (c *consulClient) Refresh(conn *consulConnection) error {
 	var err error
-	var executed bool
 
 	// once.Do executes func() only once across concurrently executing threads
-	c.once.Do(func() {
-		executed = true
+	c.conn.once.Do(func() {
 		var config *api.Config
 		var client *api.Client
 
 		for _, machine := range c.myParams.machines {
-			machine := machine
 
 			logrus.Infof("%s: %s\n", "trying to refresh client with machine", machine)
 
@@ -131,18 +136,16 @@ func (c *consulClient) Refresh() error {
 			// sleep for requested delay before testing new connection
 			time.Sleep(c.refreshDelay)
 			if config, client, err = newKvClient(machine, c.myParams); err == nil {
-				c.client = client
-				c.config = config
+				c.conn = &consulConnection{
+					client: client,
+					config: config,
+					once:   new(sync.Once),
+				}
 				logrus.Infof("%s: %s\n", "successfully connected to", machine)
 				return
 			}
 		}
 	})
-
-	// update once only if the func above was executed
-	if executed {
-		c.once = new(sync.Once)
-	}
 
 	return err
 }
@@ -169,26 +172,27 @@ func newKvClient(machine string, p param) (*api.Config, *api.Client, error) {
 	return config, client, nil
 }
 
-type writeFunc func() (*api.WriteMeta, error)
+type writeFunc func(conn *consulConnection) (*api.WriteMeta, error)
 
 func (c *consulClient) writeRetryFunc(f writeFunc) (*api.WriteMeta, error) {
 	var err error
 	var meta *api.WriteMeta
 	retry := false
 	c.runWithRetry(func() bool {
-		meta, err = f()
-		retry, err = c.checkAndRefresh(err)
+		conn := c.conn
+		meta, err = f(conn)
+		retry, err = c.checkAndRefresh(conn, err)
 		return retry
 	})
 	return meta, err
 }
 
 /// checkAndRefresh returns (retry, error), retry is true is client refreshed
-func (c *consulClient) checkAndRefresh(err error) (bool, error) {
+func (c *consulClient) checkAndRefresh(conn *consulConnection, err error) (bool, error) {
 	if err == nil {
 		return false, nil
 	} else if isConsulErrNeedingRetry(err) {
-		if clientErr := c.Refresh(); clientErr != nil {
+		if clientErr := c.Refresh(conn); clientErr != nil {
 			return false, clientErr
 		} else {
 			return true, nil
@@ -216,8 +220,9 @@ func (c *consulClient) Get(key string, q *api.QueryOptions) (*api.KVPair, *api.Q
 	retry := false
 
 	c.runWithRetry(func() bool {
-		pair, meta, err = c.client.KV().Get(key, q)
-		retry, err = c.checkAndRefresh(err)
+		conn := c.conn
+		pair, meta, err = conn.client.KV().Get(key, q)
+		retry, err = c.checkAndRefresh(conn, err)
 		return retry
 	})
 
@@ -225,15 +230,21 @@ func (c *consulClient) Get(key string, q *api.QueryOptions) (*api.KVPair, *api.Q
 }
 
 func (c *consulClient) Put(p *api.KVPair, q *api.WriteOptions) (*api.WriteMeta, error) {
-	return c.writeRetryFunc(func() (*api.WriteMeta, error) { return c.client.KV().Put(p, nil) })
+	return c.writeRetryFunc(func(conn *consulConnection) (*api.WriteMeta, error) {
+		return conn.client.KV().Put(p, nil)
+	})
 }
 
 func (c *consulClient) Delete(key string, w *api.WriteOptions) (*api.WriteMeta, error) {
-	return c.writeRetryFunc(func() (*api.WriteMeta, error) { return c.client.KV().Delete(key, nil) })
+	return c.writeRetryFunc(func(conn *consulConnection) (*api.WriteMeta, error) {
+		return conn.client.KV().Delete(key, nil)
+	})
 }
 
 func (c *consulClient) DeleteTree(prefix string, w *api.WriteOptions) (*api.WriteMeta, error) {
-	return c.writeRetryFunc(func() (*api.WriteMeta, error) { return c.client.KV().DeleteTree(prefix, nil) })
+	return c.writeRetryFunc(func(conn *consulConnection) (*api.WriteMeta, error) {
+		return conn.client.KV().DeleteTree(prefix, nil)
+	})
 }
 
 func (c *consulClient) Keys(prefix, separator string, q *api.QueryOptions) ([]string, *api.QueryMeta, error) {
@@ -243,8 +254,9 @@ func (c *consulClient) Keys(prefix, separator string, q *api.QueryOptions) ([]st
 	retry := false
 
 	c.runWithRetry(func() bool {
-		list, meta, err = c.client.KV().Keys(prefix, separator, nil)
-		retry, err = c.checkAndRefresh(err)
+		conn := c.conn
+		list, meta, err = conn.client.KV().Keys(prefix, separator, nil)
+		retry, err = c.checkAndRefresh(conn, err)
 		return retry
 	})
 
@@ -258,8 +270,9 @@ func (c *consulClient) List(prefix string, q *api.QueryOptions) (api.KVPairs, *a
 	retry := false
 
 	c.runWithRetry(func() bool {
-		pairs, meta, err = c.client.KV().List(prefix, nil)
-		retry, err = c.checkAndRefresh(err)
+		conn := c.conn
+		pairs, meta, err = conn.client.KV().List(prefix, nil)
+		retry, err = c.checkAndRefresh(conn, err)
 		return retry
 	})
 
@@ -273,8 +286,9 @@ func (c *consulClient) Acquire(p *api.KVPair, q *api.WriteOptions) (*api.WriteMe
 
 	retry := false
 	c.runWithRetry(func() bool {
-		ok, meta, err = c.client.KV().Acquire(p, nil)
-		retry, err = c.checkAndRefresh(err)
+		conn := c.conn
+		ok, meta, err = conn.client.KV().Acquire(p, nil)
+		retry, err = c.checkAndRefresh(conn, err)
 		return retry
 	})
 
@@ -297,8 +311,9 @@ func (c *consulClient) Create(se *api.SessionEntry, q *api.WriteOptions) (string
 	retry := false
 
 	c.runWithRetry(func() bool {
-		session, meta, err = c.client.Session().Create(se, q)
-		retry, err = c.checkAndRefresh(err)
+		conn := c.conn
+		session, meta, err = conn.client.Session().Create(se, q)
+		retry, err = c.checkAndRefresh(conn, err)
 		return retry
 	})
 
@@ -306,7 +321,9 @@ func (c *consulClient) Create(se *api.SessionEntry, q *api.WriteOptions) (string
 }
 
 func (c *consulClient) Destroy(id string, q *api.WriteOptions) (*api.WriteMeta, error) {
-	return c.writeRetryFunc(func() (*api.WriteMeta, error) { return c.client.Session().Destroy(id, q) })
+	return c.writeRetryFunc(func(conn *consulConnection) (*api.WriteMeta, error) {
+		return conn.client.Session().Destroy(id, q)
+	})
 }
 
 func (c *consulClient) Renew(id string, q *api.WriteOptions) (*api.SessionEntry, *api.WriteMeta, error) {
@@ -316,8 +333,9 @@ func (c *consulClient) Renew(id string, q *api.WriteOptions) (*api.SessionEntry,
 	retry := false
 
 	c.runWithRetry(func() bool {
-		entry, meta, err = c.client.Session().Renew(id, q)
-		retry, err = c.checkAndRefresh(err)
+		conn := c.conn
+		entry, meta, err = conn.client.Session().Renew(id, q)
+		retry, err = c.checkAndRefresh(conn, err)
 		return retry
 	})
 
@@ -329,8 +347,9 @@ func (c *consulClient) RenewPeriodic(initialTTL string, id string, q *api.WriteO
 	retry := false
 
 	c.runWithRetry(func() bool {
-		err = c.client.Session().RenewPeriodic(initialTTL, id, nil, doneCh)
-		retry, err = c.checkAndRefresh(err)
+		conn := c.conn
+		err = conn.client.Session().RenewPeriodic(initialTTL, id, nil, doneCh)
+		retry, err = c.checkAndRefresh(conn, err)
 		return retry
 	})
 
@@ -342,11 +361,12 @@ func (c *consulClient) CreateMeta(id string, p *api.KVPair, q *api.WriteOptions)
 	var meta *api.WriteMeta
 	var err error
 	for i := 0; i < c.refreshCount; i++ {
-		ok, meta, err = c.client.KV().Acquire(p, q)
+		conn := c.conn
+		ok, meta, err = conn.client.KV().Acquire(p, q)
 		if ok && err == nil {
 			return nil, ok, err
 		}
-		if _, err := c.client.Session().Destroy(p.Session, nil); err != nil {
+		if _, err := conn.client.Session().Destroy(p.Session, nil); err != nil {
 			logrus.Error(err)
 		}
 		if _, err := c.Delete(id, nil); err != nil {
@@ -354,7 +374,7 @@ func (c *consulClient) CreateMeta(id string, p *api.KVPair, q *api.WriteOptions)
 		}
 		if err != nil {
 			if isConsulErrNeedingRetry(err) {
-				if clientErr := c.Refresh(); clientErr != nil {
+				if clientErr := c.Refresh(c.conn); clientErr != nil {
 					return nil, ok, clientErr
 				} else {
 					continue
@@ -381,17 +401,18 @@ func (c *consulClient) CompareAndSet(id string, value []byte, p *api.KVPair, q *
 	retried := false
 
 	for i := 0; i < c.refreshCount; i++ {
-		ok, meta, err = c.client.KV().CAS(p, q)
+		conn := c.conn
+		ok, meta, err = conn.client.KV().CAS(p, q)
 		if err != nil && isConsulErrNeedingRetry(err) {
 			retried = true
-			if clientErr := c.Refresh(); clientErr != nil {
+			if clientErr := c.Refresh(c.conn); clientErr != nil {
 				return false, nil, clientErr
 			} else {
 				continue
 			}
 
 		} else if err != nil && isKeyIndexMismatchErr(err) && retried {
-			kvPair, _, getErr := c.client.KV().Get(id, nil)
+			kvPair, _, getErr := conn.client.KV().Get(id, nil)
 			if getErr != nil {
 				// failed to get value from kvdb
 				return false, nil, err
@@ -420,17 +441,18 @@ func (c *consulClient) CompareAndDelete(id string, value []byte, p *api.KVPair, 
 	retried := false
 
 	for i := 0; i < c.refreshCount; i++ {
-		ok, meta, err = c.client.KV().DeleteCAS(p, q)
+		conn := c.conn
+		ok, meta, err = conn.client.KV().DeleteCAS(p, q)
 		if err != nil && isConsulErrNeedingRetry(err) {
 			retried = true
-			if clientErr := c.Refresh(); clientErr != nil {
+			if clientErr := c.Refresh(c.conn); clientErr != nil {
 				return false, nil, clientErr
 			} else {
 				continue
 			}
 
 		} else if err != nil && isKeyIndexMismatchErr(err) && retried {
-			kvPair, _, getErr := c.client.KV().Get(id, nil)
+			kvPair, _, getErr := conn.client.KV().Get(id, nil)
 			if getErr != nil {
 				// failed to get value from kvdb
 				return false, nil, err
