@@ -313,7 +313,7 @@ func (kv *consulKV) Create(
 	if err == nil {
 		kvPair.Action = kvdb.KVCreate
 		if ttl > 0 {
-			if _, ok, err := kv.client.CreateMeta(key, sessionPair, nil); ok && cerr == nil {
+			if _, ok, err := kv.client.CreateMeta(key, sessionPair, nil); ok && err == nil {
 				return kvPair, err
 			} else if err != nil {
 				return nil, err
