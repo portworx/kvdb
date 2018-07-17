@@ -49,7 +49,7 @@ type sessionConsuler interface {
 	// Renew exposes underlying Session().Renew but with refresh on failover.
 	Renew(id string, q *api.WriteOptions) (*api.SessionEntry, *api.WriteMeta, error)
 	// RenewPeriodic exposes underlying Session().RenewPeriodic but with refresh on failover.
-	RenewPeriodic(initialTTL string, id string, q *api.WriteOptions, doneCh <-chan struct{}) error
+	RenewPeriodic(initialTTL string, id string, q *api.WriteOptions, doneCh chan struct{}) error
 }
 
 type metaConsuler interface {
@@ -143,15 +143,21 @@ func (c *consulClient) Refresh(conn *consulConnection) error {
 				}
 				logrus.Infof("%s: %s\n", "successfully connected to", machine)
 				break
+			} else {
+				logrus.Errorf("failed to refresh client on: %s", machine)
 			}
 		}
 	})
 
+	if err != nil {
+		logrus.Infof("Failed to refresh client: %v", err)
+	}
 	return err
 }
 
 // newKvClient constructs new kvdb.Kvdb given a single end-point to connect to.
 func newKvClient(machine string, p param) (*api.Config, *api.Client, error) {
+	logrus.Infof("consul: connecting to %v", machine)
 	config := api.DefaultConfig()
 	config.HttpClient = http.DefaultClient
 	config.Address = machine
@@ -161,11 +167,13 @@ func newKvClient(machine string, p param) (*api.Config, *api.Client, error) {
 
 	client, err := api.NewClient(config)
 	if err != nil {
+		logrus.Info("consul: failed to get new api client: %v", err)
 		return nil, nil, err
 	}
 
 	// check health to ensure communication with consul are working
 	if _, _, err := client.Health().State(api.HealthAny, nil); err != nil {
+		logrus.Errorf("consul: health check failed for %v : %v", machine, err)
 		return nil, nil, err
 	}
 
@@ -192,6 +200,7 @@ func (c *consulClient) checkAndRefresh(conn *consulConnection, err error) (bool,
 	if err == nil {
 		return false, nil
 	} else if isConsulErrNeedingRetry(err) {
+		logrus.Errorf("consul error: %v, trying to refresh..", err)
 		if clientErr := c.Refresh(conn); clientErr != nil {
 			return false, clientErr
 		} else {
@@ -342,7 +351,12 @@ func (c *consulClient) Renew(id string, q *api.WriteOptions) (*api.SessionEntry,
 	return entry, meta, err
 }
 
-func (c *consulClient) RenewPeriodic(initialTTL string, id string, q *api.WriteOptions, doneCh <-chan struct{}) error {
+func (c *consulClient) RenewPeriodic(
+	initialTTL string,
+	id string,
+	q *api.WriteOptions,
+	doneCh chan struct{},
+) error {
 	var err error
 	retry := false
 
