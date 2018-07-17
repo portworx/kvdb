@@ -119,7 +119,7 @@ func (c *consulClient) Refresh(conn *consulConnection) error {
 	var err error
 
 	// once.Do executes func() only once across concurrently executing threads
-	c.conn.once.Do(func() {
+	conn.once.Do(func() {
 		var config *api.Config
 		var client *api.Client
 
@@ -142,7 +142,7 @@ func (c *consulClient) Refresh(conn *consulConnection) error {
 					once:   new(sync.Once),
 				}
 				logrus.Infof("%s: %s\n", "successfully connected to", machine)
-				return
+				break
 			}
 		}
 	})
