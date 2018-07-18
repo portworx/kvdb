@@ -370,10 +370,16 @@ func (c *consulClient) RenewPeriodic(
 	return err
 }
 
-func (c *consulClient) CreateMeta(id string, p *api.KVPair, q *api.WriteOptions) (*api.WriteMeta, bool, error) {
+func (c *consulClient) CreateMeta(
+	id string,
+	p *api.KVPair,
+	q *api.WriteOptions,
+) (*api.WriteMeta, bool, error) {
 	var ok bool
 	var meta *api.WriteMeta
 	var err error
+	clientRefreshed := false
+
 	for i := 0; i < c.refreshCount; i++ {
 		conn := c.conn
 		ok, meta, err = conn.client.KV().Acquire(p, q)
@@ -386,16 +392,9 @@ func (c *consulClient) CreateMeta(id string, p *api.KVPair, q *api.WriteOptions)
 		if _, err := c.Delete(id, nil); err != nil {
 			logrus.Error(err)
 		}
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := c.Refresh(c.conn); clientErr != nil {
-					return nil, ok, clientErr
-				} else {
-					continue
-				}
-			} else {
-				return nil, ok, err
-			}
+		clientRefreshed, err = c.checkAndRefresh(conn, err)
+		if clientRefreshed {
+			continue
 		} else {
 			break
 		}
@@ -408,23 +407,25 @@ func (c *consulClient) CreateMeta(id string, p *api.KVPair, q *api.WriteOptions)
 	return meta, ok, err
 }
 
-func (c *consulClient) CompareAndSet(id string, value []byte, p *api.KVPair, q *api.WriteOptions) (bool, *api.WriteMeta, error) {
+func (c *consulClient) CompareAndSet(
+	id string,
+	value []byte,
+	p *api.KVPair,
+	q *api.WriteOptions,
+) (bool, *api.WriteMeta, error) {
 	var ok bool
 	var meta *api.WriteMeta
 	var err error
 	retried := false
+	clientRefreshed := false
 
 	for i := 0; i < c.refreshCount; i++ {
 		conn := c.conn
 		ok, meta, err = conn.client.KV().CAS(p, q)
-		if err != nil && isConsulErrNeedingRetry(err) {
+		clientRefreshed, err = c.checkAndRefresh(conn, err)
+		if clientRefreshed {
 			retried = true
-			if clientErr := c.Refresh(c.conn); clientErr != nil {
-				return false, nil, clientErr
-			} else {
-				continue
-			}
-
+			continue
 		} else if err != nil && isKeyIndexMismatchErr(err) && retried {
 			kvPair, _, getErr := conn.client.KV().Get(id, nil)
 			if getErr != nil {
@@ -448,38 +449,30 @@ func (c *consulClient) CompareAndSet(id string, value []byte, p *api.KVPair, q *
 	return ok, meta, err
 }
 
-func (c *consulClient) CompareAndDelete(id string, value []byte, p *api.KVPair, q *api.WriteOptions) (bool, *api.WriteMeta, error) {
+func (c *consulClient) CompareAndDelete(
+	id string,
+	value []byte,
+	p *api.KVPair,
+	q *api.WriteOptions,
+) (bool, *api.WriteMeta, error) {
 	var ok bool
 	var meta *api.WriteMeta
 	var err error
 	retried := false
+	clientRefreshed := false
 
 	for i := 0; i < c.refreshCount; i++ {
 		conn := c.conn
 		ok, meta, err = conn.client.KV().DeleteCAS(p, q)
-		if err != nil && isConsulErrNeedingRetry(err) {
+		clientRefreshed, err = c.checkAndRefresh(conn, err)
+		if clientRefreshed {
 			retried = true
-			if clientErr := c.Refresh(c.conn); clientErr != nil {
-				return false, nil, clientErr
-			} else {
-				continue
-			}
-
-		} else if err != nil && isKeyIndexMismatchErr(err) && retried {
-			kvPair, _, getErr := conn.client.KV().Get(id, nil)
-			if getErr != nil {
-				// failed to get value from kvdb
-				return false, nil, err
-			}
-
-			// Prev Value not equal to current value in consul
-			if bytes.Compare(kvPair.Value, value) != 0 {
-				return false, nil, err
-			} else {
-				// kvdb has the new value that we are trying to set
-				err = nil
-				break
-			}
+			continue
+		} else if retried && err == kvdb.ErrNotFound {
+			// assuming our delete went through, there is no way
+			// to figure out who deleted it
+			err = nil
+			break
 		} else {
 			break
 		}
