@@ -27,16 +27,6 @@ const (
 	bootstrap = "kvdb/bootstrap"
 	// MaxRenewRetries to renew TTL.
 	MaxRenewRetries = 5
-
-	// httpError is a substring returned by consul during such http errors.
-	// Ideally such errors should be provided as consul constants
-	httpError = "Unexpected response code: 500"
-	// eofError is also a substring returned by consul during EOF errors.
-	eofError = "EOF"
-	// connRefused connection refused
-	connRefused = "getsockopt: connection refused"
-	// keyIndexMismatch indicates consul error for key index mismatch
-	keyIndexMismatch = "Key Index mismatch"
 	// refreshDelay is the wait to wait before testing connection with a machine
 	refreshDelay = 5 * time.Second
 )
@@ -46,11 +36,13 @@ var (
 	defaultMachines = []string{"3.1.4.1:5926", "127.0.0.1:8500"}
 )
 
-// param stores init paramaters for consul kv.
-type param struct {
-	domain       string
-	machines     []string
-	options      map[string]string
+// connectionParam stores connection paramaters for consul kv.
+type connectionParams struct {
+	// machines is list of consul servers
+	machines []string
+	// options is consul specific options
+	options map[string]string
+	// fatalErrorCb callback to invoke incase of errors
 	fatalErrorCb kvdb.FatalErrorCB
 }
 
@@ -86,7 +78,7 @@ type consulKV struct {
 	// client is an instance of clientConsuler, which is a px defined interface.
 	// clientConsuler wraps pointer to client from consul api but also provides
 	// methods to refresh it during failover.
-	client clientConsuler
+	client consulClient
 	domain string
 	kvdb.Controller
 	mu sync.Mutex
@@ -98,93 +90,60 @@ type consulLock struct {
 	tag    interface{}
 }
 
-// isConsulErrNeedingRetry is a type of consul error on which we should try refreshing consul client.
-func isConsulErrNeedingRetry(err error) bool {
-	return strings.Contains(err.Error(), httpError) ||
-		strings.Contains(err.Error(), eofError) ||
-		strings.Contains(err.Error(), connRefused)
-}
-
-// isKeyIndexMismatchErr returns true if error contains key index mismatch substring
-func isKeyIndexMismatchErr(err error) bool {
-	return strings.Contains(err.Error(), keyIndexMismatch)
-}
-
 // shuffle list of input strings
-func shuffle(input []string) {
-	for i := range input {
-		j := rand.Intn(i + 1)
-		input[i], input[j] = input[j], input[i]
+func shuffle(input []string) []string {
+	tmp := make([]string, len(input))
+	r := rand.New(rand.NewSource(time.Now().Unix()))
+	for i, j := range r.Perm(len(input)) {
+		tmp[i] = input[j]
 	}
+	return tmp
 }
 
 // New constructs a new kvdb.Kvdb given a list of end points to conntect to.
 func New(
 	domain string,
-	machines []string,
+	servers []string,
 	options map[string]string,
 	fatalErrorCb kvdb.FatalErrorCB,
 ) (kvdb.Kvdb, error) {
-	// save the input params into global var.
-	// these will be used to reinit kv during failover.
-	var myParams param
+
+	// check for unsupported options
+	for _, opt := range []string{kvdb.UsernameKey, kvdb.PasswordKey, kvdb.CAFileKey} {
+		// Check if username provided
+		if _, ok := options[opt]; ok {
+			return nil, kvdb.ErrAuthNotSupported
+		}
+	}
+
 	if domain != "" && !strings.HasSuffix(domain, "/") {
 		domain = domain + "/"
 	}
-
-	// shuffle ordering of machines
-	shuffle(machines)
-
-	myParams.domain = domain
-	myParams.machines = machines
-	myParams.options = options
-	myParams.fatalErrorCb = fatalErrorCb
-
-	// options provided. Probably auth options
-	if options != nil || len(options) > 0 {
-		var ok bool
-		// Check if username provided
-		_, ok = options[kvdb.UsernameKey]
-		if ok {
-			return nil, kvdb.ErrAuthNotSupported
-		}
-		// Check if password provided
-		_, ok = options[kvdb.PasswordKey]
-		if ok {
-			return nil, kvdb.ErrAuthNotSupported
-		}
-		// Check if certificate provided
-		_, ok = options[kvdb.CAFileKey]
-		if ok {
-			return nil, kvdb.ErrAuthNotSupported
-		}
+	connParams := connectionParams{
+		machines:     shuffle(servers),
+		options:      options,
+		fatalErrorCb: fatalErrorCb,
 	}
-
-	return initKv(myParams)
-}
-
-func initKv(p param) (*consulKV, error) {
-	if len(p.machines) == 0 {
-		p.machines = defaultMachines
+	if len(connParams.machines) == 0 {
+		connParams.machines = defaultMachines
 	}
 
 	var err error
 	var config *api.Config
 	var client *api.Client
 
-	for _, machine := range p.machines {
-		machine := machine
+	for _, machine := range connParams.machines {
 		if strings.HasPrefix(machine, "http://") {
 			machine = strings.TrimPrefix(machine, "http://")
 		} else if strings.HasPrefix(machine, "https://") {
 			machine = strings.TrimPrefix(machine, "https://")
 		}
-		if config, client, err = newKvClient(machine, p); err == nil {
+		if config, client, err = newKvClient(machine, connParams); err == nil {
 			return &consulKV{
-				BaseKvdb:   common.BaseKvdb{FatalCb: p.fatalErrorCb},
-				domain:     p.domain,
+				BaseKvdb:   common.BaseKvdb{FatalCb: connParams.fatalErrorCb},
+				domain:     domain,
 				Controller: kvdb.ControllerNotSupported,
-				client:     newConsulClienter(config, client, refreshDelay, p),
+				client:     newConsulClient(config, client, refreshDelay, connParams),
 			}, nil
 		}
 	}
