@@ -15,13 +15,6 @@ import (
 
 // clientConsuler defines methods that a px based consul client should satisfy.
 type clientConsuler interface {
-	// KV returns pointer to underlying consul KV object.
-	KV() *api.KV
-	// Session returns pointer to underlying Session object.
-	Session() *api.Session
-	// Refresh is PX specific op. It refreshes consul client on failover.
-	Refresh() error
-	// kvConsuler includes methods from that interface.
 	kvConsuler
 	// sessionConsuler includes methods methods from that interface.
 	sessionConsuler
@@ -56,7 +49,7 @@ type sessionConsuler interface {
 	// Renew exposes underlying Session().Renew but with refresh on failover.
 	Renew(id string, q *api.WriteOptions) (*api.SessionEntry, *api.WriteMeta, error)
 	// RenewPeriodic exposes underlying Session().RenewPeriodic but with refresh on failover.
-	RenewPeriodic(initialTTL string, id string, q *api.WriteOptions, doneCh <-chan struct{}) error
+	RenewPeriodic(initialTTL string, id string, q *api.WriteOptions, doneCh chan struct{}) error
 }
 
 type metaConsuler interface {
@@ -73,15 +66,21 @@ type lockOptsConsuler interface {
 	LockOpts(opts *api.LockOptions) (*api.Lock, error)
 }
 
-// consulClient wraps config information and consul client along with sync functionality to refresh it once.
-// consulClient also satisfies interface defined above.
-type consulClient struct {
+// consulConnection stores current consul connection state
+type consulConnection struct {
 	// config is the configuration used to create consulClient
 	config *api.Config
 	// client provides access to consul api
 	client *api.Client
 	// once is used to refresh consulClient only once among concurrently running threads
 	once *sync.Once
+}
+
+// consulClient wraps config information and consul client along with sync functionality to refresh it once.
+// consulClient also satisfies interface defined above.
+type consulClient struct {
+	// conn current consul connection state
+	conn *consulConnection
 	// myParams holds all params required to obtain new api client
 	myParams param
 	// refreshDelay is the time duration to wait between machines
@@ -94,12 +93,14 @@ type consulClient struct {
 func newConsulClienter(config *api.Config,
 	client *api.Client,
 	refreshDelay time.Duration, p param) clientConsuler {
-	c := new(consulClient)
-	c.config = config
-	c.client = client
-	c.once = new(sync.Once)
-	c.myParams = p
-	c.refreshDelay = refreshDelay
+	c := &consulClient{
+		conn: &consulConnection{
+			config: config,
+			client: client,
+			once:   new(sync.Once)},
+		myParams:     p,
+		refreshDelay: refreshDelay,
+	}
 	if len(c.myParams.machines) < 3 {
 		c.refreshCount = 3
 	} else {
@@ -108,34 +109,21 @@ func newConsulClienter(config *api.Config,
 	return c
 }
 
-// KV returns pointer to underlying consul KV object.
-func (c *consulClient) KV() *api.KV {
-	return c.client.KV()
-}
-
-// Session returns pointer to underlying Session object.
-func (c *consulClient) Session() *api.Session {
-	return c.client.Session()
-}
-
 // LockOpts returns pointer to underlying Lock object and an error.
 func (c *consulClient) LockOpts(opts *api.LockOptions) (*api.Lock, error) {
-	return c.client.LockOpts(opts)
+	return c.conn.client.LockOpts(opts)
 }
 
 // Refresh is PX specific op. It refreshes consul client on failover.
-func (c *consulClient) Refresh() error {
+func (c *consulClient) Refresh(conn *consulConnection) error {
 	var err error
-	var executed bool
 
 	// once.Do executes func() only once across concurrently executing threads
-	c.once.Do(func() {
-		executed = true
+	conn.once.Do(func() {
 		var config *api.Config
 		var client *api.Client
 
 		for _, machine := range c.myParams.machines {
-			machine := machine
 
 			logrus.Infof("%s: %s\n", "trying to refresh client with machine", machine)
 
@@ -148,24 +136,28 @@ func (c *consulClient) Refresh() error {
 			// sleep for requested delay before testing new connection
 			time.Sleep(c.refreshDelay)
 			if config, client, err = newKvClient(machine, c.myParams); err == nil {
-				c.client = client
-				c.config = config
+				c.conn = &consulConnection{
+					client: client,
+					config: config,
+					once:   new(sync.Once),
+				}
 				logrus.Infof("%s: %s\n", "successfully connected to", machine)
-				return
+				break
+			} else {
+				logrus.Errorf("failed to refresh client on: %s", machine)
 			}
 		}
 	})
 
-	// update once only if the func above was executed
-	if executed {
-		c.once = new(sync.Once)
+	if err != nil {
+		logrus.Infof("Failed to refresh client: %v", err)
 	}
-
 	return err
 }
 
 // newKvClient constructs new kvdb.Kvdb given a single end-point to connect to.
 func newKvClient(machine string, p param) (*api.Config, *api.Client, error) {
+	logrus.Infof("consul: connecting to %v", machine)
 	config := api.DefaultConfig()
 	config.HttpClient = http.DefaultClient
 	config.Address = machine
@@ -175,132 +167,107 @@ func newKvClient(machine string, p param) (*api.Config, *api.Client, error) {
 
 	client, err := api.NewClient(config)
 	if err != nil {
+		logrus.Info("consul: failed to get new api client: %v", err)
 		return nil, nil, err
 	}
 
 	// check health to ensure communication with consul are working
 	if _, _, err := client.Health().State(api.HealthAny, nil); err != nil {
+		logrus.Errorf("consul: health check failed for %v : %v", machine, err)
 		return nil, nil, err
 	}
 
 	return config, client, nil
 }
 
+type writeFunc func(conn *consulConnection) (*api.WriteMeta, error)
+
+func (c *consulClient) writeRetryFunc(f writeFunc) (*api.WriteMeta, error) {
+	var err error
+	var meta *api.WriteMeta
+	retry := false
+	c.runWithRetry(func() bool {
+		conn := c.conn
+		meta, err = f(conn)
+		retry, err = c.checkAndRefresh(conn, err)
+		return retry
+	})
+	return meta, err
+}
+
+/// checkAndRefresh returns (retry, error), retry is true is client refreshed
+func (c *consulClient) checkAndRefresh(conn *consulConnection, err error) (bool, error) {
+	if err == nil {
+		return false, nil
+	} else if isConsulErrNeedingRetry(err) {
+		logrus.Errorf("consul error: %v, trying to refresh..", err)
+		if clientErr := c.Refresh(conn); clientErr != nil {
+			return false, clientErr
+		} else {
+			return true, nil
+		}
+	} else {
+		return false, err
+	}
+}
+
+/// consulFunc runs a consulFunc operation and returns true if needs to be retried
+type consulFunc func() bool
+
+func (c *consulClient) runWithRetry(f consulFunc) {
+	for i := 0; i < c.refreshCount; i++ {
+		if !f() {
+			break
+		}
+	}
+}
+
 func (c *consulClient) Get(key string, q *api.QueryOptions) (*api.KVPair, *api.QueryMeta, error) {
 	var pair *api.KVPair
 	var meta *api.QueryMeta
 	var err error
+	retry := false
 
-	for i := 0; i < c.refreshCount; i++ {
-		pair, meta, err = c.client.KV().Get(key, q)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := c.Refresh(); clientErr != nil {
-					return nil, nil, clientErr
-				} else {
-					continue
-				}
-			} else {
-				return nil, nil, err
-			}
-		} else {
-			break
-		}
-	}
+	c.runWithRetry(func() bool {
+		conn := c.conn
+		pair, meta, err = conn.client.KV().Get(key, q)
+		retry, err = c.checkAndRefresh(conn, err)
+		return retry
+	})
 
 	return pair, meta, err
 }
 
 func (c *consulClient) Put(p *api.KVPair, q *api.WriteOptions) (*api.WriteMeta, error) {
-	var err error
-	var meta *api.WriteMeta
-	for i := 0; i < c.refreshCount; i++ {
-		meta, err = c.client.KV().Put(p, nil)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := c.Refresh(); clientErr != nil {
-					return nil, clientErr
-				} else {
-					continue
-				}
-			} else {
-				return nil, err
-			}
-		} else {
-			break
-		}
-	}
-
-	return meta, err
+	return c.writeRetryFunc(func(conn *consulConnection) (*api.WriteMeta, error) {
+		return conn.client.KV().Put(p, nil)
+	})
 }
 
 func (c *consulClient) Delete(key string, w *api.WriteOptions) (*api.WriteMeta, error) {
-	var err error
-	var meta *api.WriteMeta
-	for i := 0; i < c.refreshCount; i++ {
-		_, err = c.client.KV().Delete(key, nil)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := c.Refresh(); clientErr != nil {
-					return nil, clientErr
-				} else {
-					continue
-				}
-			} else {
-				return nil, err
-			}
-		} else {
-			break
-		}
-	}
-
-	return meta, err
+	return c.writeRetryFunc(func(conn *consulConnection) (*api.WriteMeta, error) {
+		return conn.client.KV().Delete(key, nil)
+	})
 }
 
 func (c *consulClient) DeleteTree(prefix string, w *api.WriteOptions) (*api.WriteMeta, error) {
-	var err error
-	var meta *api.WriteMeta
-	for i := 0; i < c.refreshCount; i++ {
-		meta, err = c.client.KV().DeleteTree(prefix, nil)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := c.Refresh(); clientErr != nil {
-					return nil, clientErr
-				} else {
-					continue
-				}
-			} else {
-				return nil, err
-			}
-		} else {
-			break
-		}
-	}
-
-	return meta, err
+	return c.writeRetryFunc(func(conn *consulConnection) (*api.WriteMeta, error) {
+		return conn.client.KV().DeleteTree(prefix, nil)
+	})
 }
 
 func (c *consulClient) Keys(prefix, separator string, q *api.QueryOptions) ([]string, *api.QueryMeta, error) {
 	var list []string
 	var meta *api.QueryMeta
 	var err error
+	retry := false
 
-	for i := 0; i < c.refreshCount; i++ {
-		list, meta, err = c.client.KV().Keys(prefix, separator, nil)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := c.Refresh(); clientErr != nil {
-					return nil, nil, clientErr
-				} else {
-					continue
-				}
-			} else {
-				return nil, nil, err
-			}
-		} else {
-			break
-		}
-	}
+	c.runWithRetry(func() bool {
+		conn := c.conn
+		list, meta, err = conn.client.KV().Keys(prefix, separator, nil)
+		retry, err = c.checkAndRefresh(conn, err)
+		return retry
+	})
 
 	return list, meta, err
 }
@@ -309,23 +276,14 @@ func (c *consulClient) List(prefix string, q *api.QueryOptions) (api.KVPairs, *a
 	var pairs api.KVPairs
 	var meta *api.QueryMeta
 	var err error
+	retry := false
 
-	for i := 0; i < c.refreshCount; i++ {
-		pairs, meta, err = c.client.KV().List(prefix, nil)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := c.Refresh(); clientErr != nil {
-					return nil, nil, clientErr
-				} else {
-					continue
-				}
-			} else {
-				return nil, nil, err
-			}
-		} else {
-			break
-		}
-	}
+	c.runWithRetry(func() bool {
+		conn := c.conn
+		pairs, meta, err = conn.client.KV().List(prefix, nil)
+		retry, err = c.checkAndRefresh(conn, err)
+		return retry
+	})
 
 	return pairs, meta, err
 }
@@ -334,22 +292,13 @@ func (c *consulClient) Acquire(p *api.KVPair, q *api.WriteOptions) (*api.WriteMe
 	var err error
 	var meta *api.WriteMeta
 	var ok bool
-	for i := 0; i < c.refreshCount; i++ {
-		ok, meta, err = c.client.KV().Acquire(p, nil)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := c.Refresh(); clientErr != nil {
-					return nil, clientErr
-				} else {
-					continue
-				}
-			} else {
-				return nil, err
-			}
-		} else {
-			break
-		}
-	}
+	retry := false
+	c.runWithRetry(func() bool {
+		conn := c.conn
+		ok, meta, err = conn.client.KV().Acquire(p, nil)
+		retry, err = c.checkAndRefresh(conn, err)
+		return retry
+	})
 
 	// *** this error is created in loop above
 	if err != nil {
@@ -367,129 +316,84 @@ func (c *consulClient) Create(se *api.SessionEntry, q *api.WriteOptions) (string
 	var session string
 	var meta *api.WriteMeta
 	var err error
-	for i := 0; i < c.refreshCount; i++ {
-		session, meta, err = c.client.Session().Create(se, q)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := c.Refresh(); clientErr != nil {
-					logrus.Error(clientErr)
-					return "", nil, clientErr
-				} else {
-					continue
-				}
-			} else {
-				logrus.Error(err)
-				return "", nil, err
-			}
-		} else {
-			break
-		}
-	}
+	retry := false
+
+	c.runWithRetry(func() bool {
+		conn := c.conn
+		session, meta, err = conn.client.Session().Create(se, q)
+		retry, err = c.checkAndRefresh(conn, err)
+		return retry
+	})
 
 	return session, meta, err
 }
 
 func (c *consulClient) Destroy(id string, q *api.WriteOptions) (*api.WriteMeta, error) {
-	var meta *api.WriteMeta
-	var err error
-	for i := 0; i < c.refreshCount; i++ {
-		meta, err = c.client.Session().Destroy(id, q)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := c.Refresh(); clientErr != nil {
-					logrus.Error(clientErr)
-					return nil, clientErr
-				} else {
-					continue
-				}
-			} else {
-				logrus.Error(err)
-				return nil, err
-			}
-		} else {
-			break
-		}
-	}
-
-	return meta, err
+	return c.writeRetryFunc(func(conn *consulConnection) (*api.WriteMeta, error) {
+		return conn.client.Session().Destroy(id, q)
+	})
 }
 
 func (c *consulClient) Renew(id string, q *api.WriteOptions) (*api.SessionEntry, *api.WriteMeta, error) {
 	var entry *api.SessionEntry
 	var meta *api.WriteMeta
 	var err error
+	retry := false
 
-	for i := 0; i < c.refreshCount; i++ {
-		entry, meta, err = c.client.Session().Renew(id, q)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := c.Refresh(); clientErr != nil {
-					logrus.Error(clientErr)
-					return nil, nil, clientErr
-				} else {
-					continue
-				}
-			} else {
-				logrus.Error(err)
-				return nil, nil, err
-			}
-		} else {
-			break
-		}
-	}
+	c.runWithRetry(func() bool {
+		conn := c.conn
+		entry, meta, err = conn.client.Session().Renew(id, q)
+		retry, err = c.checkAndRefresh(conn, err)
+		return retry
+	})
 
 	return entry, meta, err
 }
 
-func (c *consulClient) RenewPeriodic(initialTTL string, id string, q *api.WriteOptions, doneCh <-chan struct{}) error {
+func (c *consulClient) RenewPeriodic(
+	initialTTL string,
+	id string,
+	q *api.WriteOptions,
+	doneCh chan struct{},
+) error {
 	var err error
-	for i := 0; i < c.refreshCount; i++ {
-		err = c.client.Session().RenewPeriodic(initialTTL, id, nil, doneCh)
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := c.Refresh(); clientErr != nil {
-					logrus.Error(clientErr)
-					return nil
-				} else {
-					continue
-				}
-			} else {
-				logrus.Error(err)
-				return err
-			}
-		} else {
-			break
-		}
-	}
+	retry := false
+
+	c.runWithRetry(func() bool {
+		conn := c.conn
+		err = conn.client.Session().RenewPeriodic(initialTTL, id, nil, doneCh)
+		retry, err = c.checkAndRefresh(conn, err)
+		return retry
+	})
 
 	return err
 }
 
-func (c *consulClient) CreateMeta(id string, p *api.KVPair, q *api.WriteOptions) (*api.WriteMeta, bool, error) {
+func (c *consulClient) CreateMeta(
+	id string,
+	p *api.KVPair,
+	q *api.WriteOptions,
+) (*api.WriteMeta, bool, error) {
 	var ok bool
 	var meta *api.WriteMeta
 	var err error
+	clientRefreshed := false
+
 	for i := 0; i < c.refreshCount; i++ {
-		ok, meta, err = c.client.KV().Acquire(p, q)
+		conn := c.conn
+		ok, meta, err = conn.client.KV().Acquire(p, q)
 		if ok && err == nil {
 			return nil, ok, err
 		}
-		if _, err := c.client.Session().Destroy(p.Session, nil); err != nil {
+		if _, err := conn.client.Session().Destroy(p.Session, nil); err != nil {
 			logrus.Error(err)
 		}
 		if _, err := c.Delete(id, nil); err != nil {
 			logrus.Error(err)
 		}
-		if err != nil {
-			if isConsulErrNeedingRetry(err) {
-				if clientErr := c.Refresh(); clientErr != nil {
-					return nil, ok, clientErr
-				} else {
-					continue
-				}
-			} else {
-				return nil, ok, err
-			}
+		clientRefreshed, err = c.checkAndRefresh(conn, err)
+		if clientRefreshed {
+			continue
 		} else {
 			break
 		}
@@ -502,24 +406,27 @@ func (c *consulClient) CreateMeta(id string, p *api.KVPair, q *api.WriteOptions)
 	return meta, ok, err
 }
 
-func (c *consulClient) CompareAndSet(id string, value []byte, p *api.KVPair, q *api.WriteOptions) (bool, *api.WriteMeta, error) {
+func (c *consulClient) CompareAndSet(
+	id string,
+	value []byte,
+	p *api.KVPair,
+	q *api.WriteOptions,
+) (bool, *api.WriteMeta, error) {
 	var ok bool
 	var meta *api.WriteMeta
 	var err error
 	retried := false
+	clientRefreshed := false
 
 	for i := 0; i < c.refreshCount; i++ {
-		ok, meta, err = c.client.KV().CAS(p, q)
-		if err != nil && isConsulErrNeedingRetry(err) {
+		conn := c.conn
+		ok, meta, err = conn.client.KV().CAS(p, q)
+		clientRefreshed, err = c.checkAndRefresh(conn, err)
+		if clientRefreshed {
 			retried = true
-			if clientErr := c.Refresh(); clientErr != nil {
-				return false, nil, clientErr
-			} else {
-				continue
-			}
-
+			continue
 		} else if err != nil && isKeyIndexMismatchErr(err) && retried {
-			kvPair, _, getErr := c.client.KV().Get(id, nil)
+			kvPair, _, getErr := conn.client.KV().Get(id, nil)
 			if getErr != nil {
 				// failed to get value from kvdb
 				return false, nil, err
@@ -541,37 +448,30 @@ func (c *consulClient) CompareAndSet(id string, value []byte, p *api.KVPair, q *
 	return ok, meta, err
 }
 
-func (c *consulClient) CompareAndDelete(id string, value []byte, p *api.KVPair, q *api.WriteOptions) (bool, *api.WriteMeta, error) {
+func (c *consulClient) CompareAndDelete(
+	id string,
+	value []byte,
+	p *api.KVPair,
+	q *api.WriteOptions,
+) (bool, *api.WriteMeta, error) {
 	var ok bool
 	var meta *api.WriteMeta
 	var err error
 	retried := false
+	clientRefreshed := false
 
 	for i := 0; i < c.refreshCount; i++ {
-		ok, meta, err = c.client.KV().DeleteCAS(p, q)
-		if err != nil && isConsulErrNeedingRetry(err) {
+		conn := c.conn
+		ok, meta, err = conn.client.KV().DeleteCAS(p, q)
+		clientRefreshed, err = c.checkAndRefresh(conn, err)
+		if clientRefreshed {
 			retried = true
-			if clientErr := c.Refresh(); clientErr != nil {
-				return false, nil, clientErr
-			} else {
-				continue
-			}
-
-		} else if err != nil && isKeyIndexMismatchErr(err) && retried {
-			kvPair, _, getErr := c.client.KV().Get(id, nil)
-			if getErr != nil {
-				// failed to get value from kvdb
-				return false, nil, err
-			}
-
-			// Prev Value not equal to current value in consul
-			if bytes.Compare(kvPair.Value, value) != 0 {
-				return false, nil, err
-			} else {
-				// kvdb has the new value that we are trying to set
-				err = nil
-				break
-			}
+			continue
+		} else if retried && err == kvdb.ErrNotFound {
+			// assuming our delete went through, there is no way
+			// to figure out who deleted it
+			err = nil
+			break
 		} else {
 			break
 		}
