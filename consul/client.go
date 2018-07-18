@@ -131,7 +131,7 @@ func (c *consulClientImpl) LockOpts(opts *api.LockOptions) (*api.Lock, error) {
 	return c.conn.client.LockOpts(opts)
 }
 
-// Refresh is PX specific op. It reconnectes consul client on failover.
+// reconnect reconnectes to any online and healthy consul server..
 func (c *consulClientImpl) reconnect(conn *consulConnection) error {
 	var err error
 
