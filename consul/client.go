@@ -121,7 +121,7 @@ func newConsulClient(config *api.Config,
 	if len(c.connParams.machines) < 3 {
 		c.maxRetries = 3
 	} else {
-		c.maxRetries = len(c.connParams.machines)
+		c.maxRetries = 2 * len(c.connParams.machines)
 	}
 	return c
 }
