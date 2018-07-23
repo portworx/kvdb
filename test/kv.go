@@ -265,6 +265,7 @@ func createUpdateDeleteWatchInALoopAsync(kv kvdb.Kvdb, t *testing.T) {
 	case <-done:
 		for key, val := range indexMap {
 			if val != 2 {
+				t.Log("unexpected result. key:", key, ", val:", val)
 				mismatchMap[key] = val
 			}
 		}
