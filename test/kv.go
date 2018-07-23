@@ -242,7 +242,7 @@ func createUpdateDeleteWatchInALoopAsync(kv kvdb.Kvdb, t *testing.T) {
 				c <- index
 			}(ch, kvp.ModifiedIndex)
 		}
-		if kvp, err := kv.Update(filepath.Join(prefix, key), i*10, 1); err != nil {
+		if kvp, err := kv.Update(filepath.Join(prefix, key), i*10, 0); err != nil {
 			t.Fatal(err)
 		} else {
 			go func(c chan uint64, index uint64) {
