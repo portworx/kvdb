@@ -270,7 +270,8 @@ func createUpdateDeleteWatchInALoopAsync(kv kvdb.Kvdb, t *testing.T) {
 		}
 
 		if len(mismatchMap) > 0 {
-			t.Fatal("expected count of each of the mod indices to be == 2. Total mismatch:", len(mismatchMap))
+			t.Fatal("expected count of each of the mod indices to be == 2. Total mismatch:",
+				len(mismatchMap), "/", len(indexMap))
 		}
 	case <-time.After(timeout):
 		t.Fatal("timeout occurred")
