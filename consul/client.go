@@ -21,9 +21,6 @@ const (
 	eofError = "EOF"
 	// connRefused connection refused
 	connRefused = "getsockopt: connection refused"
-)
-
-const (
 	// keyIndexMismatch indicates consul error for key index mismatch
 	keyIndexMismatch = "Key Index mismatch"
 )
@@ -428,7 +425,7 @@ func (c *consulClientImpl) CreateMeta(
 	}
 
 	if !ok {
-		return nil, ok, fmt.Errorf("Failed to set ttl")
+		return nil, ok, fmt.Errorf("failed to set ttl: %v", err)
 	}
 
 	return meta, ok, err
