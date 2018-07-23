@@ -217,6 +217,7 @@ func createUpdateDeleteWatchInALoopAsync(kv kvdb.Kvdb, t *testing.T) {
 	done := make(chan struct{})
 	timeout := time.Second * 45
 	indexMap := make(map[uint64]int)
+	mismatchMap := make(map[uint64]int)
 
 	if err := kv.DeleteTree(prefix); err != nil {
 		t.Fatal(err)
@@ -262,10 +263,14 @@ func createUpdateDeleteWatchInALoopAsync(kv kvdb.Kvdb, t *testing.T) {
 	// wait for processes to finish
 	select {
 	case <-done:
-		for _, val := range indexMap {
+		for key, val := range indexMap {
 			if val != 2 {
-				t.Fatal("expected count of each of the mod indices to be = 2. Saw: ", val)
+				mismatchMap[key] = val
 			}
+		}
+
+		if len(mismatchMap) > 0 {
+			t.Fatal("expected count of each of the mod indices to be == 2. Total mismatch:", len(mismatchMap))
 		}
 	case <-time.After(timeout):
 		t.Fatal("timeout occurred")
