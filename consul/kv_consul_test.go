@@ -3,10 +3,9 @@ package consul
 import (
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
-
-	"strings"
 
 	"github.com/portworx/kvdb"
 	"github.com/portworx/kvdb/test"

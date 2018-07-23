@@ -10,15 +10,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sirupsen/logrus"
-	"golang.org/x/net/context"
-
+	"github.com/Sirupsen/logrus"
 	e "github.com/coreos/etcd/client"
 	"github.com/coreos/etcd/pkg/transport"
 	"github.com/portworx/kvdb"
 	"github.com/portworx/kvdb/common"
 	ec "github.com/portworx/kvdb/etcd/common"
 	"github.com/portworx/kvdb/mem"
+	"golang.org/x/net/context"
 )
 
 const (

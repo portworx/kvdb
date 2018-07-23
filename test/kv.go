@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,10 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"path/filepath"
-
+	"github.com/Sirupsen/logrus"
 	"github.com/portworx/kvdb"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
