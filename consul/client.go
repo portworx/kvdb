@@ -187,13 +187,15 @@ func newKvClient(machine string, p connectionParams) (*api.Config, *api.Client, 
 	caFile, ok1 := p.options[kvdb.CAFileKey]
 	certFile, ok2 := p.options[kvdb.CertFileKey]
 	certKeyFile, ok3 := p.options[kvdb.CertKeyFileKey]
+	caAuthAddress := p.options[kvdb.CAAuthAddress]
+	insecureSkipVerify := strings.ToLower(p.options[kvdb.InsecureSkipVerify]) == "true"
 	if ok1 && ok2 && ok3 {
 		tlsConfig := &api.TLSConfig{
-			//Address:            "10.138.0.6",
 			CAFile:             caFile,
 			CertFile:           certFile,
 			KeyFile:            certKeyFile,
-			InsecureSkipVerify: true,
+			Address:            caAuthAddress,
+			InsecureSkipVerify: insecureSkipVerify,
 		}
 
 		consulTLSConfig, err := api.SetupTLSConfig(tlsConfig)

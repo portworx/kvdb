@@ -66,6 +66,10 @@ const (
 	RetryCountKey = "RetryCount"
 	// ACLTokenKey is the token value for ACL based KV stores
 	ACLTokenKey = "ACLToken"
+	// CAAuthAddress is the address of CA signing authority (required in consul TLS config)
+	CAAuthAddress = "CAAuthAddress"
+	// InsecureSkipVerify has a value true or false (required in consul TLS config)
+	InsecureSkipVerify = "InsecureSkipVerify"
 )
 
 // List of kvdb endpoints supported versions
