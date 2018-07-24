@@ -182,10 +182,39 @@ func isKeyIndexMismatchErr(err error) bool {
 func newKvClient(machine string, p connectionParams) (*api.Config, *api.Client, error) {
 	logrus.Infof("consul: connecting to %v", machine)
 	config := api.DefaultConfig()
-	config.HttpClient = http.DefaultClient
-	config.Address = machine
-	config.Scheme = "http"
-	config.Token = p.options[kvdb.ACLTokenKey]
+
+	// check if TLS is required
+	caFile, ok1 := p.options[kvdb.CAFileKey]
+	certFile, ok2 := p.options[kvdb.CertFileKey]
+	certKeyFile, ok3 := p.options[kvdb.CertKeyFileKey]
+	if ok1 && ok2 && ok3 {
+		tlsConfig := &api.TLSConfig{
+			//Address:            "10.138.0.6",
+			CAFile:             caFile,
+			CertFile:           certFile,
+			KeyFile:            certKeyFile,
+			InsecureSkipVerify: true,
+		}
+
+		consulTLSConfig, err := api.SetupTLSConfig(tlsConfig)
+		if err != nil {
+			logrus.Fatal(err)
+		}
+
+		config := api.DefaultConfig()
+		config.Address = machine
+		config.Scheme = "https"
+		config.HttpClient = new(http.Client)
+
+		config.HttpClient.Transport = &http.Transport{
+			TLSClientConfig: consulTLSConfig,
+		}
+	} else {
+		config.HttpClient = http.DefaultClient
+		config.Address = machine
+		config.Scheme = "http"
+		config.Token = p.options[kvdb.ACLTokenKey]
+	}
 
 	client, err := api.NewClient(config)
 	if err != nil {
