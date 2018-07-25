@@ -187,12 +187,12 @@ func newKvClient(machine string, p connectionParams) (*api.Config, *api.Client, 
 	config.Token = p.options[kvdb.ACLTokenKey]
 
 	// check if TLS is required
-	caFile, ok1 := p.options[kvdb.CAFileKey]
-	certFile, ok2 := p.options[kvdb.CertFileKey]
-	certKeyFile, ok3 := p.options[kvdb.CertKeyFileKey]
+	caFile, ok := p.options[kvdb.CAFileKey]
+	certFile := p.options[kvdb.CertFileKey]
+	certKeyFile := p.options[kvdb.CertKeyFileKey]
 	caAuthAddress := p.options[kvdb.CAAuthAddress]
 	insecureSkipVerify := strings.ToLower(p.options[kvdb.InsecureSkipVerify]) == "true"
-	if ok1 && ok2 && ok3 {
+	if ok {
 		tlsConfig := &api.TLSConfig{
 			CAFile:             caFile,
 			CertFile:           certFile,
