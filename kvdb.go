@@ -70,6 +70,8 @@ const (
 	CAAuthAddress = "CAAuthAddress"
 	// InsecureSkipVerify has a value true or false (required in consul TLS config)
 	InsecureSkipVerify = "InsecureSkipVerify"
+	// TransportScheme points to http transport being either http or https.
+	TransportScheme = "TransportScheme"
 )
 
 // List of kvdb endpoints supported versions

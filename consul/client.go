@@ -187,18 +187,13 @@ func newKvClient(machine string, p connectionParams) (*api.Config, *api.Client, 
 	config.Token = p.options[kvdb.ACLTokenKey]
 
 	// check if TLS is required
-	caFile, ok := p.options[kvdb.CAFileKey]
-	certFile := p.options[kvdb.CertFileKey]
-	certKeyFile := p.options[kvdb.CertKeyFileKey]
-	caAuthAddress := p.options[kvdb.CAAuthAddress]
-	insecureSkipVerify := strings.ToLower(p.options[kvdb.InsecureSkipVerify]) == "true"
-	if ok {
+	if p.options[kvdb.TransportScheme] == "https" {
 		tlsConfig := &api.TLSConfig{
-			CAFile:             caFile,
-			CertFile:           certFile,
-			KeyFile:            certKeyFile,
-			Address:            caAuthAddress,
-			InsecureSkipVerify: insecureSkipVerify,
+			CAFile:             p.options[kvdb.CAFileKey],
+			CertFile:           p.options[kvdb.CertFileKey],
+			KeyFile:            p.options[kvdb.CertKeyFileKey],
+			Address:            p.options[kvdb.CAAuthAddress],
+			InsecureSkipVerify: strings.ToLower(p.options[kvdb.InsecureSkipVerify]) == "true",
 		}
 
 		consulTLSConfig, err := api.SetupTLSConfig(tlsConfig)
@@ -206,7 +201,7 @@ func newKvClient(machine string, p connectionParams) (*api.Config, *api.Client, 
 			logrus.Fatal(err)
 		}
 
-		config.Scheme = "https"
+		config.Scheme = p.options[kvdb.TransportScheme]
 		config.HttpClient = new(http.Client)
 		config.HttpClient.Transport = &http.Transport{
 			TLSClientConfig: consulTLSConfig,
