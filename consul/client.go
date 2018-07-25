@@ -180,8 +180,11 @@ func isKeyIndexMismatchErr(err error) bool {
 
 // newKvClient constructs new kvdb.Kvdb given a single end-point to connect to.
 func newKvClient(machine string, p connectionParams) (*api.Config, *api.Client, error) {
-	logrus.Infof("consul: connecting to %v", machine)
 	config := api.DefaultConfig()
+	config.HttpClient = http.DefaultClient
+	config.Address = machine
+	config.Scheme = "http"
+	config.Token = p.options[kvdb.ACLTokenKey]
 
 	// check if TLS is required
 	caFile, ok1 := p.options[kvdb.CAFileKey]
@@ -203,19 +206,11 @@ func newKvClient(machine string, p connectionParams) (*api.Config, *api.Client, 
 			logrus.Fatal(err)
 		}
 
-		config := api.DefaultConfig()
-		config.Address = machine
 		config.Scheme = "https"
 		config.HttpClient = new(http.Client)
-
 		config.HttpClient.Transport = &http.Transport{
 			TLSClientConfig: consulTLSConfig,
 		}
-	} else {
-		config.HttpClient = http.DefaultClient
-		config.Address = machine
-		config.Scheme = "http"
-		config.Token = p.options[kvdb.ACLTokenKey]
 	}
 
 	client, err := api.NewClient(config)
