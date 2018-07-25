@@ -180,6 +180,7 @@ func isKeyIndexMismatchErr(err error) bool {
 
 // newKvClient constructs new kvdb.Kvdb given a single end-point to connect to.
 func newKvClient(machine string, p connectionParams) (*api.Config, *api.Client, error) {
+	logrus.Infof("consul: connecting to %v", machine)
 	config := api.DefaultConfig()
 	config.HttpClient = http.DefaultClient
 	config.Address = machine
