@@ -128,6 +128,10 @@ func New(
 		}
 	}
 
+	if options == nil {
+		options = make(map[string]string)
+	}
+
 	if hasHttpsPrefix {
 		options[kvdb.TransportScheme] = "https"
 	} else {
