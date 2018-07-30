@@ -42,7 +42,7 @@ type connectionParams struct {
 	machines []string
 	// options is consul specific options
 	options map[string]string
-	// fatalErrorCb callback to invoke incase of errors
+	// fatalErrorCb callback to invoke in case of errors
 	fatalErrorCb kvdb.FatalErrorCB
 }
 
@@ -119,6 +119,25 @@ func New(
 	if domain != "" && !strings.HasSuffix(domain, "/") {
 		domain = domain + "/"
 	}
+
+	hasHttpsPrefix := false
+	for _, machine := range servers {
+		if strings.HasPrefix(machine, "https://") {
+			hasHttpsPrefix = true
+			break
+		}
+	}
+
+	if options == nil {
+		options = make(map[string]string)
+	}
+
+	if hasHttpsPrefix {
+		options[kvdb.TransportScheme] = "https"
+	} else {
+		options[kvdb.TransportScheme] = "http"
+	}
+
 	connParams := connectionParams{
 		machines:     shuffle(servers),
 		options:      options,
