@@ -968,6 +968,9 @@ func (kv *consulKV) watchTreeStart(
 					"delete", meta.LastIndex, opts.WaitIndex)
 				// Set the wait index so that we block on the next List call
 				opts.WaitIndex = meta.LastIndex
+			} else {
+				checkIndex(&prevIndex, pair, kvPair.ModifiedIndex,
+					"delete", -1, opts.WaitIndex)
 			}
 
 			// Callback with a delete action
