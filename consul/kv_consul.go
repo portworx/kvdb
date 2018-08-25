@@ -961,16 +961,18 @@ func (kv *consulKV) watchTreeStart(
 				Value: nil,
 			}
 			kvPair := kv.pairToKv("delete", pair, meta)
-			kvPair.ModifiedIndex = meta.LastIndex
-			checkIndex(&prevIndex, pair, kvPair.ModifiedIndex,
-				"delete", meta.LastIndex, opts.WaitIndex)
+
+			if meta != nil {
+				kvPair.ModifiedIndex = meta.LastIndex
+				checkIndex(&prevIndex, pair, kvPair.ModifiedIndex,
+					"delete", meta.LastIndex, opts.WaitIndex)
+				// Set the wait index so that we block on the next List call
+				opts.WaitIndex = meta.LastIndex
+			}
 
 			// Callback with a delete action
 			cbUpdateErr = cb(prefix, opaque, kvPair, nil)
 			prefixDeleted = true
-
-			// Set the wait index so that we block on the next List call
-			opts.WaitIndex = meta.LastIndex
 
 		} else if pairs == nil && !prefixExisted {
 			// Prefix Never existed or hasn't been created yet
