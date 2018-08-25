@@ -961,6 +961,12 @@ func (kv *consulKV) watchTreeStart(
 				Value: nil,
 			}
 			kvPair := kv.pairToKv("delete", pair, meta)
+			if kvPair == nil {
+				fmt.Println(">>>>>> kvPair is nil")
+			}
+			if meta == nil {
+				fmt.Println(">>>>>> meta is nil")
+			}
 			kvPair.ModifiedIndex = meta.LastIndex
 			checkIndex(&prevIndex, pair, kvPair.ModifiedIndex,
 				"delete", meta.LastIndex, opts.WaitIndex)
