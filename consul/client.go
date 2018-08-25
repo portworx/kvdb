@@ -286,19 +286,19 @@ func (c *consulClientImpl) Get(key string, q *api.QueryOptions) (*api.KVPair, *a
 
 func (c *consulClientImpl) Put(p *api.KVPair, q *api.WriteOptions) (*api.WriteMeta, error) {
 	return c.writeRetryFunc(func(conn *consulConnection) (*api.WriteMeta, error) {
-		return conn.client.KV().Put(p, nil)
+		return conn.client.KV().Put(p, q)
 	})
 }
 
 func (c *consulClientImpl) Delete(key string, w *api.WriteOptions) (*api.WriteMeta, error) {
 	return c.writeRetryFunc(func(conn *consulConnection) (*api.WriteMeta, error) {
-		return conn.client.KV().Delete(key, nil)
+		return conn.client.KV().Delete(key, w)
 	})
 }
 
 func (c *consulClientImpl) DeleteTree(prefix string, w *api.WriteOptions) (*api.WriteMeta, error) {
 	return c.writeRetryFunc(func(conn *consulConnection) (*api.WriteMeta, error) {
-		return conn.client.KV().DeleteTree(prefix, nil)
+		return conn.client.KV().DeleteTree(prefix, w)
 	})
 }
 
@@ -310,7 +310,7 @@ func (c *consulClientImpl) Keys(prefix, separator string, q *api.QueryOptions) (
 
 	c.runWithRetry(func() bool {
 		conn := c.conn
-		list, meta, err = conn.client.KV().Keys(prefix, separator, nil)
+		list, meta, err = conn.client.KV().Keys(prefix, separator, q)
 		retry, err = c.reconnectIfConnectionError(conn, err)
 		return retry
 	})
@@ -326,7 +326,7 @@ func (c *consulClientImpl) List(prefix string, q *api.QueryOptions) (api.KVPairs
 
 	c.runWithRetry(func() bool {
 		conn := c.conn
-		pairs, meta, err = conn.client.KV().List(prefix, nil)
+		pairs, meta, err = conn.client.KV().List(prefix, q)
 		retry, err = c.reconnectIfConnectionError(conn, err)
 		return retry
 	})
@@ -341,7 +341,7 @@ func (c *consulClientImpl) Acquire(p *api.KVPair, q *api.WriteOptions) (*api.Wri
 	retry := false
 	c.runWithRetry(func() bool {
 		conn := c.conn
-		ok, meta, err = conn.client.KV().Acquire(p, nil)
+		ok, meta, err = conn.client.KV().Acquire(p, q)
 		retry, err = c.reconnectIfConnectionError(conn, err)
 		return retry
 	})
@@ -352,7 +352,7 @@ func (c *consulClientImpl) Acquire(p *api.KVPair, q *api.WriteOptions) (*api.Wri
 	}
 
 	if !ok {
-		return nil, fmt.Errorf("Acquire failed")
+		return nil, fmt.Errorf("acquire failed")
 	}
 
 	return meta, err
@@ -407,7 +407,7 @@ func (c *consulClientImpl) RenewPeriodic(
 
 	c.runWithRetry(func() bool {
 		conn := c.conn
-		err = conn.client.Session().RenewPeriodic(initialTTL, id, nil, doneCh)
+		err = conn.client.Session().RenewPeriodic(initialTTL, id, q, doneCh)
 		retry, err = c.reconnectIfConnectionError(conn, err)
 		return retry
 	})
