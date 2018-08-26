@@ -970,7 +970,7 @@ func (kv *consulKV) watchTreeStart(
 				opts.WaitIndex = meta.LastIndex
 			} else {
 				checkIndex(&prevIndex, pair, kvPair.ModifiedIndex,
-					"delete", -1, opts.WaitIndex)
+					"delete", 0, opts.WaitIndex)
 			}
 
 			// Callback with a delete action
