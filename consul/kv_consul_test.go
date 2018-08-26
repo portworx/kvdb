@@ -3,6 +3,7 @@ package consul
 import (
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,7 +59,10 @@ func Start() error {
 	}
 
 	//consul agent -server -client=0.0.0.0  -data-dir /opt/consul/data -bind 0.0.0.0 -syslog -bootstrap-expect 1 -advertise 127.0.0.1
-	cmd = exec.Command("consul", "agent", "-server", "-advertise", "127.0.0.1", "-bind", "0.0.0.0", "-data-dir", "/tmp/consul", "-bootstrap-expect", "1")
+	//sudo consul agent -server -bind=127.0.0.1 -config-dir /etc/consul.d/server -data-dir /var/consul -ui -client=127.0.0.1
+	s := "sudo consul agent -server -bind=127.0.0.1 -config-dir /etc/consul.d/server -data-dir /var/consul -ui -client=127.0.0.1"
+	command := strings.Split(s, " ")
+	cmd = exec.Command(command[0], command[1:]...)
 	err := cmd.Start()
 	time.Sleep(5 * time.Second)
 	return err

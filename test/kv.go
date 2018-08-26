@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -62,27 +63,30 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop S
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	create(kv, t)
-	createWithTTL(kv, t)
-	cas(kv, t)
-	cad(kv, t)
-	snapshot(kv, t)
-	get(kv, t)
-	getInterface(kv, t)
-	update(kv, t)
-	deleteKey(kv, t)
-	deleteTree(kv, t)
-	enumerate(kv, t)
-	keys(kv, t)
-	concurrentEnum(kv, t)
-	watchKey(kv, t)
-	watchTree(kv, t)
-	watchWithIndex(kv, t)
-	collect(kv, t)
-	lockBasic(kv, t)
-	lock(kv, t)
-	lockBetweenRestarts(kv, t, start, stop)
-	serialization(kv, t)
+	createUpdateDeleteWatchInALoopAsync(kv, t)
+	/*
+		create(kv, t)
+		createWithTTL(kv, t)
+		cas(kv, t)
+		cad(kv, t)
+		snapshot(kv, t)
+		get(kv, t)
+		getInterface(kv, t)
+		update(kv, t)
+		deleteKey(kv, t)
+		deleteTree(kv, t)
+		enumerate(kv, t)
+		keys(kv, t)
+		concurrentEnum(kv, t)
+		watchKey(kv, t)
+		watchTree(kv, t)
+		watchWithIndex(kv, t)
+		collect(kv, t)
+		lockBasic(kv, t)
+		lock(kv, t)
+		lockBetweenRestarts(kv, t, start, stop)
+		serialization(kv, t)
+	*/
 	err = stop()
 	assert.NoError(t, err, "Unable to stop kvdb")
 }
@@ -162,6 +166,139 @@ func RunAuth(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	addUser(kv, t)
 	grantRevokeUser(kv, datastoreInit, t)
 	removeUser(kv, t)
+}
+
+func createUpdateDeleteWatchInALoop(kv kvdb.Kvdb, t *testing.T) {
+	prefix := "/test"
+	key := "myKey"
+	n := 1000
+	ch := make(chan uint64)
+	timeout := time.Second * 45
+
+	if err := kv.DeleteTree(prefix); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := kv.WatchTree(prefix, 0, nil, watcherCreator("watcher0", ch, timeout)); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < n; i++ {
+		if kvp, err := kv.Put(filepath.Join(prefix, key), i, 0); err != nil {
+			t.Fatal(err)
+		} else {
+			if err := validateModIndex("put", kvp.ModifiedIndex, ch, timeout); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if kvp, err := kv.Update(filepath.Join(prefix, key), i*10, 0); err != nil {
+			t.Fatal(err)
+		} else {
+			if err := validateModIndex("update", kvp.ModifiedIndex, ch, timeout); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if kvp, err := kv.Delete(filepath.Join(prefix, key)); err != nil {
+			t.Fatal(err)
+		} else {
+			// here we add +1 because delete returns the previous kv pair
+			if err := validateModIndex("delete", kvp.ModifiedIndex+1, ch, timeout); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
+func createUpdateDeleteWatchInALoopAsync(kv kvdb.Kvdb, t *testing.T) {
+	prefix := "/test"
+	key := "myKey"
+	n := 1000
+	ch := make(chan uint64)
+	done := make(chan struct{})
+	timeout := time.Second * 45
+	indexMap := make(map[uint64]int)
+	mismatchMap := make(map[uint64]int)
+
+	if err := kv.DeleteTree(prefix); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := kv.WatchTree(prefix, 0, nil, watcherCreator("watcher0", ch, timeout)); err != nil {
+		t.Fatal(err)
+	}
+
+	// collect indices in map. their count should be 2 each
+	go func(c chan uint64, done chan struct{}, m map[uint64]int) {
+		for i := 0; i < 2*n; i++ {
+			indexMap[<-c] += 1
+		}
+		done <- struct{}{}
+	}(ch, done, indexMap)
+
+	for i := 0; i < n; i++ {
+		if kvp, err := kv.Put(filepath.Join(prefix, key), i, 0); err != nil {
+			t.Fatal(err)
+		} else {
+			go func(c chan uint64, index uint64) {
+				c <- index
+			}(ch, kvp.ModifiedIndex)
+		}
+		if kvp, err := kv.Update(filepath.Join(prefix, key), i*10, 0); err != nil {
+			t.Fatal(err)
+		} else {
+			go func(c chan uint64, index uint64) {
+				c <- index
+			}(ch, kvp.ModifiedIndex)
+		}
+		if kvp, err := kv.Delete(filepath.Join(prefix, key)); err != nil {
+			t.Fatal(err)
+		} else {
+			// here we add +1 because delete returns the previous kv pair
+			go func(c chan uint64, index uint64) {
+				c <- index
+			}(ch, kvp.ModifiedIndex+1)
+		}
+	}
+
+	// wait for processes to finish
+	select {
+	case <-done:
+		for key, val := range indexMap {
+			if val != 2 {
+				mismatchMap[key] = val
+			}
+		}
+
+		if len(mismatchMap) > 0 {
+			t.Log("expected count of each of the mod indices to be == 2. Total mismatch:",
+				len(mismatchMap), "/", len(indexMap))
+		}
+	case <-time.After(timeout):
+		t.Fatal("timeout occurred")
+	}
+}
+
+func validateModIndex(name string, modIndexA uint64, ch chan uint64, timeout time.Duration) error {
+	select {
+	case modIndexB := <-ch:
+		if modIndexA != modIndexB {
+			return fmt.Errorf("%s: %s %v %s %v", name, "expected", modIndexA, "received in watch func", modIndexB)
+		}
+	case <-time.After(timeout):
+		return fmt.Errorf("%s: %s", name, "timeout... updates to watch func taking too long")
+	}
+	return nil
+}
+
+func watcherCreator(name string, ch chan uint64, timeout time.Duration) func(prefix string, opaque interface{}, kvp *kvdb.KVPair, err error) error {
+	return func(prefix string, opaque interface{}, kvp *kvdb.KVPair, err error) error {
+		select {
+		case ch <- kvp.ModifiedIndex:
+		case <-time.After(timeout):
+			return fmt.Errorf("timeout... updates to watch func taking too long")
+		}
+		return nil
+	}
 }
 
 func get(kv kvdb.Kvdb, t *testing.T) {

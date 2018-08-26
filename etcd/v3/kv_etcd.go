@@ -10,23 +10,19 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	"github.com/Sirupsen/logrus"
-
-	"golang.org/x/net/context"
-
 	e "github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/coreos/etcd/etcdserver"
 	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	"github.com/coreos/etcd/mvcc/mvccpb"
-
 	"github.com/portworx/kvdb"
 	"github.com/portworx/kvdb/common"
 	ec "github.com/portworx/kvdb/etcd/common"
 	"github.com/portworx/kvdb/mem"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (

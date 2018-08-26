@@ -11,14 +11,13 @@ import (
 	"time"
 
 	"github.com/Sirupsen/logrus"
-	"golang.org/x/net/context"
-
 	e "github.com/coreos/etcd/client"
 	"github.com/coreos/etcd/pkg/transport"
 	"github.com/portworx/kvdb"
 	"github.com/portworx/kvdb/common"
 	ec "github.com/portworx/kvdb/etcd/common"
 	"github.com/portworx/kvdb/mem"
+	"golang.org/x/net/context"
 )
 
 const (
