@@ -501,7 +501,7 @@ func (et *etcdKV) CompareAndSet(
 			} // retry is needed
 
 			// server timeout
-			kvPair, err := et.Get(key)
+			kvPair, err := et.Get(kvp.Key)
 			if err != nil {
 				return nil, txnErr
 			}
@@ -571,7 +571,7 @@ func (et *etcdKV) CompareAndDelete(
 			} // retry is needed
 
 			// server timeout
-			_, err := et.Get(key)
+			_, err := et.Get(kvp.Key)
 			if err == kvdb.ErrNotFound {
 				// Our command succeeded
 				return kvp, nil
