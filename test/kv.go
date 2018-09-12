@@ -47,14 +47,14 @@ func fatalErrorCb() kvdb.FatalErrorCB {
 }
 
 // StartKvdb is a func literal.
-type StartKvdb func() error
+type StartKvdb func(bool) error
 
 // StopKvdb is a func literal.
 type StopKvdb func() error
 
 // Run runs the test suite.
 func Run(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop StopKvdb) {
-	err := start()
+	err := start(true)
 	assert.NoError(t, err, "Unable to start kvdb")
 	// Wait for kvdb to start
 	time.Sleep(5 * time.Second)
@@ -65,7 +65,9 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop S
 	create(kv, t)
 	createWithTTL(kv, t)
 	cas(kv, t)
+	casWithRestarts(kv, t, start, stop)
 	cad(kv, t)
+	cadWithRestarts(kv, t, start, stop)
 	snapshot(kv, t)
 	get(kv, t)
 	getInterface(kv, t)
@@ -89,7 +91,7 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop S
 
 // RunLock runs the lock test suite.
 func RunLock(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop StopKvdb) {
-	err := start()
+	err := start(true)
 	time.Sleep(3 * time.Second)
 	assert.NoError(t, err, "Unable to start kvdb")
 	kv, err := datastoreInit("pwx/test", nil, nil, fatalErrorCb())
@@ -107,7 +109,7 @@ func RunLock(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, st
 
 // RunWatch runs the watch test suite.
 func RunWatch(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop StopKvdb) {
-	err := start()
+	err := start(true)
 	time.Sleep(3 * time.Second)
 	assert.NoError(t, err, "Unable to start kvdb")
 	kv, err := datastoreInit("pwx/test", nil, nil, fatalErrorCb())
@@ -761,7 +763,7 @@ func lockBetweenRestarts(kv kvdb.Kvdb, t *testing.T, start StartKvdb, stop StopK
 		time.Sleep(30 * time.Second)
 
 		fmt.Println("starting kvdb")
-		err = start()
+		err = start(false)
 		assert.NoError(t, err, "Unable to start kvdb")
 		time.Sleep(30 * time.Second)
 
@@ -1155,6 +1157,41 @@ func cas(kv kvdb.Kvdb, t *testing.T) {
 	assert.NoError(t, err, "CompareAndSet should succeed on an correct value and modified index")
 }
 
+func casWithRestarts(kv kvdb.Kvdb, t *testing.T, start StartKvdb, stop StopKvdb) {
+	fmt.Println("\ncasWithRestarts")
+	key := "foo/casWithRestart"
+	val := "great"
+	defer func() {
+		kv.DeleteTree(key)
+	}()
+
+	kvPair, err := kv.Put(key, []byte(val), 0)
+	assert.NoError(t, err, "Unxpected error in Put")
+
+	kvPair, err = kv.Get(key)
+	assert.NoError(t, err, "Failed in Get")
+
+	fmt.Println("stopping kvdb")
+	err = stop()
+	assert.NoError(t, err, "Unable to stop kvdb")
+
+	lockChan := make(chan int)
+	go func() {
+		_, err := kv.CompareAndSet(kvPair, kvdb.KVFlags(0), []byte(val))
+		assert.NoError(t, err, "CompareAndSet should succeed on an correct value")
+		lockChan <- 1
+	}()
+	fmt.Println("starting kvdb")
+	err = start(false)
+	assert.NoError(t, err, "Unable to start kvdb")
+	select {
+	case <-time.After(10 * time.Second):
+		assert.Fail(t, "Unable to take a lock whose session is expired")
+	case <-lockChan:
+	}
+
+}
+
 func cad(kv kvdb.Kvdb, t *testing.T) {
 	fmt.Println("\ncad")
 
@@ -1190,6 +1227,40 @@ func cad(kv kvdb.Kvdb, t *testing.T) {
 
 	_, err = kv.CompareAndDelete(kvPair, kvdb.KVFlags(0))
 	assert.NoError(t, err, "CompareAndDelete should succeed on an correct value")
+}
+
+func cadWithRestarts(kv kvdb.Kvdb, t *testing.T, start StartKvdb, stop StopKvdb) {
+	fmt.Println("\ncadWithRestarts")
+	key := "foo/cadWithRestarts"
+	val := "great"
+	defer func() {
+		kv.DeleteTree(key)
+	}()
+
+	kvPair, err := kv.Put(key, []byte(val), 0)
+	assert.NoError(t, err, "Unxpected error in Put")
+
+	kvPair, err = kv.Get(key)
+	assert.NoError(t, err, "Failed in Get")
+	fmt.Println("stopping kvdb")
+	err = stop()
+	assert.NoError(t, err, "Unable to stop kvdb")
+
+	lockChan := make(chan int)
+	go func() {
+		_, err = kv.CompareAndDelete(kvPair, kvdb.KVFlags(0))
+		assert.NoError(t, err, "CompareAndDelete should succeed on an correct value")
+		lockChan <- 1
+	}()
+	fmt.Println("starting kvdb")
+	err = start(false)
+	assert.NoError(t, err, "Unable to start kvdb")
+	select {
+	case <-time.After(10 * time.Second):
+		assert.Fail(t, "Unable to take a lock whose session is expired")
+	case <-lockChan:
+	}
+
 }
 
 func addUser(kv kvdb.Kvdb, t *testing.T) {

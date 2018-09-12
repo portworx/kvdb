@@ -559,13 +559,13 @@ func (et *etcdKV) CompareAndDelete(
 	flags kvdb.KVFlags,
 ) (*kvdb.KVPair, error) {
 	key := et.domain + kvp.Key
-	ctx, cancel := et.Context()
 
 	cmp := e.Compare(e.Value(key), "=", string(kvp.Value))
 	if (flags & kvdb.KVModifiedIndex) != 0 {
 		cmp = e.Compare(e.ModRevision(key), "=", int64(kvp.ModifiedIndex))
 	}
 	for i := 0; i < timeoutMaxRetry; i++ {
+		ctx, cancel := et.Context()
 		txnResponse, txnErr := et.kvClient.Txn(ctx).
 			If(cmp).
 			Then(e.OpDelete(key)).
