@@ -1,7 +1,9 @@
 package etcdv3
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -66,4 +68,89 @@ func TestIsRetryNeeded(t *testing.T) {
 	retry, err = isRetryNeeded(grpcErr, fn, key, retryCount)
 	assert.EqualError(t, grpcErr, err.Error(), "Unexpcted error")
 	assert.True(t, retry, "Expected a retry")
+}
+
+func TestCasWithRestarts(t *testing.T) {
+	fmt.Println("casWithRestarts")
+	err := common.TestStart(true)
+	assert.NoError(t, err, "Unable to start kvdb")
+
+	kv := newKv(t)
+	key := "foo/casWithRestart"
+	val := "great"
+	defer func() {
+		kv.DeleteTree(key)
+	}()
+
+	kvPair, err := kv.Put(key, []byte(val), 0)
+	assert.NoError(t, err, "Unxpected error in Put")
+
+	kvPair, err = kv.Get(key)
+	assert.NoError(t, err, "Failed in Get")
+
+	fmt.Println("stopping kvdb")
+	err = common.TestStop()
+	assert.NoError(t, err, "Unable to stop kvdb")
+
+	lockChan := make(chan int)
+	go func() {
+		_, err := kv.CompareAndSet(kvPair, kvdb.KVFlags(0), []byte(val))
+		assert.NoError(t, err, "CompareAndSet should succeed on an correct value")
+		lockChan <- 1
+	}()
+	fmt.Println("starting kvdb")
+	err = common.TestStart(false)
+	assert.NoError(t, err, "Unable to start kvdb")
+	select {
+	case <-time.After(10 * time.Second):
+		assert.Fail(t, "Unable to take a lock whose session is expired")
+	case <-lockChan:
+	}
+
+}
+
+func TestCadWithRestarts(t *testing.T) {
+	fmt.Println("cadWithRestarts")
+	key := "foo/cadWithRestarts"
+	val := "great"
+	err := common.TestStart(true)
+	assert.NoError(t, err, "Unable to start kvdb")
+
+	kv := newKv(t)
+	defer func() {
+		kv.DeleteTree(key)
+	}()
+
+	kvPair, err := kv.Put(key, []byte(val), 0)
+	assert.NoError(t, err, "Unxpected error in Put")
+
+	kvPair, err = kv.Get(key)
+	assert.NoError(t, err, "Failed in Get")
+	fmt.Println("stopping kvdb")
+	err = common.TestStop()
+	assert.NoError(t, err, "Unable to stop kvdb")
+
+	lockChan := make(chan int)
+	go func() {
+		_, err = kv.CompareAndDelete(kvPair, kvdb.KVFlags(0))
+		assert.NoError(t, err, "CompareAndDelete should succeed on an correct value")
+		lockChan <- 1
+	}()
+	fmt.Println("starting kvdb")
+	err = common.TestStart(false)
+	assert.NoError(t, err, "Unable to start kvdb")
+	select {
+	case <-time.After(10 * time.Second):
+		assert.Fail(t, "Unable to take a lock whose session is expired")
+	case <-lockChan:
+	}
+
+}
+
+func newKv(t *testing.T) kvdb.Kvdb {
+	kv, err := New("pwx/test", nil, nil, nil)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	return kv
 }
