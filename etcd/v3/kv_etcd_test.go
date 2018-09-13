@@ -72,51 +72,32 @@ func TestIsRetryNeeded(t *testing.T) {
 
 func TestCasWithRestarts(t *testing.T) {
 	fmt.Println("casWithRestarts")
-	err := common.TestStart(true)
-	assert.NoError(t, err, "Unable to start kvdb")
-
-	kv := newKv(t)
-	key := "foo/casWithRestart"
-	val := "great"
-	defer func() {
-		kv.DeleteTree(key)
-	}()
-
-	kvPair, err := kv.Put(key, []byte(val), 0)
-	assert.NoError(t, err, "Unxpected error in Put")
-
-	kvPair, err = kv.Get(key)
-	assert.NoError(t, err, "Failed in Get")
-
-	fmt.Println("stopping kvdb")
-	err = common.TestStop()
-	assert.NoError(t, err, "Unable to stop kvdb")
-
-	lockChan := make(chan int)
-	go func() {
+	testFn := func(lockChan chan int, kv kvdb.Kvdb, kvPair *kvdb.KVPair, val string) {
 		_, err := kv.CompareAndSet(kvPair, kvdb.KVFlags(0), []byte(val))
 		assert.NoError(t, err, "CompareAndSet should succeed on an correct value")
 		lockChan <- 1
-	}()
-	fmt.Println("starting kvdb")
-	err = common.TestStart(false)
-	assert.NoError(t, err, "Unable to start kvdb")
-	select {
-	case <-time.After(10 * time.Second):
-		assert.Fail(t, "Unable to take a lock whose session is expired")
-	case <-lockChan:
 	}
+	testWithRestarts(t, testFn)
 
 }
 
 func TestCadWithRestarts(t *testing.T) {
 	fmt.Println("cadWithRestarts")
-	key := "foo/cadWithRestarts"
+	testFn := func(lockChan chan int, kv kvdb.Kvdb, kvPair *kvdb.KVPair, val string) {
+		_, err := kv.CompareAndDelete(kvPair, kvdb.KVFlags(0))
+		assert.NoError(t, err, "CompareAndDelete should succeed on an correct value")
+		lockChan <- 1
+	}
+	testWithRestarts(t, testFn)
+}
+
+func testWithRestarts(t *testing.T, testFn func(chan int, kvdb.Kvdb, *kvdb.KVPair, string)) {
+	key := "foo/cadCasWithRestarts"
 	val := "great"
 	err := common.TestStart(true)
 	assert.NoError(t, err, "Unable to start kvdb")
-
 	kv := newKv(t)
+
 	defer func() {
 		kv.DeleteTree(key)
 	}()
@@ -132,10 +113,9 @@ func TestCadWithRestarts(t *testing.T) {
 
 	lockChan := make(chan int)
 	go func() {
-		_, err = kv.CompareAndDelete(kvPair, kvdb.KVFlags(0))
-		assert.NoError(t, err, "CompareAndDelete should succeed on an correct value")
-		lockChan <- 1
+		testFn(lockChan, kv, kvPair, val)
 	}()
+
 	fmt.Println("starting kvdb")
 	err = common.TestStart(false)
 	assert.NoError(t, err, "Unable to start kvdb")
