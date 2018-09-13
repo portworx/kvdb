@@ -142,18 +142,29 @@ func New(
 		// The time required for a request to fail - 30 sec
 		//HeaderTimeoutPerRequest: time.Duration(10) * time.Second,
 	}
-	c, err := e.New(cfg)
+	kvClient, err := e.New(cfg)
 	if err != nil {
 		return nil, err
 	}
+	// Creating a separate client for maintenance APIs. Currently the maintenance client
+	// is only used for the Status API, to fetch the endpoint status. However if the Status
+	// API errors out for an endpoint, the etcd client code marks the pinned address as not reachable
+	// instead of the actual endpoint for which the Status command failed. This causes the etcd
+	// balancer to go into a retry loop trying to fix its healthy endpoints.
+	// https://github.com/etcd-io/etcd/blob/v3.3.1/clientv3/retry.go#L102
+	mClient, err := e.New(cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	if domain != "" && !strings.HasSuffix(domain, "/") {
 		domain = domain + "/"
 	}
 	return &etcdKV{
 		common.BaseKvdb{FatalCb: fatalErrorCb},
-		c,
-		e.NewAuth(c),
-		e.NewMaintenance(c),
+		kvClient,
+		e.NewAuth(kvClient),
+		e.NewMaintenance(mClient),
 		domain,
 		etcdCommon,
 	}, nil
