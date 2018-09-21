@@ -531,7 +531,7 @@ func (et *etcdKV) CompareAndSet(
 		if txnResponse.Succeeded == false {
 			if len(txnResponse.Responses) == 0 {
 				logrus.Infof("Etcd did not return any transaction responses "+
-					"for key (%v)", kvp.Key)
+					"for key (%v) index (%v)", kvp.Key, kvp.ModifiedIndex)
 			} else {
 				for i, responseOp := range txnResponse.Responses {
 					logrus.Infof("Etcd transaction Response: %v %v", i,
@@ -863,8 +863,9 @@ func (et *etcdKV) refreshLock(
 				if err != nil {
 					et.FatalCb(
 						"Error refreshing lock. [Key %v] [Err: %v]"+
-							" [Current Refresh: %v] [Previous Refresh: %v]",
-						keyString, err, currentRefresh, prevRefresh,
+							" [Current Refresh: %v] [Previous Refresh: %v]"+
+							" [Modified Index: %v]",
+						keyString, err, currentRefresh, prevRefresh, kvPair.ModifiedIndex,
 					)
 					l.Err = err
 					l.Unlock()
