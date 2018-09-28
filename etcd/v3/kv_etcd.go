@@ -936,7 +936,7 @@ func (et *etcdKV) watchStart(
 				logrus.Errorf("Watch on key %v cancelled. Error: %v", key,
 					wresp.Err())
 				watchQ.enqueue(key, nil, kvdb.ErrWatchStopped)
-				break
+				return
 			} else {
 				for _, ev := range wresp.Events {
 					var action string
@@ -957,6 +957,8 @@ func (et *etcdKV) watchStart(
 				}
 			}
 		}
+		logrus.Errorf("Watch on key %v closed without a Cancel response.", key)
+		watchQ.enqueue(key, nil, kvdb.ErrWatchStopped)
 	}()
 
 	select {
