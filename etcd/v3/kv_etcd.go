@@ -976,7 +976,7 @@ func (et *etcdKV) watchStart(
 func (et *etcdKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 	// Create a new bootstrap key
 	var updates []*kvdb.KVPair
-	finalPutDone := false
+	watchClosed := false
 	var lowestKvdbIndex, highestKvdbIndex uint64
 	done := make(chan error)
 	mutex := &sync.Mutex{}
@@ -992,7 +992,7 @@ func (et *etcdKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 		ok := false
 
 		if err != nil {
-			if err == kvdb.ErrWatchStopped && finalPutDone {
+			if err == kvdb.ErrWatchStopped && watchClosed {
 				return nil
 			}
 			logrus.Errorf("Watch returned error: %v", err)
@@ -1019,14 +1019,13 @@ func (et *etcdKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 		m.Lock()
 		defer m.Unlock()
 		updates = append(updates, kvp)
-		if finalPutDone {
-			if kvp.ModifiedIndex >= highestKvdbIndex {
-				// Done applying changes.
-				logrus.Infof("Snapshot complete")
-				watchErr = fmt.Errorf("done")
-				sendErr = nil
-				goto errordone
-			}
+		if highestKvdbIndex > 0 && kvp.ModifiedIndex >= highestKvdbIndex {
+			// Done applying changes.
+			logrus.Infof("Snapshot complete")
+			watchClosed = true
+			watchErr = fmt.Errorf("done")
+			sendErr = nil
+			goto errordone
 		}
 
 		return nil
@@ -1103,10 +1102,10 @@ func (et *etcdKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 		return nil, 0, fmt.Errorf("Failed to create snap bootstrap key %v, "+
 			"err: %v", bootStrapKeyHigh, err)
 	}
-	highestKvdbIndex = kvPair.ModifiedIndex
 
 	mutex.Lock()
-	finalPutDone = true
+	// not sure if we need a lock, but couldnt find any doc which says its ok
+	highestKvdbIndex = kvPair.ModifiedIndex
 	mutex.Unlock()
 
 	// wait until watch finishes
