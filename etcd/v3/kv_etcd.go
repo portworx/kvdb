@@ -247,9 +247,7 @@ func (et *etcdKV) Create(
 		if ttl < 5 {
 			return nil, kvdb.ErrTTLNotSupported
 		}
-		leaseCtx, leaseCancel := et.Context()
-		leaseResult, err := et.kvClient.Grant(leaseCtx, int64(ttl))
-		leaseCancel()
+		leaseResult, err := et.getLeaseWithRetries(key, int64(ttl))
 		if err != nil {
 			return nil, err
 		}
@@ -293,9 +291,7 @@ func (et *etcdKV) Update(
 		if ttl < 5 {
 			return nil, kvdb.ErrTTLNotSupported
 		}
-		leaseCtx, leaseCancel := et.Context()
-		leaseResult, err := et.kvClient.Grant(leaseCtx, int64(ttl))
-		leaseCancel()
+		leaseResult, err := et.getLeaseWithRetries(key, int64(ttl))
 		if err != nil {
 			return nil, err
 		}
@@ -482,9 +478,7 @@ func (et *etcdKV) CompareAndSet(
 
 	opts := []e.OpOption{}
 	if (flags & kvdb.KVTTL) != 0 {
-		leaseCtx, leaseCancel := et.Context()
-		leaseResult, err = et.kvClient.Grant(leaseCtx, int64(kvp.TTL))
-		leaseCancel()
+		leaseResult, err = et.getLeaseWithRetries(key, kvp.TTL)
 		if err != nil {
 			return nil, err
 		}
@@ -1377,6 +1371,28 @@ func (et *etcdKV) listenPeerUrls(ip string, port string) []string {
 func (et *etcdKV) constructURL(ip string, port string) string {
 	ip = strings.TrimPrefix(ip, urlPrefix)
 	return urlPrefix + ip + ":" + port
+}
+
+func (et *etcdKV) getLeaseWithRetries(key string, ttl int64) (*e.LeaseGrantResponse, error) {
+	var (
+		leaseResult *e.LeaseGrantResponse
+		leaseErr    error
+		retry       bool
+	)
+	for i := 0; i < timeoutMaxRetry; i++ {
+		leaseCtx, leaseCancel := et.Context()
+		leaseResult, leaseErr = et.kvClient.Grant(leaseCtx, ttl)
+		leaseCancel()
+		if leaseErr != nil {
+			retry, leaseErr = isRetryNeeded(leaseErr, "lease", key, i)
+			if !retry {
+				return nil, leaseErr
+			}
+			continue
+		}
+		return leaseResult, nil
+	}
+	return nil, leaseErr
 }
 
 func getContextWithLeaderRequirement() context.Context {
