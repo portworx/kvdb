@@ -678,6 +678,7 @@ func (kv *consulKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 		// create a watch to get all changes
 		// between lowestKvdbIndex and highestKvdbIndex
 		done := make(chan error)
+		watchClosed := false
 		mutex := &sync.Mutex{}
 		cb := func(
 			prefix string,
@@ -691,7 +692,7 @@ func (kv *consulKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 			ok := false
 
 			if err != nil {
-				if err == kvdb.ErrWatchStopped {
+				if err == kvdb.ErrWatchStopped && watchClosed {
 					return nil
 				}
 				watchErr = err
@@ -754,6 +755,7 @@ func (kv *consulKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 
 			return nil
 		errordone:
+			watchClosed = true
 			done <- sendErr
 			return watchErr
 		}
