@@ -10,23 +10,19 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
-	"github.com/sirupsen/logrus"
-
-	"golang.org/x/net/context"
-
 	e "github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/coreos/etcd/etcdserver"
 	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	"github.com/coreos/etcd/mvcc/mvccpb"
-
 	"github.com/portworx/kvdb"
 	"github.com/portworx/kvdb/common"
 	ec "github.com/portworx/kvdb/etcd/common"
 	"github.com/portworx/kvdb/mem"
+	"github.com/sirupsen/logrus"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -49,6 +45,8 @@ const (
 
 var (
 	defaultMachines = []string{"http://127.0.0.1:2379"}
+	// mLock is a lock over the maintenanceClient
+	mLock sync.Mutex
 )
 
 // watchQ to collect updates without blocking
@@ -1304,6 +1302,8 @@ func (et *etcdKV) ListMembers() (map[string]*kvdb.MemberInfo, error) {
 		return nil, err
 	}
 	resp := make(map[string]*kvdb.MemberInfo)
+	mLock.Lock()
+	defer mLock.Unlock()
 	for _, member := range memberListResponse.Members {
 		var (
 			leader     bool
