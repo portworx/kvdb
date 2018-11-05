@@ -50,6 +50,11 @@ func TestIsRetryNeeded(t *testing.T) {
 	assert.EqualError(t, rpctypes.ErrGRPCTimeout, err.Error(), "Unexpcted error")
 	assert.True(t, retry, "Expected a retry")
 
+	// rpctypes.ErrGRPCNoLeader
+	retry, err = isRetryNeeded(rpctypes.ErrGRPCNoLeader, fn, key, retryCount)
+	assert.EqualError(t, rpctypes.ErrGRPCNoLeader, err.Error(), "Unexpcted error")
+	assert.True(t, retry, "Expected a retry")
+
 	// rpctypes.ErrGRPCEmptyKey
 	retry, err = isRetryNeeded(rpctypes.ErrGRPCEmptyKey, fn, key, retryCount)
 	assert.EqualError(t, kvdb.ErrNotFound, err.Error(), "Unexpcted error")

@@ -467,6 +467,7 @@ func (et *etcdKV) CompareAndSet(
 	flags kvdb.KVFlags,
 	prevValue []byte,
 ) (*kvdb.KVPair, error) {
+	fn := "cas"
 	var (
 		leaseResult *e.LeaseGrantResponse
 		txnResponse *e.TxnResponse
@@ -497,7 +498,7 @@ func (et *etcdKV) CompareAndSet(
 		cancel()
 		if txnErr != nil {
 			// Check if we need to retry
-			retry, txnErr := isRetryNeeded(txnErr, "cas", key, i)
+			retry, txnErr := isRetryNeeded(txnErr, fn, key, i)
 			if !retry {
 				// For all other errors return immediately
 				return nil, txnErr
@@ -506,6 +507,7 @@ func (et *etcdKV) CompareAndSet(
 			// server timeout
 			kvPair, err := et.Get(kvp.Key)
 			if err != nil {
+				logrus.Errorf("%v: get after retry failed with error: %v", fn, err)
 				return nil, txnErr
 			}
 			if kvPair.ModifiedIndex == kvp.ModifiedIndex {
@@ -550,6 +552,7 @@ func (et *etcdKV) CompareAndDelete(
 	kvp *kvdb.KVPair,
 	flags kvdb.KVFlags,
 ) (*kvdb.KVPair, error) {
+	fn := "cad"
 	key := et.domain + kvp.Key
 
 	cmp := e.Compare(e.Value(key), "=", string(kvp.Value))
@@ -565,7 +568,7 @@ func (et *etcdKV) CompareAndDelete(
 		cancel()
 		if txnErr != nil {
 			// Check if we need to retry
-			retry, txnErr := isRetryNeeded(txnErr, "cad", key, i)
+			retry, txnErr := isRetryNeeded(txnErr, fn, key, i)
 			if txnErr == kvdb.ErrNotFound {
 				return kvp, nil
 			} else if !retry {
@@ -579,6 +582,7 @@ func (et *etcdKV) CompareAndDelete(
 				// Our command succeeded
 				return kvp, nil
 			} else if err != nil {
+				logrus.Errorf("%v: get after retry failed with error: %v", fn, err)
 				return nil, txnErr
 			}
 			if i == (timeoutMaxRetry - 1) {
@@ -854,10 +858,10 @@ func (et *etcdKV) refreshLock(
 				currentRefresh = time.Now()
 				if err != nil {
 					et.FatalCb(
-						"Error refreshing lock. [Key %v] [Err: %v]"+
+						"Error refreshing lock. [Tag %v] [Err: %v]"+
 							" [Current Refresh: %v] [Previous Refresh: %v]"+
 							" [Modified Index: %v]",
-						keyString, err, currentRefresh, prevRefresh, kvPair.ModifiedIndex,
+						lockMsgString, err, currentRefresh, prevRefresh, kvPair.ModifiedIndex,
 					)
 					l.Err = err
 					l.Unlock()
