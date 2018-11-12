@@ -52,6 +52,7 @@ func RunControllerTests(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	testRemoveMember(kv, t)
 	testReAdd(kv, t)
 	testMemberStatus(kv, t)
+	testDefrag(kv, t)
 	controllerLog("Stopping all etcd processes")
 	for _, cmd := range cmds {
 		cmd.Process.Kill()
@@ -128,6 +129,20 @@ func testReAdd(kv kvdb.Kvdb, t *testing.T) {
 
 }
 
+func testDefrag(kv kvdb.Kvdb, t *testing.T) {
+	controllerLog("testDefrag")
+
+	// Run defrag with 0 timeout
+	index := 1
+	err := kv.Defragment(clientUrls[index], 0)
+	require.NoError(t, err, "Unexpected error on Defragment")
+
+	// Run defrag with 60 timeout
+	index = 4
+	err = kv.Defragment(clientUrls[index], 60)
+	require.NoError(t, err, "Unexpected error on Defragment")
+}
+
 func testMemberStatus(kv kvdb.Kvdb, t *testing.T) {
 	controllerLog("testMemberStatus")
 
@@ -168,7 +183,7 @@ func testMemberStatus(kv kvdb.Kvdb, t *testing.T) {
 	// Wait for some time for etcd to detect a node offline
 	time.Sleep(5 * time.Second)
 
-	numOfGoroutines := 16
+	numOfGoroutines := 10
 	var wg sync.WaitGroup
 	wg.Add(numOfGoroutines)
 
@@ -178,7 +193,6 @@ func testMemberStatus(kv kvdb.Kvdb, t *testing.T) {
 		time.Sleep(time.Duration(wait) * time.Second)
 		controllerLog("Listing Members for goroutine no. " + id)
 		list, err := kv.ListMembers()
-		fmt.Println("list: ", list)
 		require.NoError(t, err, "%v: Error on ListMembers", id)
 		require.Equal(t, 5, len(list), "%v: List returned different length of cluster", id)
 

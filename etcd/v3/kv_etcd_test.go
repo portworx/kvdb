@@ -45,6 +45,11 @@ func TestIsRetryNeeded(t *testing.T) {
 	assert.EqualError(t, etcdserver.ErrUnhealthy, err.Error(), "Unexpcted error")
 	assert.True(t, retry, "Expected a retry")
 
+	// etcd is sending the error ErrTimeout over grpc instead of the actual ErrGRPCTimeout
+	// hence isRetryNeeded cannot do an actual error comparison
+	retry, err = isRetryNeeded(fmt.Errorf("etcdserver: request timed out"), fn, key, retryCount)
+	assert.True(t, retry, "Expected a retry")
+
 	// rpctypes.ErrGRPCTimeout
 	retry, err = isRetryNeeded(rpctypes.ErrGRPCTimeout, fn, key, retryCount)
 	assert.EqualError(t, rpctypes.ErrGRPCTimeout, err.Error(), "Unexpcted error")
