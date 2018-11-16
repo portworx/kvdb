@@ -1276,7 +1276,8 @@ func (et *etcdKV) AddMember(
 }
 
 func (et *etcdKV) RemoveMember(
-	nodeID string,
+	nodeName string,
+	nodeIP string,
 ) error {
 	ctx, cancel := et.MaintenanceContextWithLeader()
 	memberListResponse, err := et.kvClient.MemberList(ctx)
@@ -1285,14 +1286,22 @@ func (et *etcdKV) RemoveMember(
 		return err
 	}
 	var (
-		newClientUrls []string
-		memberID      uint64
+		newClientUrls  []string
+		removeMemberID uint64
 	)
 
 	for _, member := range memberListResponse.Members {
-		if member.Name == nodeID {
-			memberID = member.ID
+		if member.Name == "" {
+			// In case of a failed start of an etcd member, the Name field will be empty
+			// We then try to match the IPs.
+			if strings.Contains(member.PeerURLs[0], nodeIP) {
+				removeMemberID = member.ID
+			}
+
+		} else if member.Name == nodeName {
+			removeMemberID = member.ID
 		} else {
+			// This member is healthy and does not need to be removed.
 			for _, clientURL := range member.ClientURLs {
 				newClientUrls = append(newClientUrls, clientURL)
 			}
@@ -1300,7 +1309,7 @@ func (et *etcdKV) RemoveMember(
 	}
 	et.kvClient.SetEndpoints(newClientUrls...)
 	ctx, cancel = et.MaintenanceContextWithLeader()
-	_, err = et.kvClient.MemberRemove(ctx, memberID)
+	_, err = et.kvClient.MemberRemove(ctx, removeMemberID)
 	cancel()
 	if err != nil {
 		return err
@@ -1353,6 +1362,7 @@ func (et *etcdKV) ListMembers() (map[string]*kvdb.MemberInfo, error) {
 			Leader:     leader,
 			DbSize:     dbSize,
 			IsHealthy:  isHealthy,
+			ID:         strconv.FormatUint(member.ID, 16),
 		}
 	}
 	return resp, nil

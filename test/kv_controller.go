@@ -96,7 +96,7 @@ func testRemoveMember(kv kvdb.Kvdb, t *testing.T) {
 	// Remove node 1
 	index = 1
 	controllerLog("Removing node 1")
-	err = kv.RemoveMember(names[index])
+	err = kv.RemoveMember(names[index], localhost)
 	require.NoError(t, err, "Error on RemoveMember")
 
 	cmd, _ = cmds[index]

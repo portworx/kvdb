@@ -12,7 +12,7 @@ func (c *controllerNotSupported) AddMember(nodeIP, nodePeerPort, nodeName string
 	return nil, ErrNotSupported
 }
 
-func (c *controllerNotSupported) RemoveMember(nodeID string) error {
+func (c *controllerNotSupported) RemoveMember(nodeID string, nodeIP string) error {
 	return ErrNotSupported
 }
 
