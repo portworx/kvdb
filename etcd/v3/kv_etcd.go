@@ -1455,7 +1455,8 @@ func isRetryNeeded(err error, fn string, key string, retryCount int) (bool, erro
 	case rpctypes.ErrGRPCEmptyKey:
 		return false, kvdb.ErrNotFound
 	default:
-		if grpcStatusErr, ok := status.FromError(err); ok && grpcStatusErr.Code() == codes.Unavailable {
+		if grpcStatusErr, ok := status.FromError(err); ok &&
+			(grpcStatusErr.Code() == codes.Unavailable || grpcStatusErr.Code() == codes.DeadlineExceeded) {
 			// We have got a grpc error wrapped in grpc.Status with Code Unavailable
 			// From grpc golang docs : google.golang.org/grpc/codes/codes.go
 
