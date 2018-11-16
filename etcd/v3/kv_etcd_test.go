@@ -76,6 +76,12 @@ func TestIsRetryNeeded(t *testing.T) {
 	retry, err = isRetryNeeded(grpcErr, fn, key, retryCount)
 	assert.EqualError(t, grpcErr, err.Error(), "Unexpcted error")
 	assert.True(t, retry, "Expected a retry")
+
+	// grpc error of ContextDeadlineExceeded
+	gErr := status.New(codes.DeadlineExceeded, "context deadline exceeded").Err()
+	retry, err = isRetryNeeded(gErr, fn, key, retryCount)
+	assert.EqualError(t, gErr, err.Error(), "Unexpcted error")
+	assert.True(t, retry, "Expected a retry")
 }
 
 func TestCasWithRestarts(t *testing.T) {
