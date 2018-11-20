@@ -261,7 +261,7 @@ func (c *consulClientImpl) reconnectIfConnectionError(conn *consulConnection, er
 		if clientErr := c.reconnect(conn); clientErr != nil {
 			return false, clientErr
 		} else {
-			return true, nil
+			return true, err
 		}
 	} else {
 		return false, err
