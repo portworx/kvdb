@@ -12,7 +12,6 @@ import (
 
 	e "github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/concurrency"
-	"github.com/coreos/etcd/etcdserver"
 	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	"github.com/coreos/etcd/mvcc/mvccpb"
 	"github.com/portworx/kvdb"
@@ -21,8 +20,6 @@ import (
 	"github.com/portworx/kvdb/mem"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 const (
@@ -1458,32 +1455,14 @@ func getEtcdPermType(permType kvdb.PermissionType) (e.PermissionType, error) {
 // It returns the provided error.
 func isRetryNeeded(err error, fn string, key string, retryCount int) (bool, error) {
 	switch err {
-	case context.DeadlineExceeded, etcdserver.ErrTimeout, etcdserver.ErrUnhealthy:
-		logrus.Errorf("[%v %v]: kvdb error: %v, retry count: %v\n", fn, key, err, retryCount)
-		time.Sleep(ec.DefaultIntervalBetweenRetries)
-		return true, err
+	case kvdb.ErrNotSupported, kvdb.ErrWatchStopped, kvdb.ErrNotFound, kvdb.ErrExist, kvdb.ErrUnmarshal, kvdb.ErrValueMismatch, kvdb.ErrModified:
+		// For all known kvdb errors no retry is needed
+		return false, err
 	case rpctypes.ErrGRPCEmptyKey:
 		return false, kvdb.ErrNotFound
 	default:
-		if grpcStatusErr, ok := status.FromError(err); ok &&
-			(grpcStatusErr.Code() == codes.Unavailable || grpcStatusErr.Code() == codes.DeadlineExceeded) {
-			// We have got a grpc error wrapped in grpc.Status with Code Unavailable
-			// From grpc golang docs : google.golang.org/grpc/codes/codes.go
-
-			// Unavailable indicates the service is currently unavailable.
-			// This is a most likely a transient condition and may be corrected
-			// by retrying with a backoff.
-
-			logrus.Errorf("[%v: %v] kvdb grpc error: %v, retry count %v \n", fn, key, err, retryCount)
-			time.Sleep(ec.DefaultIntervalBetweenRetries)
-			return true, err
-		}
-		if strings.Contains(rpctypes.ErrGRPCTimeout.Error(), err.Error()) {
-			logrus.Errorf("[%v: %v] kvdb grpc timeout: %v, retry count %v \n", fn, key, err, retryCount)
-			time.Sleep(ec.DefaultIntervalBetweenRetries)
-			return true, err
-		}
-		// For all other errors return immediately
-		return false, err
+		// For all other errors retry
+		logrus.Errorf("[%v: %v] kvdb error: %v, retry count %v \n", fn, key, err, retryCount)
+		return true, err
 	}
 }
