@@ -365,6 +365,10 @@ type Controller interface {
 	// Returns: error if it fails to remove a member
 	RemoveMember(nodeName, nodeIP string) error
 
+	// UpdateMember updates the IP for the given node in an existing kvdb cluster
+	// Returns: map of nodeID to peerUrls of all members from the existing cluster
+	UpdateMember(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error)
+
 	// ListMembers enumerates the members of the kvdb cluster
 	// Returns: the nodeID  to memberInfo mappings of all the members
 	ListMembers() (map[string]*MemberInfo, error)

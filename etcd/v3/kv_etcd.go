@@ -1289,6 +1289,43 @@ func (et *etcdKV) AddMember(
 	return resp, nil
 }
 
+func (et *etcdKV) UpdateMember(
+	nodeIP string,
+	nodePeerPort string,
+	nodeName string,
+) (map[string][]string, error) {
+	peerURLs := et.listenPeerUrls(nodeIP, nodePeerPort)
+	ctx, cancel := et.MaintenanceContextWithLeader()
+
+	memberListResponse, err := et.kvClient.MemberList(ctx)
+	cancel()
+	if err != nil {
+		return nil, err
+	}
+
+	var updateMemberId uint64
+	resp := make(map[string][]string)
+
+	for _, member := range memberListResponse.Members {
+		if member.Name == nodeName {
+			updateMemberId = member.ID
+			resp[member.Name] = peerURLs
+		} else {
+			resp[member.Name] = member.PeerURLs
+		}
+	}
+	if updateMemberId == 0 {
+		return nil, kvdb.ErrMemberDoesNotExist
+	}
+	ctx, cancel = et.MaintenanceContextWithLeader()
+	_, err = et.kvClient.MemberUpdate(ctx, updateMemberId, peerURLs)
+	cancel()
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
 func (et *etcdKV) RemoveMember(
 	nodeName string,
 	nodeIP string,

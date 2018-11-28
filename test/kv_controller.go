@@ -51,6 +51,7 @@ func RunControllerTests(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	testAddMember(kv, t)
 	testRemoveMember(kv, t)
 	testReAdd(kv, t)
+	testUpdateMember(kv, t)
 	testMemberStatus(kv, t)
 	testDefrag(kv, t)
 	controllerLog("Stopping all etcd processes")
@@ -126,7 +127,30 @@ func testReAdd(kv kvdb.Kvdb, t *testing.T) {
 	list, err := kv.ListMembers()
 	require.NoError(t, err, "Error on ListMembers")
 	require.Equal(t, 3, len(list), "List returned different length of cluster")
+}
 
+func testUpdateMember(kv kvdb.Kvdb, t *testing.T) {
+	controllerLog("testUpdateMember")
+
+	// Stop node 1
+	index := 1
+	cmd, _ := cmds[index]
+	cmd.Process.Kill()
+	delete(cmds, index)
+	// Change the port
+	peerPorts[index] = "33380"
+
+	// Update the member
+	initCluster, err := kv.UpdateMember(localhost, peerPorts[index], names[index])
+	require.NoError(t, err, "Error on UpdateMember")
+	require.Equal(t, 3, len(initCluster), "Initial cluster length does not match")
+	cmd, err = startEtcd(index, initCluster, "existing")
+	require.NoError(t, err, "Error on start etcd")
+	cmds[index] = cmd
+
+	list, err := kv.ListMembers()
+	require.NoError(t, err, "Error on ListMembers")
+	require.Equal(t, 3, len(list), "List returned different length of cluster")
 }
 
 func testDefrag(kv kvdb.Kvdb, t *testing.T) {
