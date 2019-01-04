@@ -1001,13 +1001,15 @@ func (et *etcdKV) watchStart(
 	}
 }
 
-func (et *etcdKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
+func (et *etcdKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
 	// Create a new bootstrap key
 	var updates []*kvdb.KVPair
 	watchClosed := false
 	var lowestKvdbIndex, highestKvdbIndex uint64
 	done := make(chan error)
 	mutex := &sync.Mutex{}
+
+	// watch callback function
 	cb := func(
 		prefix string,
 		opaque interface{},
@@ -1017,6 +1019,7 @@ func (et *etcdKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 		var watchErr error
 		var sendErr error
 		var m *sync.Mutex
+		var prefixMatch bool
 		ok := false
 
 		if err != nil {
@@ -1044,22 +1047,75 @@ func (et *etcdKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 			goto errordone
 		}
 
-		m.Lock()
-		defer m.Unlock()
-		updates = append(updates, kvp)
-		if highestKvdbIndex > 0 && kvp.ModifiedIndex >= highestKvdbIndex {
-			// Done applying changes.
-			logrus.Infof("Snapshot complete")
-			watchClosed = true
-			watchErr = fmt.Errorf("done")
-			sendErr = nil
-			goto errordone
+		for _, configuredPrefix := range prefixes {
+			if strings.HasPrefix(kvp.Key, configuredPrefix) {
+				prefixMatch = true
+				break
+			}
+		}
+		if prefixMatch {
+			m.Lock()
+			defer m.Unlock()
+			updates = append(updates, kvp)
+			if highestKvdbIndex > 0 && kvp.ModifiedIndex >= highestKvdbIndex {
+				// Done applying changes.
+				logrus.Infof("Snapshot complete")
+				watchClosed = true
+				watchErr = fmt.Errorf("done")
+				sendErr = nil
+				goto errordone
+			}
 		}
 
 		return nil
 	errordone:
 		done <- sendErr
 		return watchErr
+	}
+
+	var (
+		kvPairs kvdb.KVPairs
+		err     error
+	)
+	// enumerate prefix function
+	enumeratePrefix := func(snapDb kvdb.Kvdb, prefix string) error {
+		kvPairs, err = et.Enumerate(prefix)
+		if err != nil {
+			return fmt.Errorf("Failed to enumerate %v: err: %v", prefix,
+				err)
+		}
+
+		for i := 0; i < len(kvPairs); i++ {
+			kvPair := kvPairs[i]
+			if len(kvPair.Value) > 0 {
+				// Only create a leaf node
+				_, err := snapDb.SnapPut(kvPair)
+				if err != nil {
+					return fmt.Errorf("Failed creating snap: %v", err)
+				}
+			} else {
+				newKvPairs, err := et.Enumerate(kvPair.Key)
+				if err != nil {
+					return fmt.Errorf("Failed to get child keys: %v", err)
+				}
+				if len(newKvPairs) == 0 {
+					// empty value for this key
+					_, err := snapDb.SnapPut(kvPair)
+					if err != nil {
+						return fmt.Errorf("Failed creating snap: %v", err)
+					}
+				} else if len(newKvPairs) == 1 {
+					// empty value for this key
+					_, err := snapDb.SnapPut(newKvPairs[0])
+					if err != nil {
+						return fmt.Errorf("Failed creating snap: %v", err)
+					}
+				} else {
+					kvPairs = append(kvPairs, newKvPairs...)
+				}
+			}
+		}
+		return nil
 	}
 
 	if err := et.WatchTree("", 0, mutex, cb); err != nil {
@@ -1076,11 +1132,6 @@ func (et *etcdKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 	}
 	lowestKvdbIndex = kvPair.ModifiedIndex
 
-	kvPairs, err := et.Enumerate(prefix)
-	if err != nil {
-		return nil, 0, fmt.Errorf("Failed to enumerate %v: err: %v", prefix,
-			err)
-	}
 	snapDb, err := mem.New(
 		et.domain,
 		nil,
@@ -1091,34 +1142,10 @@ func (et *etcdKV) Snapshot(prefix string) (kvdb.Kvdb, uint64, error) {
 		return nil, 0, fmt.Errorf("Failed to create in-mem kv store: %v", err)
 	}
 
-	for i := 0; i < len(kvPairs); i++ {
-		kvPair := kvPairs[i]
-		if len(kvPair.Value) > 0 {
-			// Only create a leaf node
-			_, err := snapDb.SnapPut(kvPair)
-			if err != nil {
-				return nil, 0, fmt.Errorf("Failed creating snap: %v", err)
-			}
-		} else {
-			newKvPairs, err := et.Enumerate(kvPair.Key)
-			if err != nil {
-				return nil, 0, fmt.Errorf("Failed to get child keys: %v", err)
-			}
-			if len(newKvPairs) == 0 {
-				// empty value for this key
-				_, err := snapDb.SnapPut(kvPair)
-				if err != nil {
-					return nil, 0, fmt.Errorf("Failed creating snap: %v", err)
-				}
-			} else if len(newKvPairs) == 1 {
-				// empty value for this key
-				_, err := snapDb.SnapPut(newKvPairs[0])
-				if err != nil {
-					return nil, 0, fmt.Errorf("Failed creating snap: %v", err)
-				}
-			} else {
-				kvPairs = append(kvPairs, newKvPairs...)
-			}
+	// Enumerate all configured prefixes
+	for _, prefix := range prefixes {
+		if err := enumeratePrefix(snapDb, prefix); err != nil {
+			return nil, 0, err
 		}
 	}
 
