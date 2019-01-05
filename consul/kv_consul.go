@@ -617,6 +617,11 @@ func (kv *consulKV) TxNew() (kvdb.Tx, error) {
 }
 
 func (kv *consulKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
+	if len(prefixes) == 0 {
+		prefixes = []string{""}
+	} else {
+		prefixes = common.PrunePrefixes(prefixes)
+	}
 	// Create a new bootstrap key : lowest index
 	r := rand.New(rand.NewSource(time.Now().UnixNano())).Int63()
 	bootStrapKeyLow := bootstrap + strconv.FormatInt(r, 10) +

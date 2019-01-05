@@ -646,7 +646,11 @@ func (kv *etcdKV) watchStart(
 }
 
 func (kv *etcdKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
-
+	if len(prefixes) == 0 {
+		prefixes = []string{""}
+	} else {
+		prefixes = common.PrunePrefixes(prefixes)
+	}
 	var updates []*kvdb.KVPair
 	done := make(chan error)
 	mutex := &sync.Mutex{}
@@ -662,7 +666,6 @@ func (kv *etcdKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
 		var watchErr error
 		var sendErr error
 		var m *sync.Mutex
-		var prefixMatch bool
 		ok := false
 
 		if err != nil {
@@ -689,21 +692,17 @@ func (kv *etcdKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
 
 		for _, configuredPrefix := range prefixes {
 			if strings.HasPrefix(kvp.Key, configuredPrefix) {
-				prefixMatch = true
+				m.Lock()
+				defer m.Unlock()
+				updates = append(updates, kvp)
+				if highestKvdbIndex > 0 && kvp.ModifiedIndex >= highestKvdbIndex {
+					// Done applying changes.
+					watchClosed = true
+					watchErr = fmt.Errorf("done")
+					sendErr = nil
+					goto errordone
+				}
 				break
-			}
-		}
-
-		if prefixMatch {
-			m.Lock()
-			defer m.Unlock()
-			updates = append(updates, kvp)
-			if highestKvdbIndex > 0 && kvp.ModifiedIndex >= highestKvdbIndex {
-				// Done applying changes.
-				watchClosed = true
-				watchErr = fmt.Errorf("done")
-				sendErr = nil
-				goto errordone
 			}
 		}
 
@@ -713,12 +712,33 @@ func (kv *etcdKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
 		return watchErr
 	}
 
-	var (
-		kvPairs kvdb.KVPairs
-		err     error
+	if err := kv.WatchTree("", 0, mutex, cb); err != nil {
+		return nil, 0, fmt.Errorf("Failed to start watch: %v", err)
+	}
+
+	// Create a new bootstrap key
+	r := rand.New(rand.NewSource(time.Now().UnixNano())).Int63()
+	bootStrapKey := ec.Bootstrap + strconv.FormatInt(r, 10) +
+		strconv.FormatInt(time.Now().UnixNano(), 10)
+	kvPair, err := kv.Put(bootStrapKey, time.Now().UnixNano(), 0)
+	if err != nil {
+		return nil, 0, fmt.Errorf("Failed to create snap bootstrap key %v, "+
+			"err: %v", bootStrapKey, err)
+	}
+	lowestKvdbIndex = kvPair.ModifiedIndex
+
+	snapDb, err := mem.New(
+		kv.domain,
+		nil,
+		map[string]string{mem.KvSnap: "true"},
+		kv.FatalCb,
 	)
+	if err != nil {
+		return nil, 0, fmt.Errorf("Failed to create in-mem kv store: %v", err)
+	}
+
 	enumeratePrefix := func(snapDb kvdb.Kvdb, prefix string) error {
-		kvPairs, err = kv.Enumerate(prefix)
+		kvPairs, err := kv.Enumerate(prefix)
 		if err != nil {
 			return fmt.Errorf("Failed to enumerate %v: err: %v", prefix,
 				err)
@@ -754,31 +774,6 @@ func (kv *etcdKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
 			}
 		}
 		return nil
-	}
-
-	if err := kv.WatchTree("", 0, mutex, cb); err != nil {
-		return nil, 0, fmt.Errorf("Failed to start watch: %v", err)
-	}
-
-	// Create a new bootstrap key
-	r := rand.New(rand.NewSource(time.Now().UnixNano())).Int63()
-	bootStrapKey := ec.Bootstrap + strconv.FormatInt(r, 10) +
-		strconv.FormatInt(time.Now().UnixNano(), 10)
-	kvPair, err := kv.Put(bootStrapKey, time.Now().UnixNano(), 0)
-	if err != nil {
-		return nil, 0, fmt.Errorf("Failed to create snap bootstrap key %v, "+
-			"err: %v", bootStrapKey, err)
-	}
-	lowestKvdbIndex = kvPair.ModifiedIndex
-
-	snapDb, err := mem.New(
-		kv.domain,
-		nil,
-		map[string]string{mem.KvSnap: "true"},
-		kv.FatalCb,
-	)
-	if err != nil {
-		return nil, 0, fmt.Errorf("Failed to create in-mem kv store: %v", err)
 	}
 
 	for _, prefix := range prefixes {

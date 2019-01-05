@@ -287,8 +287,9 @@ func (kv *memKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
 		if strings.Contains(key, "/_") {
 			continue
 		}
-		found := true
+		found := false
 		for _, prefix := range prefixes {
+			prefix = kv.domain + prefix
 			if strings.HasPrefix(key, prefix) {
 				found = true
 				break
