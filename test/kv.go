@@ -536,6 +536,8 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 	kv.DeleteTree(prefix2)
 	defer kv.DeleteTree(prefix2)
 
+	prefix3 := "snapshot2/subtree/"
+
 	ignorePrefix := "ignoreSnapshot/"
 	kv.DeleteTree(ignorePrefix)
 	defer kv.DeleteTree(ignorePrefix)
@@ -558,8 +560,10 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 		for i := 0; i < count; i++ {
 			suffix := strconv.Itoa(i)
 			var inputKey string
-			if i%2 == 0 {
+			if i%3 == 0 {
 				inputKey = prefix + key + suffix
+			} else if i%3 == 1 {
+				inputKey = prefix3 + key + suffix
 			} else {
 				inputKey = prefix2 + key + suffix
 			}
@@ -605,7 +609,7 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 	go updateFn(count, newValue, inputData, inputDataVersion, true)
 	time.Sleep(20 * time.Millisecond)
 
-	snap, snapVersion, err := kv.Snapshot([]string{prefix, prefix2})
+	snap, snapVersion, err := kv.Snapshot([]string{prefix, prefix2, prefix3})
 	assert.NoError(t, err, "Unexpected error on Snapshot")
 	<-doneUpdate
 
