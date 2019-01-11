@@ -620,6 +620,7 @@ func (kv *consulKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
 	if len(prefixes) == 0 {
 		prefixes = []string{""}
 	} else {
+		prefixes = append(prefixes, bootstrap)
 		prefixes = common.PrunePrefixes(prefixes)
 	}
 	// Create a new bootstrap key : lowest index

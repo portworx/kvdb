@@ -1005,6 +1005,7 @@ func (et *etcdKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
 	if len(prefixes) == 0 {
 		prefixes = []string{""}
 	} else {
+		prefixes = append(prefixes, ec.Bootstrap)
 		prefixes = common.PrunePrefixes(prefixes)
 	}
 	// Create a new bootstrap key
@@ -1051,10 +1052,10 @@ func (et *etcdKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
 			goto errordone
 		}
 
+		m.Lock()
+		defer m.Unlock()
 		for _, configuredPrefix := range prefixes {
 			if strings.HasPrefix(kvp.Key, configuredPrefix) {
-				m.Lock()
-				defer m.Unlock()
 				updates = append(updates, kvp)
 				if highestKvdbIndex > 0 && kvp.ModifiedIndex >= highestKvdbIndex {
 					// Done applying changes.
@@ -1146,6 +1147,9 @@ func (et *etcdKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
 		}
 	}
 
+	// take the lock before we Put a key so that
+	// the highestKvdbIndex will be set before the watch callback is invoked
+	mutex.Lock()
 	// Create bootrap key : highest index
 	bootStrapKeyHigh := ec.Bootstrap + strconv.FormatInt(r, 10) +
 		strconv.FormatInt(time.Now().UnixNano(), 10)
@@ -1155,8 +1159,6 @@ func (et *etcdKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
 			"err: %v", bootStrapKeyHigh, err)
 	}
 
-	mutex.Lock()
-	// not sure if we need a lock, but couldnt find any doc which says its ok
 	highestKvdbIndex = kvPair.ModifiedIndex
 	mutex.Unlock()
 

@@ -649,6 +649,7 @@ func (kv *etcdKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
 	if len(prefixes) == 0 {
 		prefixes = []string{""}
 	} else {
+		prefixes = append(prefixes, ec.Bootstrap)
 		prefixes = common.PrunePrefixes(prefixes)
 	}
 	var updates []*kvdb.KVPair
@@ -690,10 +691,10 @@ func (kv *etcdKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
 			goto errordone
 		}
 
+		m.Lock()
+		defer m.Unlock()
 		for _, configuredPrefix := range prefixes {
 			if strings.HasPrefix(kvp.Key, configuredPrefix) {
-				m.Lock()
-				defer m.Unlock()
 				updates = append(updates, kvp)
 				if highestKvdbIndex > 0 && kvp.ModifiedIndex >= highestKvdbIndex {
 					// Done applying changes.
@@ -782,13 +783,15 @@ func (kv *etcdKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
 		}
 	}
 
+	// take the lock before we Delete a key so that
+	// the highestKvdbIndex will be set before the watch callback is invoked
+	mutex.Lock()
 	kvPair, err = kv.Delete(bootStrapKey)
 	if err != nil {
 		return nil, 0, fmt.Errorf("Failed to delete snap bootstrap key: %v, "+
 			"err: %v", bootStrapKey, err)
 	}
 
-	mutex.Lock()
 	highestKvdbIndex = kvPair.ModifiedIndex
 	mutex.Unlock()
 
