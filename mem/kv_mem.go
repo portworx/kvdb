@@ -307,9 +307,11 @@ func (kv *memKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
 	}
 	highestKvPair, _ := kv.delete(bootstrapKey)
 	// Snapshot only data, watches are not copied.
-	return &memKV{
-		m:      data,
-		domain: kv.domain,
+	return &snapMem{
+		&memKV{
+			m:      data,
+			domain: kv.domain,
+		},
 	}, highestKvPair.ModifiedIndex, nil
 }
 
