@@ -24,9 +24,10 @@ import (
 
 const (
 	// Name is the name of this kvdb implementation.
-	Name                      = "etcdv3-kv"
-	defaultKvRequestTimeout   = 10 * time.Second
-	defaultMaintenanceTimeout = 7 * time.Second
+	Name                       = "etcdv3-kv"
+	defaultKvRequestTimeout    = 10 * time.Second
+	defaultLeaseRequestTimeout = 2 * time.Second
+	defaultMaintenanceTimeout  = 7 * time.Second
 	// defaultDefragTimeout in seconds is the timeout for defrag to complete
 	defaultDefragTimeout = 30
 	// defaultSessionTimeout in seconds is used for etcd watch
@@ -184,6 +185,10 @@ func (et *etcdKV) Capabilities() int {
 
 func (et *etcdKV) Context() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), defaultKvRequestTimeout)
+}
+
+func (et *etcdKV) LeaseContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), defaultLeaseRequestTimeout)
 }
 
 func (et *etcdKV) MaintenanceContextWithLeader() (context.Context, context.CancelFunc) {
@@ -1473,7 +1478,7 @@ func (et *etcdKV) getLeaseWithRetries(key string, ttl int64) (*e.LeaseGrantRespo
 		retry       bool
 	)
 	for i := 0; i < timeoutMaxRetry; i++ {
-		leaseCtx, leaseCancel := et.Context()
+		leaseCtx, leaseCancel := et.LeaseContext()
 		leaseResult, leaseErr = et.kvClient.Grant(leaseCtx, ttl)
 		leaseCancel()
 		if leaseErr != nil {
