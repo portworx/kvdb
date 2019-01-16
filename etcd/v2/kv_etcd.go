@@ -71,7 +71,7 @@ func New(
 		Transport: tr,
 		Username:  username,
 		Password:  password,
-		// The time required for a request to fail - 30 sec
+		// The time required for a request to fail - 10 sec
 		HeaderTimeoutPerRequest: time.Duration(10) * time.Second,
 	}
 	c, err := e.New(cfg)
