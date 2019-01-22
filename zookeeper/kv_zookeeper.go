@@ -152,7 +152,7 @@ func (z *zookeeperKV) Put(
 	} else {
 		err = z.createFullPath(key, false)
 	}
-	if err != nil {
+	if err != nil && err != zk.ErrNodeExists {
 		return nil, err
 	}
 
@@ -173,20 +173,28 @@ func (z *zookeeperKV) Create(
 	val interface{},
 	ttl uint64,
 ) (*kvdb.KVPair, error) {
-	exists, err := z.exists(key)
+	bval, err := common.ToBytes(val)
 	if err != nil {
 		return nil, err
-	}
-	if exists {
-		return nil, kvdb.ErrExist
 	}
 
-	kvp, err := z.Put(key, val, ttl)
+	if ttl > 0 {
+		err = z.createFullPath(key, true)
+	} else {
+		err = z.createFullPath(key, false)
+	}
+	if err == zk.ErrNodeExists {
+		return nil, kvdb.ErrExist
+	} else if err != nil {
+		return nil, err
+	}
+
+	key = z.domain + normalize(key)
+	meta, err := z.client.Set(key, bval, -1)
 	if err != nil {
 		return nil, err
 	}
-	kvp.Action = kvdb.KVCreate
-	return kvp, nil
+	return z.resultToKvPair(key, bval, "create", meta), nil
 }
 
 func (z *zookeeperKV) Update(
@@ -302,7 +310,7 @@ func (z *zookeeperKV) CompareAndSet(
 	}
 
 	err = z.createFullPath(kvp.Key, false)
-	if err != nil {
+	if err != nil && err != zk.ErrNodeExists {
 		return nil, err
 	}
 
@@ -545,9 +553,13 @@ func (z *zookeeperKV) createFullPath(key string, ephemeral bool) error {
 	for i := 1; i <= len(path); i++ {
 		newPath := "/" + strings.Join(path[:i], "/")
 
-		if i == len(path) && ephemeral {
+		if i == len(path) {
+			flags := int32(0)
+			if ephemeral {
+				flags = zk.FlagEphemeral
+			}
 			_, err := z.client.Create(newPath, []byte{},
-				zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
+				flags, zk.WorldACL(zk.PermAll))
 			return err
 		}
 
