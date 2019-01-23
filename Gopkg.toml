@@ -39,7 +39,7 @@
 
 [[constraint]]
   name = "github.com/hashicorp/consul"
-  version = "1.4.0"
+  version = "=1.0.0"
 
 [[constraint]]
   name = "github.com/hashicorp/memberlist"
