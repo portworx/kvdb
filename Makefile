@@ -55,7 +55,7 @@ docker-build-kvdb-dev:
 	docker build -t portworx/kvdb:test_container -f $(GOPATH)/src/github.com/portworx/kvdb/Dockerfile.kvdb .
 
 docker-test:
-	docker run \
+	docker run --rm \
 		-v $(GOPATH)/src/github.com/portworx/kvdb:/go/src/github.com/portworx/kvdb \
 		portworx/kvdb:test_container \
 		make gotest

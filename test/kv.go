@@ -790,7 +790,7 @@ func lockBetweenRestarts(kv kvdb.Kvdb, t *testing.T, start StartKvdb, stop StopK
 		fmt.Println("starting kvdb")
 		err = start(false)
 		assert.NoError(t, err, "Unable to start kvdb")
-		time.Sleep(30 * time.Second)
+		time.Sleep(40 * time.Second)
 
 		lockChan := make(chan int)
 		go func() {
