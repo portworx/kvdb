@@ -11,3 +11,4 @@ This library abstracts the caller from the specific key-value database implement
 * `Etcd v3`
 * `Consul`
 * `In-memory store`
+* `Zookeeper`

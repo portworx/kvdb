@@ -27,7 +27,7 @@ const (
 	// then all ephemeral zk nodes are deleted by the zk server. As all lock keys are
 	// ephemeral nodes, all locks will be released after this timeout when a node
 	// dies or closes the zookeeper connection.
-	defaultSessionTimeout = 10 * time.Second
+	defaultSessionTimeout = 16 * time.Second
 	defaultRetryCount     = 10
 )
 
@@ -133,25 +133,21 @@ func (z *zookeeperKV) GetWithCopy(
 }
 
 // Put creates a node if it does not exist and sets the given value
-// Zookeeper nodes do not have ttl, but they have ephemeral nodes
-// that are removed when the client session closes. If a user sets
-// the ttl to any value greater than zero we create an ephemeral node.
-// If a node already exists then the ttl will not have any effect.
 func (z *zookeeperKV) Put(
 	key string,
 	val interface{},
 	ttl uint64,
 ) (*kvdb.KVPair, error) {
+	if ttl != 0 {
+		return nil, kvdb.ErrTTLNotSupported
+	}
+
 	bval, err := common.ToBytes(val)
 	if err != nil {
 		return nil, err
 	}
 
-	if ttl > 0 {
-		err = z.createFullPath(key, true)
-	} else {
-		err = z.createFullPath(key, false)
-	}
+	err = z.createFullPath(key, false)
 	if err != nil && err != zk.ErrNodeExists {
 		return nil, err
 	}
@@ -165,24 +161,45 @@ func (z *zookeeperKV) Put(
 }
 
 // Creates a zk node only if it does not exist.
-// Zookeeper nodes do not have ttl, but they have ephemeral nodes
-// that are removed when the client session closes. If a user sets
-// the ttl to any value greater than zero we create an ephemeral node.
 func (z *zookeeperKV) Create(
 	key string,
 	val interface{},
 	ttl uint64,
+) (*kvdb.KVPair, error) {
+	if ttl != 0 {
+		return nil, kvdb.ErrTTLNotSupported
+	}
+
+	bval, err := common.ToBytes(val)
+	if err != nil {
+		return nil, err
+	}
+
+	err = z.createFullPath(key, false)
+	if err == zk.ErrNodeExists {
+		return nil, kvdb.ErrExist
+	} else if err != nil {
+		return nil, err
+	}
+
+	key = z.domain + normalize(key)
+	meta, err := z.client.Set(key, bval, -1)
+	if err != nil {
+		return nil, err
+	}
+	return z.resultToKvPair(key, bval, "create", meta), nil
+}
+
+func (z *zookeeperKV) createEphemeral(
+	key string,
+	val interface{},
 ) (*kvdb.KVPair, error) {
 	bval, err := common.ToBytes(val)
 	if err != nil {
 		return nil, err
 	}
 
-	if ttl > 0 {
-		err = z.createFullPath(key, true)
-	} else {
-		err = z.createFullPath(key, false)
-	}
+	err = z.createFullPath(key, true)
 	if err == zk.ErrNodeExists {
 		return nil, kvdb.ErrExist
 	} else if err != nil {
@@ -298,13 +315,13 @@ func (z *zookeeperKV) CompareAndSet(
 			if kvp.ModifiedIndex != prevPair.ModifiedIndex {
 				return nil, kvdb.ErrModified
 			}
-			modifiedIndex = int32(kvp.ModifiedIndex)
 		} else {
 			if bytes.Compare(prevValue, prevPair.Value) != 0 {
 				return nil, kvdb.ErrValueMismatch
 			}
 		}
 		action = "set"
+		modifiedIndex = int32(prevPair.ModifiedIndex)
 	} else if err != kvdb.ErrNotFound {
 		return nil, err
 	}
@@ -332,8 +349,6 @@ func (z *zookeeperKV) CompareAndDelete(
 	kvp *kvdb.KVPair,
 	flags kvdb.KVFlags,
 ) (*kvdb.KVPair, error) {
-	modifiedIndex := int32(-1)
-
 	prevPair, err := z.Get(kvp.Key)
 	if err != nil {
 		return nil, err
@@ -343,7 +358,6 @@ func (z *zookeeperKV) CompareAndDelete(
 		if kvp.ModifiedIndex != prevPair.ModifiedIndex {
 			return nil, kvdb.ErrModified
 		}
-		modifiedIndex = int32(kvp.ModifiedIndex)
 	} else {
 		if bytes.Compare(kvp.Value, prevPair.Value) != 0 {
 			return nil, kvdb.ErrValueMismatch
@@ -355,7 +369,7 @@ func (z *zookeeperKV) CompareAndDelete(
 	// setting modified index in Delete() will ensure that only one call succeeds.
 	// Zookeeper will reject an update if the ModifiedIndex does not match the
 	// previous version, unless it is -1.
-	err = z.client.Delete(key, modifiedIndex)
+	err = z.client.Delete(key, int32(prevPair.ModifiedIndex))
 	if err == zk.ErrNoNode {
 		return nil, kvdb.ErrNotFound
 	} else if err == zk.ErrBadVersion {
@@ -425,13 +439,13 @@ func (z *zookeeperKV) LockWithTimeout(
 	lockTag := LockerIDInfo{LockerID: lockerID}
 
 	// TODO: This create has to be ephemeral node!
-	kvPair, err := z.Create(key, lockTag, 1)
+	kvPair, err := z.createEphemeral(key, lockTag)
 	startTime := time.Now()
 
 	for count := 0; err != nil; count++ {
 		time.Sleep(time.Second)
-		kvPair, err = z.Create(key, lockTag, 1)
-		if count > 0 && count%2 == 0 && err != nil {
+		kvPair, err = z.createEphemeral(key, lockTag)
+		if count > 0 && count%15 == 0 && err != nil {
 			currLockerTag := LockerIDInfo{}
 			if _, errGet := z.GetVal(key, &currLockerTag); errGet == nil {
 				logrus.Warnf("Lock %v locked for %v seconds, tag: %v, err: %v",
