@@ -635,7 +635,7 @@ func snapshot(kv kvdb.Kvdb, t *testing.T) {
 	go updateFn(count, newValue, inputData, inputDataVersion, true)
 	time.Sleep(20 * time.Millisecond)
 
-	snap, snapVersion, err := kv.Snapshot([]string{prefix, prefix2, prefix3})
+	snap, snapVersion, err := kv.Snapshot([]string{prefix, prefix2, prefix3}, true)
 	assert.NoError(t, err, "Unexpected error on Snapshot")
 	<-doneUpdate
 
