@@ -109,7 +109,6 @@ func RunBasic(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, s
 	keys(kv, t)
 	lockBasic(kv, t)
 	lock(kv, t)
-	lockBetweenRestarts(kv, t, start, stop)
 	err = stop()
 	assert.NoError(t, err, "Unable to stop kvdb")
 }

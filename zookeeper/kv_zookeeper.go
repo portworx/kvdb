@@ -43,6 +43,18 @@ type zookeeperKV struct {
 	kvdb.Controller
 }
 
+// zookeeperLock combines Mutex and channel
+type zookeeperLock struct {
+	Done     chan struct{}
+	Unlocked bool
+	sync.Mutex
+}
+
+// LockerIDInfo id of locker
+type LockerIDInfo struct {
+	LockerID string
+}
+
 // New constructs a new kvdb.Kvdb with zookeeper implementation
 func New(
 	domain string,
@@ -50,6 +62,21 @@ func New(
 	options map[string]string,
 	fatalErrorCb kvdb.FatalErrorCB,
 ) (kvdb.Kvdb, error) {
+	return newClient(domain, servers, options, fatalErrorCb)
+}
+
+// Version returns the supported version of the zookeeper implementation
+func Version(url string, kvdbOptions map[string]string) (string, error) {
+	return kvdb.ZookeeperVersion1, nil
+}
+
+// Used to create a zookeeper client for testing
+func newClient(
+	domain string,
+	servers []string,
+	options map[string]string,
+	fatalErrorCb kvdb.FatalErrorCB,
+) (*zookeeperKV, error) {
 	if len(servers) == 0 {
 		servers = defaultServers
 	}
@@ -73,9 +100,8 @@ func New(
 	}, nil
 }
 
-// Version returns the supported version of the zookeeper implementation
-func Version(url string, kvdbOptions map[string]string) (string, error) {
-	return kvdb.ZookeeperVersion1, nil
+func (z *zookeeperKV) closeClient() {
+	z.client.Close()
 }
 
 func (z *zookeeperKV) String() string {
@@ -407,26 +433,12 @@ func (z *zookeeperKV) SnapPut(kvp *kvdb.KVPair) (*kvdb.KVPair, error) {
 	return nil, kvdb.ErrNotSupported
 }
 
-func (z *zookeeperKV) LockWithID(key, lockerID string) (*kvdb.KVPair, error) {
-	return z.LockWithTimeout(key, lockerID, kvdb.DefaultLockTryDuration, z.GetLockTimeout())
-}
-
 func (z *zookeeperKV) Lock(key string) (*kvdb.KVPair, error) {
 	return z.LockWithID(key, "locked")
 }
 
-// zookeeperLock combines Mutex and channel
-type zookeeperLock struct {
-	Done     chan struct{}
-	Unlocked bool
-	Err      error
-	Tag      string
-	sync.Mutex
-}
-
-// LockerIDInfo id of locker
-type LockerIDInfo struct {
-	LockerID string
+func (z *zookeeperKV) LockWithID(key, lockerID string) (*kvdb.KVPair, error) {
+	return z.LockWithTimeout(key, lockerID, kvdb.DefaultLockTryDuration, z.GetLockTimeout())
 }
 
 func (z *zookeeperKV) LockWithTimeout(
@@ -438,7 +450,6 @@ func (z *zookeeperKV) LockWithTimeout(
 	key = normalize(key)
 	lockTag := LockerIDInfo{LockerID: lockerID}
 
-	// TODO: This create has to be ephemeral node!
 	kvPair, err := z.createEphemeral(key, lockTag)
 	startTime := time.Now()
 
