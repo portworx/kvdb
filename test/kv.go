@@ -384,10 +384,10 @@ func enumerate(kv kvdb.Kvdb, t *testing.T) {
 	assert.Equal(t, 0, len(errPairs), "Expected 0 pairs")
 
 	folderKey := prefix + "/folder/"
-	_, err = kv.Put(folderKey, []byte(""), 0)
+	_, err = kv.Put(folderKey, []byte("value"), 0)
 	assert.NoError(t, err, "Unexpected error on Put")
 	kvPairs, err := kv.Enumerate(folderKey)
-	assert.Equal(t, nil, err, "Unexpected error on Enumerate")
+	assert.NoError(t, err, "Unexpected error on Enumerate")
 	kv.DeleteTree(prefix)
 
 	for key, val := range keys {

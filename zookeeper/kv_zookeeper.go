@@ -129,6 +129,9 @@ func (z *zookeeperKV) Get(key string) (*kvdb.KVPair, error) {
 			if string(resp) == SOH {
 				continue
 			}
+			if len(resp) == 0 {
+				return nil, kvdb.ErrNotFound
+			}
 			return z.resultToKvPair(key, resp, "get", meta), nil
 		}
 		if err == zk.ErrNoNode {
@@ -172,6 +175,9 @@ func (z *zookeeperKV) Put(
 	if err != nil {
 		return nil, err
 	}
+	if len(bval) == 0 {
+		return nil, kvdb.ErrEmptyValue
+	}
 
 	err = z.createFullPath(key, false)
 	if err != nil && err != zk.ErrNodeExists {
@@ -200,6 +206,9 @@ func (z *zookeeperKV) Create(
 	if err != nil {
 		return nil, err
 	}
+	if len(bval) == 0 {
+		return nil, kvdb.ErrEmptyValue
+	}
 
 	err = z.createFullPath(key, false)
 	if err == zk.ErrNodeExists {
@@ -223,6 +232,9 @@ func (z *zookeeperKV) createEphemeral(
 	bval, err := common.ToBytes(val)
 	if err != nil {
 		return nil, err
+	}
+	if len(bval) == 0 {
+		return nil, kvdb.ErrEmptyValue
 	}
 
 	err = z.createFullPath(key, true)
