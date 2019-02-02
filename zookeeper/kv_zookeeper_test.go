@@ -41,6 +41,7 @@ func TestZookeeperOps(t *testing.T) {
 	}
 
 	testName(t, kv)
+	testEmptyValue(t, kv)
 	testCreateWithTTL(t, kv)
 	testPutWithTTL(t, kv)
 	testUpdateWithTTL(t, kv)
@@ -58,13 +59,40 @@ func testName(t *testing.T, kv kvdb.Kvdb) {
 	assert.Equal(t, Name, kv.String())
 }
 
+func testEmptyValue(t *testing.T, kv kvdb.Kvdb) {
+	fmt.Println("create with empty value")
+	key := "empty/value"
+	kv.Delete(key)
+
+	_, err := kv.Create(key, []byte(""), 0)
+	assert.Equal(t, kvdb.ErrEmptyValue, err)
+
+	_, err = kv.Put(key, []byte(""), 0)
+	assert.Equal(t, kvdb.ErrEmptyValue, err)
+
+	_, err = kv.Create(key, []byte("test"), 0)
+	assert.NoError(t, err, "Unexpected error on create")
+
+	_, err = kv.Update(key, []byte(""), 0)
+	assert.Equal(t, kvdb.ErrEmptyValue, err)
+
+	// The parent for the key will internally have empty
+	// value and hence should return ErrNotFound error
+	_, err = kv.Get("/empty")
+	assert.Equal(t, kvdb.ErrNotFound, err)
+
+	var str string
+	_, err = kv.GetVal("/empty", &str)
+	assert.Equal(t, kvdb.ErrNotFound, err)
+}
+
 func testCreateWithTTL(t *testing.T, kv kvdb.Kvdb) {
 	fmt.Println("create with ttl")
 	key := "create/foottl"
 	kv.Delete(key)
 
 	_, err := kv.Create(key, []byte("barttl"), 10)
-	assert.Equal(t, err, kvdb.ErrTTLNotSupported)
+	assert.Equal(t, kvdb.ErrTTLNotSupported, err)
 }
 
 func testPutWithTTL(t *testing.T, kv kvdb.Kvdb) {
@@ -73,7 +101,7 @@ func testPutWithTTL(t *testing.T, kv kvdb.Kvdb) {
 	kv.Delete(key)
 
 	_, err := kv.Put(key, []byte("barttl"), 10)
-	assert.Equal(t, err, kvdb.ErrTTLNotSupported)
+	assert.Equal(t, kvdb.ErrTTLNotSupported, err)
 }
 
 func testUpdateWithTTL(t *testing.T, kv kvdb.Kvdb) {
@@ -85,7 +113,7 @@ func testUpdateWithTTL(t *testing.T, kv kvdb.Kvdb) {
 	assert.NoError(t, err, "Unexpected error on create")
 
 	_, err = kv.Update(key, []byte("barttl"), 10)
-	assert.Equal(t, err, kvdb.ErrTTLNotSupported)
+	assert.Equal(t, kvdb.ErrTTLNotSupported, err)
 }
 
 func testCreateEphemeral(t *testing.T) {
@@ -98,7 +126,11 @@ func testCreateEphemeral(t *testing.T) {
 	value := []byte("val")
 	zk.Delete(key)
 
-	kvp, err := zk.createEphemeral(key, value)
+	// Should fail for empty value
+	kvp, err := zk.createEphemeral(key, []byte(""))
+	assert.Equal(t, kvdb.ErrEmptyValue, err)
+
+	kvp, err = zk.createEphemeral(key, value)
 	assert.NoError(t, err, "Unexpected error on ephemeral create")
 
 	defer func() {
@@ -110,7 +142,7 @@ func testCreateEphemeral(t *testing.T) {
 	assert.Equal(t, uint64(1), kvp.ModifiedIndex)
 
 	_, err = zk.createEphemeral(key, []byte("val"))
-	assert.Equal(t, err, kvdb.ErrExist)
+	assert.Equal(t, kvdb.ErrExist, err)
 }
 
 func testLockBetweenClientRestarts(t *testing.T) {

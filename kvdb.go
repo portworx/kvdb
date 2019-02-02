@@ -112,6 +112,8 @@ var (
 	ErrIllegal = errors.New("Illegal operation")
 	// ErrValueMismatch raised if existing KVDB value mismatches with user provided value
 	ErrValueMismatch = errors.New("Value mismatch")
+	// ErrEmptyValue raised if the value is empty
+	ErrEmptyValue = errors.New("Value cannot be empty")
 	// ErrModified raised during an atomic operation if the index does not match the one in the store
 	ErrModified = errors.New("Key Index mismatch")
 	// ErrSetTTLFailed raised if unable to set ttl value for a key create/put/update action
