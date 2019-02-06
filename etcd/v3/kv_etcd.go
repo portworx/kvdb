@@ -1001,7 +1001,7 @@ func (et *etcdKV) watchStart(
 	}
 }
 
-func (et *etcdKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
+func (et *etcdKV) Snapshot(prefixes []string, consistent bool) (kvdb.Kvdb, uint64, error) {
 	if len(prefixes) == 0 {
 		prefixes = []string{""}
 	} else {
@@ -1009,9 +1009,13 @@ func (et *etcdKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
 		prefixes = common.PrunePrefixes(prefixes)
 	}
 	// Create a new bootstrap key
-	var updates []*kvdb.KVPair
 	watchClosed := false
-	var lowestKvdbIndex, highestKvdbIndex uint64
+	var (
+		lowestKvdbIndex, highestKvdbIndex uint64
+		bootStrapKeyLow, bootStrapKeyHigh string
+		r                                 int64
+		updates                           []*kvdb.KVPair
+	)
 	done := make(chan error)
 	mutex := &sync.Mutex{}
 
@@ -1059,7 +1063,6 @@ func (et *etcdKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
 				updates = append(updates, kvp)
 				if highestKvdbIndex > 0 && kvp.ModifiedIndex >= highestKvdbIndex {
 					// Done applying changes.
-					logrus.Infof("Snapshot complete")
 					watchClosed = true
 					watchErr = fmt.Errorf("done")
 					sendErr = nil
@@ -1075,19 +1078,22 @@ func (et *etcdKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
 		return watchErr
 	}
 
-	if err := et.WatchTree("", 0, mutex, cb); err != nil {
-		return nil, 0, fmt.Errorf("Failed to start watch: %v", err)
+	if consistent {
+		// For a consistent snapshot, start a watch to track updates
+		// happening until we enumerate all the keys
+		if err := et.WatchTree("", 0, mutex, cb); err != nil {
+			return nil, 0, fmt.Errorf("Failed to start watch: %v", err)
+		}
+		r = rand.New(rand.NewSource(time.Now().UnixNano())).Int63()
+		bootStrapKeyLow = ec.Bootstrap + strconv.FormatInt(r, 10) +
+			strconv.FormatInt(time.Now().UnixNano(), 10)
+		kvPair, err := et.Put(bootStrapKeyLow, time.Now().UnixNano(), 0)
+		if err != nil {
+			return nil, 0, fmt.Errorf("Failed to create snap bootstrap key %v, "+
+				"err: %v", bootStrapKeyLow, err)
+		}
+		lowestKvdbIndex = kvPair.ModifiedIndex
 	}
-
-	r := rand.New(rand.NewSource(time.Now().UnixNano())).Int63()
-	bootStrapKeyLow := ec.Bootstrap + strconv.FormatInt(r, 10) +
-		strconv.FormatInt(time.Now().UnixNano(), 10)
-	kvPair, err := et.Put(bootStrapKeyLow, time.Now().UnixNano(), 0)
-	if err != nil {
-		return nil, 0, fmt.Errorf("Failed to create snap bootstrap key %v, "+
-			"err: %v", bootStrapKeyLow, err)
-	}
-	lowestKvdbIndex = kvPair.ModifiedIndex
 
 	snapDb, err := mem.New(
 		et.domain,
@@ -1147,13 +1153,20 @@ func (et *etcdKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
 		}
 	}
 
+	if !consistent {
+		// A consistent snapshot is not required
+		// return all the enumerated keys
+		return snapDb, 0, nil
+	}
+
 	// take the lock before we Put a key so that
 	// the highestKvdbIndex will be set before the watch callback is invoked
 	mutex.Lock()
 	// Create bootrap key : highest index
-	bootStrapKeyHigh := ec.Bootstrap + strconv.FormatInt(r, 10) +
+
+	bootStrapKeyHigh = ec.Bootstrap + strconv.FormatInt(r, 10) +
 		strconv.FormatInt(time.Now().UnixNano(), 10)
-	kvPair, err = et.Put(bootStrapKeyHigh, time.Now().UnixNano(), 0)
+	kvPair, err := et.Put(bootStrapKeyHigh, time.Now().UnixNano(), 0)
 	if err != nil {
 		return nil, 0, fmt.Errorf("Failed to create snap bootstrap key %v, "+
 			"err: %v", bootStrapKeyHigh, err)

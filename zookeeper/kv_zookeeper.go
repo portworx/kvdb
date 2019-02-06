@@ -425,7 +425,7 @@ func (z *zookeeperKV) WatchTree(
 	return kvdb.ErrNotSupported
 }
 
-func (z *zookeeperKV) Snapshot(prefixes []string) (kvdb.Kvdb, uint64, error) {
+func (z *zookeeperKV) Snapshot(prefixes []string, consistent bool) (kvdb.Kvdb, uint64, error) {
 	return nil, 0, kvdb.ErrNotSupported
 }
 
