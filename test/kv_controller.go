@@ -107,6 +107,12 @@ func testRemoveMember(kv kvdb.Kvdb, t *testing.T) {
 	list, err = kv.ListMembers()
 	require.NoError(t, err, "Error on ListMembers")
 	require.Equal(t, 2, len(list), "List returned different length of cluster")
+
+	// Remove an already removed node
+	index = 1
+	controllerLog("Removing node 1")
+	err = kv.RemoveMember(names[index], localhost)
+	require.NoError(t, err, "Error on RemoveMember")
 }
 
 func testReAdd(kv kvdb.Kvdb, t *testing.T) {

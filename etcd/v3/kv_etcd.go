@@ -1330,6 +1330,7 @@ func (et *etcdKV) RemoveMember(
 	nodeName string,
 	nodeIP string,
 ) error {
+	fn := "RemoveMember"
 	ctx, cancel := et.MaintenanceContextWithLeader()
 	memberListResponse, err := et.kvClient.MemberList(ctx)
 	cancel()
@@ -1359,11 +1360,31 @@ func (et *etcdKV) RemoveMember(
 		}
 	}
 	et.kvClient.SetEndpoints(newClientUrls...)
-	ctx, cancel = et.MaintenanceContextWithLeader()
-	_, err = et.kvClient.MemberRemove(ctx, removeMemberID)
-	cancel()
-	if err != nil {
-		return err
+	removeMemberRetries := 5
+	for i := 0; i < removeMemberRetries; i++ {
+		ctx, cancel = et.MaintenanceContextWithLeader()
+		_, err := et.kvClient.MemberRemove(ctx, removeMemberID)
+		cancel()
+
+		if err != nil {
+			// Check if the error is member not found
+			etcdErr, ok := err.(rpctypes.EtcdError)
+			if ok && etcdErr == rpctypes.ErrMemberNotFound {
+				return nil
+			}
+			// Check if we need to retry
+			retry, err := isRetryNeeded(err, fn, nodeName, i)
+			if !retry {
+				// For all others return immediately
+				return err
+			}
+			if i == (removeMemberRetries - 1) {
+				return fmt.Errorf("Too many retries for RemoveMember: %v %v", nodeName, nodeIP)
+			}
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		break
 	}
 	return nil
 }
