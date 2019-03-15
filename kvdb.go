@@ -72,6 +72,8 @@ const (
 	InsecureSkipVerify = "InsecureSkipVerify"
 	// TransportScheme points to http transport being either http or https.
 	TransportScheme = "TransportScheme"
+	// DebugLogFileNameKey is the name of the file where kvdb requests will be logged
+	DebugLogFilenameKey = "DebugLogFilename"
 )
 
 // List of kvdb endpoints supported versions
