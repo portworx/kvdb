@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/portworx/kvdb/mem"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 )
 
 const (
@@ -47,6 +49,8 @@ var (
 	defaultMachines = []string{"http://127.0.0.1:2379"}
 	// mLock is a lock over the maintenanceClient
 	mLock sync.Mutex
+	// logIOWriter is an etcd audit log file writer
+	logIOWriter io.Writer
 )
 
 // watchQ to collect updates without blocking
@@ -142,6 +146,15 @@ func New(
 
 		// The time required for a request to fail - 30 sec
 		//HeaderTimeoutPerRequest: time.Duration(10) * time.Second,
+	}
+	logFileName, ok := options[kvdb.DebugLogFilenameKey]
+	if ok {
+		logIOWriter, err = kvdb.OpenLog(logFileName)
+		if err == nil {
+			cfg.DialOptions = []grpc.DialOption{
+				grpc.WithUnaryInterceptor(grpc.UnaryClientInterceptor(loggerEtcdv3Interceptor)),
+			}
+		}
 	}
 	kvClient, err := e.New(cfg)
 	if err != nil {
@@ -1584,4 +1597,33 @@ func isRetryNeeded(err error, fn string, key string, retryCount int) (bool, erro
 		logrus.Errorf("[%v: %v] kvdb error: %v, retry count %v \n", fn, key, err, retryCount)
 		return true, err
 	}
+}
+
+func loggerEtcdv3Interceptor(
+	ctx context.Context,
+	method string,
+	req, reply interface{},
+	cc *grpc.ClientConn,
+	invoker grpc.UnaryInvoker,
+	opts ...grpc.CallOption,
+) error {
+	log := logrus.New()
+	log.Out = logIOWriter
+	logger := log.WithFields(logrus.Fields{
+		"method": method,
+	})
+
+	// TODO: Parse the request
+
+	logger.Info("Start")
+	ts := time.Now()
+	err := invoker(ctx, method, req, reply, cc, opts...)
+	duration := time.Now().Sub(ts)
+	if err != nil {
+		logger.WithFields(logrus.Fields{"duration": duration}).Infof("Failed: %v", err)
+	} else {
+		logger.WithFields(logrus.Fields{"duration": duration}).Info("Successful")
+	}
+
+	return err
 }
