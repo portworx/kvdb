@@ -23,6 +23,8 @@ const (
 	connRefused = "getsockopt: connection refused"
 	// keyIndexMismatch indicates consul error for key index mismatch
 	keyIndexMismatch = "Key Index mismatch"
+	// nameResolutionError indicates no host found, can be temporary
+	nameResolutionError = "no such host"
 )
 
 // clientConsul defines methods that a px based consul client should satisfy.
@@ -115,11 +117,7 @@ func newConsulClient(config *api.Config,
 		connParams:     p,
 		reconnectDelay: reconnectDelay,
 	}
-	if len(c.connParams.machines) < 3 {
-		c.maxRetries = 3
-	} else {
-		c.maxRetries = 2 * len(c.connParams.machines)
-	}
+	c.maxRetries = 12 /// with default 5 second delay this would be a minute
 	return c
 }
 
@@ -170,7 +168,8 @@ func (c *consulClientImpl) reconnect(conn *consulConnection) error {
 func isConsulErrNeedingRetry(err error) bool {
 	return strings.Contains(err.Error(), httpError) ||
 		strings.Contains(err.Error(), eofError) ||
-		strings.Contains(err.Error(), connRefused)
+		strings.Contains(err.Error(), connRefused) ||
+		strings.Contains(err.Error(), nameResolutionError)
 }
 
 // isKeyIndexMismatchErr returns true if error contains key index mismatch substring
