@@ -20,7 +20,7 @@ const (
 	// eofError is also a substring returned by consul during EOF errors.
 	eofError = "EOF"
 	// connRefused connection refused
-	connRefused = "getsockopt: connection refused"
+	connRefused = "connection refused"
 	// keyIndexMismatch indicates consul error for key index mismatch
 	keyIndexMismatch = "Key Index mismatch"
 	// nameResolutionError indicates no host found, can be temporary
