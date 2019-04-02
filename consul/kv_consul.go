@@ -1254,3 +1254,7 @@ func (kv *consulKV) Serialize() ([]byte, error) {
 func (kv *consulKV) Deserialize(b []byte) (kvdb.KVPairs, error) {
 	return kv.DeserializeAll(b)
 }
+
+func (kv *consulKV) ListMembers() (map[string]*kvdb.MemberInfo, error) {
+	return nil, kvdb.ErrNotSupported
+}
