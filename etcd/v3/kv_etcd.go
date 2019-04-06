@@ -12,6 +12,7 @@ import (
 
 	e "github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/concurrency"
+	"github.com/coreos/etcd/etcdctl/ctlv3/command"
 	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	"github.com/coreos/etcd/mvcc/mvccpb"
 	"github.com/portworx/kvdb"
@@ -98,6 +99,9 @@ func init() {
 	if err := kvdb.Register(Name, New, ec.Version); err != nil {
 		panic(err.Error())
 	}
+	if err := kvdb.RegisterRecovery(Name, NewRecovery); err != nil {
+		panic(err.Error())
+	}
 }
 
 type etcdKV struct {
@@ -173,6 +177,13 @@ func New(
 		domain,
 		etcdCommon,
 	}, nil
+}
+
+type etcdRecovery struct{}
+
+// New constructs a new kvdb.Recovery
+func NewRecovery() (kvdb.Recovery, error) {
+	return &etcdRecovery{}, nil
 }
 
 func (et *etcdKV) String() string {
@@ -1506,6 +1517,38 @@ func (et *etcdKV) GetEndpoints() []string {
 	return et.kvClient.Endpoints()
 }
 
+func (r *etcdRecovery) ReinitializeDB(
+	sourceDBFilePath string,
+	targetDir string,
+	nodeIP, nodePeerPort, nodeName, clusterToken string,
+) error {
+	if len(nodeIP) == 0 {
+		return fmt.Errorf("Node IP cannot be empty")
+	}
+	peerUrl := constructURL(nodeIP, nodePeerPort)
+
+	args := []string{
+		sourceDBFilePath,
+		"--data-dir",
+		targetDir,
+		"--name",
+		nodeName,
+		"--initial-cluster",
+		nodeName + "=" + peerUrl,
+		"--initial-advertise-peer-urls",
+		peerUrl,
+		"--initial-cluster-token",
+		clusterToken,
+		"--skip-hash-check",
+	}
+
+	snapshotCmd := command.NewSnapshotRestoreCommand()
+	snapshotCmd.SetArgs(args)
+	err := snapshotCmd.Execute()
+	return err
+
+}
+
 func (et *etcdKV) Defragment(endpoint string, timeout int) error {
 	if timeout < defaultDefragTimeout {
 		timeout = defaultDefragTimeout
@@ -1523,10 +1566,10 @@ func (et *etcdKV) Defragment(endpoint string, timeout int) error {
 }
 
 func (et *etcdKV) listenPeerUrls(ip string, port string) []string {
-	return []string{et.constructURL(ip, port)}
+	return []string{constructURL(ip, port)}
 }
 
-func (et *etcdKV) constructURL(ip string, port string) string {
+func constructURL(ip string, port string) string {
 	ip = strings.TrimPrefix(ip, urlPrefix)
 	return urlPrefix + ip + ":" + port
 }

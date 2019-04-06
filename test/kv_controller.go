@@ -21,15 +21,15 @@ const (
 )
 
 var (
-	names      = []string{"infra0", "infra1", "infra2", "infra3", "infra4"}
-	clientUrls = []string{"http://127.0.0.1:20379", "http://127.0.0.1:21379", "http://127.0.0.1:22379", "http://127.0.0.1:23379", "http://127.0.0.1:24379"}
-	peerPorts  = []string{"20380", "21380", "22380", "23380", "24380"}
-	dataDirs   = []string{"/tmp/node0", "/tmp/node1", "/tmp/node2", "/tmp/node3", "/tmp/node4"}
+	names      = []string{"infra0", "infra1", "infra2", "infra3", "infra4", "recovery0"}
+	clientUrls = []string{"http://127.0.0.1:20379", "http://127.0.0.1:21379", "http://127.0.0.1:22379", "http://127.0.0.1:23379", "http://127.0.0.1:24379", "http://127.0.0.1:25379"}
+	peerPorts  = []string{"20380", "21380", "22380", "23380", "24380", "25380"}
+	dataDirs   = []string{"/tmp/node0", "/tmp/node1", "/tmp/node2", "/tmp/node3", "/tmp/node4", "/tmp/recovery"}
 	cmds       map[int]*exec.Cmd
 )
 
 // RunControllerTests is a test suite for kvdb controller APIs
-func RunControllerTests(datastoreInit kvdb.DatastoreInit, t *testing.T) {
+func RunControllerTests(datastoreInit kvdb.DatastoreInit, recoveryInit kvdb.RecoveryInit, t *testing.T) {
 	cleanup()
 	// Initialize node 0
 	cmds = make(map[int]*exec.Cmd)
@@ -48,6 +48,12 @@ func RunControllerTests(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 		t.Fatalf(err.Error())
 	}
 
+	recoveryKv, err := recoveryInit()
+	if err != nil {
+		cmd.Process.Kill()
+		t.Fatalf(err.Error())
+	}
+
 	testAddMember(kv, t)
 	testRemoveMember(kv, t)
 	testReAdd(kv, t)
@@ -55,6 +61,7 @@ func RunControllerTests(datastoreInit kvdb.DatastoreInit, t *testing.T) {
 	testMemberStatus(kv, t)
 	testDefrag(kv, t)
 	testGetSetEndpoints(kv, t)
+	testReinitializeDB(kv, recoveryKv, t)
 	controllerLog("Stopping all etcd processes")
 	for _, cmd := range cmds {
 		cmd.Process.Kill()
@@ -276,6 +283,52 @@ func testGetSetEndpoints(kv kvdb.Kvdb, t *testing.T) {
 	require.NoError(t, err, "Unexpected error on SetEndpoints")
 	endpoints = kv.GetEndpoints()
 	require.Equal(t, len(endpoints), len(subsetUrls), "Unexpected no. of endpoints")
+
+}
+
+func testReinitializeDB(kv kvdb.Kvdb, recoveryKv kvdb.Recovery, t *testing.T) {
+	controllerLog("testReinitializeDB")
+	// Put some data in kvdb
+	for i := 0; i < 100; i++ {
+		isuffix := strconv.FormatInt(int64(i), 10)
+		kv.Put("key"+isuffix, "value"+isuffix, 0)
+	}
+	time.Sleep(5 * time.Second)
+
+	// Stop all etcd's
+	for _, cmd := range cmds {
+		cmd.Process.Kill()
+	}
+	os.RemoveAll(dataDirs[5])
+
+	// Recover from node 1's db
+	sourceDBFilePath := dataDirs[0] + "/member/snap/db"
+	err := recoveryKv.ReinitializeDB(
+		sourceDBFilePath,
+		dataDirs[5],
+		"127.0.0.1",
+		"25380",
+		names[5],
+		"recovery-cluster",
+	)
+	require.NoError(t, err, "Unexpected error on reinitialize db")
+	index := 5
+	initCluster := make(map[string][]string)
+	initCluster[names[index]] = []string{"http://127.0.0.1:25380"}
+	_, err = startEtcd(index, initCluster, "new")
+	require.NoError(t, err, "Unexpected error on recovery etcd")
+
+	kv.SetEndpoints([]string{clientUrls[5]})
+	currentEndpoints := kv.GetEndpoints()
+	require.Equal(t, len(currentEndpoints), 1, "Unexpected endpoints")
+	require.Equal(t, clientUrls[5], currentEndpoints[0], "Unexpected endpoints")
+
+	for i := 0; i < 100; i++ {
+		isuffix := strconv.FormatInt(int64(i), 10)
+		kvp, err := kv.Get("key" + isuffix)
+		require.NoError(t, err, "Unexpected error on Get for %v", isuffix)
+		require.Equal(t, "value"+isuffix, string(kvp.Value), "Unexpected key value")
+	}
 
 }
 
