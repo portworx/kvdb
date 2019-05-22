@@ -115,7 +115,7 @@ func New(
 ) (kvdb.Kvdb, error) {
 
 	// check for unsupported options
-	for _, opt := range []string{kvdb.UsernameKey, kvdb.PasswordKey, kvdb.CAFileKey} {
+	for _, opt := range []string{kvdb.UsernameKey, kvdb.PasswordKey} {
 		// Check if username provided
 		if _, ok := options[opt]; ok {
 			return nil, kvdb.ErrAuthNotSupported
