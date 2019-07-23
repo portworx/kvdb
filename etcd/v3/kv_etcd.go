@@ -687,7 +687,7 @@ func (et *etcdKV) LockWithTimeout(
 		return nil, err
 	}
 	kvPair.TTL = int64(ttl)
-	kvPair.Lock = &ec.EtcdLock{Done: make(chan struct{})}
+	kvPair.Lock = &ec.EtcdLock{Done: make(chan struct{}), AcquisitionTime: time.Now()}
 	go et.refreshLock(kvPair, lockerID, lockHoldDuration)
 	return kvPair, err
 }
@@ -873,10 +873,10 @@ func (et *etcdKV) refreshLock(
 				currentRefresh = time.Now()
 				if err != nil {
 					et.FatalCb(
-						"Error refreshing lock. [Tag %v] [Err: %v]"+
+						"Error refreshing lock. [Tag %v] [Err: %v] [Acquisition Time: %v]"+
 							" [Current Refresh: %v] [Previous Refresh: %v]"+
 							" [Modified Index: %v]",
-						lockMsgString, err, currentRefresh, prevRefresh, kvPair.ModifiedIndex,
+						lockMsgString, err, l.AcquisitionTime, currentRefresh, prevRefresh, kvPair.ModifiedIndex,
 					)
 					l.Err = err
 					l.Unlock()
