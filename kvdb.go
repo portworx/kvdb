@@ -133,6 +133,8 @@ var (
 	// ErrMemberDoesNotExist returned when an operation fails for a member
 	// which does not exist
 	ErrMemberDoesNotExist = errors.New("Kvdb member does not exist")
+	// ErrNoQuorum kvdb has lost quorum
+	ErrNoQuorum = errors.New("Kvdb lost quorum")
 )
 
 // KVAction specifies the action on a KV pair. This is useful to make decisions
