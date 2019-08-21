@@ -97,6 +97,11 @@ const (
 	DefaultSeparator = "/"
 )
 
+const (
+	// UseRetryWrapper causes Kvdb to created along with retry wrapper
+	UseRetryWrapper = "UseRetryWrapper"
+)
+
 var (
 	// ErrNotSupported implemenation of a specific function is not supported.
 	ErrNotSupported = errors.New("implementation not supported")

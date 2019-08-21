@@ -173,11 +173,11 @@ func (k *kvRetry) GetWithCopy(
 }
 
 func (k *kvRetry) TxNew() (kvdb.Tx, error) {
-	return nil, kvdb.ErrNotSupported
+	return k.kv.TxNew()
 }
 
 func (k *kvRetry) SnapPut(snapKvp *kvdb.KVPair) (*kvdb.KVPair, error) {
-	return nil, kvdb.ErrNotSupported
+	return k.kv.SnapPut(snapKvp)
 }
 
 func (k *kvRetry) AddUser(username string, password string) error {

@@ -58,33 +58,42 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop S
 	assert.NoError(t, err, "Unable to start kvdb")
 	// Wait for kvdb to start
 	time.Sleep(5 * time.Second)
-	kv, err := datastoreInit("pwx/test", nil, nil, fatalErrorCb())
+	kvStore, err := datastoreInit("pwx/test", nil, nil, fatalErrorCb())
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	create(kv, t)
-	createWithTTL(kv, t)
-	cas(kv, t)
-	cad(kv, t)
-	snapshot(kv, t)
-	get(kv, t)
-	getInterface(kv, t)
-	update(kv, t)
-	deleteKey(kv, t)
-	deleteTree(kv, t)
-	enumerate(kv, t)
-	keys(kv, t)
-	concurrentEnum(kv, t)
-	watchKey(kv, t)
-	watchTree(kv, t)
-	watchWithIndex(kv, t)
-	collect(kv, t)
-	lockBasic(kv, t)
-	lock(kv, t)
-	lockBetweenRestarts(kv, t, start, stop)
-	serialization(kv, t)
+	kvWrapper := wrapper.New(kvStore, "pwx/test", nil, nil, fatalErrorCb())
+	for _, useWrapper := range []bool{false, true} {
+		kv := kvStore
+		if useWrapper {
+			kv = wrapper.New(kvStore, "pwx/test", nil, nil, fatalErrorCb())
+		}
+		create(kv, t)
+		createWithTTL(kv, t)
+		cas(kv, t)
+		cad(kv, t)
+		snapshot(kv, t)
+		get(kv, t)
+		getInterface(kv, t)
+		update(kv, t)
+		deleteKey(kv, t)
+		deleteTree(kv, t)
+		enumerate(kv, t)
+		keys(kv, t)
+		concurrentEnum(kv, t)
+		watchKey(kv, t)
+		watchTree(kv, t)
+		watchWithIndex(kv, t)
+		collect(kv, t)
+		lockBasic(kv, t)
+		lock(kv, t)
+		lockBetweenRestarts(kv, t, start, stop)
+		serialization(kv, t)
+	}
 	err = stop()
 	assert.NoError(t, err, "Unable to stop kvdb")
+	// ensure wrapper does not crash when kvdb members are stopped.
+	noQuorumTests(kvWrapper, t)
 }
 
 // RunBasic runs the basic test suite.
@@ -1486,4 +1495,64 @@ func serialization(kv kvdb.Kvdb, t *testing.T) {
 			t.Fatalf("Unexpected values returned by deserialize: %v", kvp.Key)
 		}
 	}
+}
+
+func noQuorum(kv kvdb.Kvdb, t *testing.T) {
+	assert.NoError(t, kv.Version("", map[string]string{}), "Unexpected error")
+	assert.NoError(t, kv.String(), "Unexpected error in String")
+	key := "key"
+	value := "value"
+	ttl := uint64(0)
+	_, err := kv.Create(key, value, ttl)
+	assert.NoError(t, err, "error expected in Create")
+	_, err = kv.Get(key)
+	assert.NoError(t, err, "error expected in Get")
+	_, err = kv.Put(key, value, ttl)
+	assert.NoError(t, err, "error expected in Put")
+	_, err = kv.Snapshot(nil, true)
+	assert.NoError(t, err, "error expected in Snapshot")
+	_, err = kv.GetVal(key, value)
+	assert.NoError(t, err, "error expected in GetVal")
+	_, err = kv.Update(key, value, ttl)
+	assert.NoError(t, err, "error expected in Update")
+	_, err = kv.Enumerate(key)
+	assert.NoError(t, err, "error expected in Enumerate")
+	_, err = kv.Keys(key)
+	assert.NoError(t, err, "error expected in Keys")
+	_, err = kv.CompareAndSet(key, 0, []byte{value})
+	assert.NoError(t, err, "error expected in CompareAndSet")
+
+	err = kv.WatchKey(key, ttl, key, watchCb)
+	assert.NoError(t, err, "error expected in WatchKey")
+	err = kv.WatchTree(key, ttl, key, watchCb)
+	assert.NoError(t, err, "error expected in WatchTree")
+
+	_, err = kv.Lock(key)
+	assert.NoError(t, err, "error expected in Lock")
+	_, err = kv.LockWithID(key, key)
+	assert.NoError(t, err, "error expected in LockWithID")
+	_, err = kv.LockWithTimeout(key, key, time.Minute, time.Minute)
+	assert.NoError(t, err, "error expected in LockWithTimeout")
+	err = kv.Unlock(key)
+	assert.NoError(t, err, "error expected Unlock")
+
+	_, err = kv.EnumerateWithSelect(key, nil, nil)
+	assert.NoError(t, err, "error expected in EnumerateWithSelect")
+	_, err = kv.EnumerateWithSelect(key, nil)
+	assert.NoError(t, err, "error expected in EnumerateWithSelect")
+
+	_, err = kv.SnapPut(nil)
+	assert.NoError(t, err, "error expected in SnapPut")
+	err = kv.AddUser(key, value)
+	assert.NoError(t, err, "error expected in AddUser")
+	err = kv.RemoveUser(key)
+	assert.NoError(t, err, "error expected in RemoveUser")
+	err = kv.TxNew()
+	assert.NoError(t, err, "error expected in TxNew")
+
+	_, err = kv.Serialize()
+	assert.NoError(t, err, "error expected in Serialize")
+	_, err = kv.Deserialize([]byte{})
+	assert.NoError(t, err, "error expected in Serialize")
+
 }
