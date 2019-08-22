@@ -9,6 +9,7 @@ var (
 	instance          Kvdb
 	datastores        = make(map[string]DatastoreInit)
 	datastoreVersions = make(map[string]DatastoreVersion)
+	wrappers          = make(map[string]WrapperInit)
 	lock              sync.RWMutex
 )
 
@@ -46,7 +47,7 @@ func New(
 	if dsInit, exists := datastores[name]; exists {
 		kvdb, err := dsInit(domain, machines, options, errorCB)
 		if _, ok := options[UseRetryWrapper]; ok && err != nil {
-			wrapper.New(kvdb, name, domain, machines, options, errorCB)
+			wrappers[UseRetryWrapper](kvdb, domain, machines, options, errorCB)
 		}
 		return kvdb, err
 	}
@@ -66,6 +67,14 @@ func Register(name string, dsInit DatastoreInit, dsVersion DatastoreVersion) err
 		return fmt.Errorf("Datastore provider's %q version function already registered", name)
 	}
 	datastoreVersions[name] = dsVersion
+	return nil
+}
+
+// Register wrapper
+func RegisterWrapper(name string, initFn WrapperInit) error {
+	lock.Lock()
+	defer lock.Unlock()
+	wrappers[name] = initFn
 	return nil
 }
 
