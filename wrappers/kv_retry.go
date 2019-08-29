@@ -388,7 +388,7 @@ func (k *kvRetry) Defragment(endpoint string, timeout int) error {
 }
 
 func init() {
-	if err := kvdb.RegisterWrapper(kvdb.UseRetryWrapper, New); err != nil {
+	if err := kvdb.RegisterWrapper(kvdb.UseRetryWrapperOption, New); err != nil {
 		panic(err.Error())
 	}
 }

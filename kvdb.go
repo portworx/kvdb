@@ -98,8 +98,9 @@ const (
 )
 
 const (
-	// UseRetryWrapper causes Kvdb to created along with retry wrapper
-	UseRetryWrapper = "UseRetryWrapper"
+	UseRetryWrapperOption       = "UseRetryWrapper"
+	UseLogWrapperOption         = "UseLogWrapperOption"
+	LogWrapperOptionLogFilePath = "LogWrapperOptionLogFilePath"
 )
 
 var (
