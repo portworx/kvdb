@@ -46,8 +46,13 @@ func New(
 
 	if dsInit, exists := datastores[name]; exists {
 		kvdb, err := dsInit(domain, machines, options, errorCB)
-		if _, ok := options[UseRetryWrapperOption]; ok && err != nil {
-			wrappers[UseRetryWrapperOption](kvdb, domain, machines, options, errorCB)
+		for _, wrapperOption := range []string{UseRetryWrapperOption, UseLogWrapperOption} {
+			if _, ok := options[wrapperOption]; ok && err != nil {
+				kvdb, err = wrappers[wrapperOption](kvdb, domain, machines, options, errorCB)
+			}
+			if err != nil {
+				break
+			}
 		}
 		return kvdb, err
 	}
