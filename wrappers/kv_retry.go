@@ -391,4 +391,7 @@ func init() {
 	if err := kvdb.RegisterWrapper(kvdb.UseRetryWrapperOption, New); err != nil {
 		panic(err.Error())
 	}
+	if err := kvdb.RegisterWrapper(kvdb.UseLogWrapperOption, NewLogWrapper); err != nil {
+		panic(err.Error())
+	}
 }
