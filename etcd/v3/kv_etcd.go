@@ -104,7 +104,7 @@ type etcdKV struct {
 	common.BaseKvdb
 	kvClient          *e.Client
 	authClient        e.Auth
-	maintenanceClient e.Maintenance
+	maintenanceClient *e.Client
 	domain            string
 	ec.EtcdCommon
 }
@@ -169,7 +169,7 @@ func New(
 		common.BaseKvdb{FatalCb: fatalErrorCb},
 		kvClient,
 		e.NewAuth(kvClient),
-		e.NewMaintenance(mClient),
+		mClient,
 		domain,
 		etcdCommon,
 	}, nil
@@ -1404,6 +1404,7 @@ func (et *etcdKV) RemoveMember(
 		}
 	}
 	et.kvClient.SetEndpoints(newClientUrls...)
+	et.maintenanceClient.SetEndpoints(newClientUrls...)
 	removeMemberRetries := 5
 	for i := 0; i < removeMemberRetries; i++ {
 		ctx, cancel = et.MaintenanceContextWithLeader()
@@ -1499,6 +1500,7 @@ func (et *etcdKV) Deserialize(b []byte) (kvdb.KVPairs, error) {
 
 func (et *etcdKV) SetEndpoints(endpoints []string) error {
 	et.kvClient.SetEndpoints(endpoints...)
+	et.maintenanceClient.SetEndpoints(endpoints...)
 	return nil
 }
 
