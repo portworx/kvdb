@@ -700,9 +700,16 @@ func (et *etcdKV) Unlock(kvp *kvdb.KVPair) error {
 	l.Lock()
 	// Don't modify kvp here, CompareAndDelete does that.
 	_, err := et.CompareAndDelete(kvp, kvdb.KVFlags(0))
-	if err == nil {
+	connectionError := false
+	if err != nil {
+		connectionError, _ = isRetryNeeded(err, "Unlock", kvp.Key, 300)
+	}
+	if err == nil || connectionError {
 		l.Unlocked = true
 		l.Unlock()
+		// stopping lock refresh will automatically release
+		// the lock, so even if we have connection errors we don't
+		// need to report error.
 		l.Done <- struct{}{}
 		return nil
 	}
