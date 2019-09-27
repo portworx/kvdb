@@ -25,6 +25,8 @@ const (
 	keyIndexMismatch = "Key Index mismatch"
 	// nameResolutionError indicates no host found, can be temporary
 	nameResolutionError = "no such host"
+	// connReset connection reset by peer
+	connReset = "connection reset by peer"
 )
 
 // clientConsul defines methods that a px based consul client should satisfy.
@@ -169,7 +171,8 @@ func isConsulErrNeedingRetry(err error) bool {
 	return strings.Contains(err.Error(), httpError) ||
 		strings.Contains(err.Error(), eofError) ||
 		strings.Contains(err.Error(), connRefused) ||
-		strings.Contains(err.Error(), nameResolutionError)
+		strings.Contains(err.Error(), nameResolutionError) ||
+		strings.Contains(err.Error(), connReset)
 }
 
 // isKeyIndexMismatchErr returns true if error contains key index mismatch substring
