@@ -98,9 +98,8 @@ const (
 )
 
 const (
-	UseRetryWrapperOption       = "UseRetryWrapper"
-	UseLogWrapperOption         = "UseLogWrapperOption"
-	LogWrapperOptionLogFilePath = "LogWrapperOptionLogFilePath"
+	WrapperEnableLog          = "WrapperEnableLog"
+	WrapperEnableQuorumFilter = "WrapperEnableQuorumFilter"
 )
 
 var (
