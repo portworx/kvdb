@@ -211,7 +211,7 @@ func (k *kvLogger) WatchTree(
 ) error {
 	err := k.kv.WatchTree(prefix, waitIndex, opaque, cb)
 	logrus.WithFields(logrus.Fields{
-		opType:    "WatchTrer",
+		opType:    "WatchTree",
 		errString: err,
 	}).Info()
 	return err

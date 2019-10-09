@@ -1537,15 +1537,6 @@ func noQuorum(kv kvdb.Kvdb, t *testing.T) {
 	_, err = kv.CompareAndSet(kvp, 0, []byte(value))
 	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in CompareAndSet")
 
-	watchCb := func(prefix string, opaque interface{}, kvp *kvdb.KVPair, err error) error {
-		assert.Error(t, err, "watch error expected")
-		return err
-	}
-	err = kv.WatchKey(key, ttl, key, watchCb)
-	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in WatchKey")
-	err = kv.WatchTree(key, ttl, key, watchCb)
-	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in WatchTree")
-
 	_, err = kv.Lock(key)
 	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in Lock")
 	_, err = kv.LockWithID(key, key)
@@ -1585,4 +1576,11 @@ func noQuorum(kv kvdb.Kvdb, t *testing.T) {
 	err = kv.DeleteTree(key)
 	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in DeleteTree")
 
+	// watch must return an error
+	watchCb := func(prefix string, opaque interface{}, kvp *kvdb.KVPair, err error) error {
+		assert.Error(t, err, "watch error expected")
+		return err
+	}
+	kv.WatchKey(key, ttl, key, watchCb)
+	kv.WatchTree(key, ttl, key, watchCb)
 }
