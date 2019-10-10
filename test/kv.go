@@ -67,10 +67,6 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop S
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	kvWrapper, err = wrappers.NewLogWrapper(kvWrapper, "pwx/test", nil, nil, fatalErrorCb())
-	if err != nil {
-		t.Fatalf(err.Error())
-	}
 	for _, useWrapper := range []bool{false, true} {
 		kv := kvStore
 		if useWrapper {
