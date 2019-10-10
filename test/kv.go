@@ -63,42 +63,36 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop S
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	kvWrapper, err := wrappers.NewKvQuorumCheckFilter(kvStore, "pwx/test", nil, nil, fatalErrorCb())
+	kv, err := wrappers.NewKvQuorumCheckFilter(kvStore, "pwx/test", nil, nil, fatalErrorCb())
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	for _, useWrapper := range []bool{false, true} {
-		kv := kvStore
-		if useWrapper {
-			kv = kvWrapper
-		}
-		create(kv, t)
-		createWithTTL(kv, t)
-		cas(kv, t)
-		cad(kv, t)
-		snapshot(kv, t)
-		get(kv, t)
-		getInterface(kv, t)
-		update(kv, t)
-		deleteKey(kv, t)
-		deleteTree(kv, t)
-		enumerate(kv, t)
-		keys(kv, t)
-		concurrentEnum(kv, t)
-		watchKey(kv, t)
-		watchTree(kv, t)
-		watchWithIndex(kv, t)
-		collect(kv, t)
-		lockBasic(kv, t)
-		lock(kv, t)
-		lockBetweenRestarts(kv, t, start, stop)
-		serialization(kv, t)
-	}
+	create(kv, t)
+	createWithTTL(kv, t)
+	cas(kv, t)
+	cad(kv, t)
+	snapshot(kv, t)
+	get(kv, t)
+	getInterface(kv, t)
+	update(kv, t)
+	deleteKey(kv, t)
+	deleteTree(kv, t)
+	enumerate(kv, t)
+	keys(kv, t)
+	concurrentEnum(kv, t)
+	watchKey(kv, t)
+	watchTree(kv, t)
+	watchWithIndex(kv, t)
+	collect(kv, t)
+	lockBasic(kv, t)
+	lock(kv, t)
+	lockBetweenRestarts(kv, t, start, stop)
+	serialization(kv, t)
 	err = stop()
 	assert.NoError(t, err, "Unable to stop kvdb")
 	// ensure wrapper does not crash when kvdb members are stopped.
-	kvWrapper.SetQuorumState(kvdb.KvdbNotInQuorum)
-	noQuorum(kvWrapper, t)
+	kv.SetQuorumState(kvdb.KvdbNotInQuorum)
+	noQuorum(kv, t)
 }
 
 // RunBasic runs the basic test suite.
