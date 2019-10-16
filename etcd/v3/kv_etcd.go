@@ -528,7 +528,7 @@ func (et *etcdKV) CompareAndSet(
 			if kvPair.ModifiedIndex == kvp.ModifiedIndex {
 				// update did not succeed, retry
 				if i == (timeoutMaxRetry - 1) {
-					et.FatalCb("Too many server retries for CAS: %v", *kvp)
+					return nil, txnErr
 				}
 				continue
 			} else if bytes.Compare(kvp.Value, kvPair.Value) == 0 {
@@ -601,7 +601,7 @@ func (et *etcdKV) CompareAndDelete(
 				return nil, txnErr
 			}
 			if i == (timeoutMaxRetry - 1) {
-				et.FatalCb("Too many server retries for CAD: %v", *kvp)
+				return nil, txnErr
 			}
 			continue
 		}
@@ -706,11 +706,14 @@ func (et *etcdKV) Unlock(kvp *kvdb.KVPair) error {
 	}
 	if err == nil || connectionError {
 		l.Unlocked = true
+		closeChan := l.Err == nil
 		l.Unlock()
 		// stopping lock refresh will automatically release
 		// the lock, so even if we have connection errors we don't
 		// need to report error.
-		l.Done <- struct{}{}
+		if closeChan {
+			l.Done <- struct{}{}
+		}
 		return nil
 	}
 	l.Unlock()
@@ -879,7 +882,7 @@ func (et *etcdKV) refreshLock(
 				)
 				currentRefresh = time.Now()
 				if err != nil {
-					et.FatalCb(
+					logrus.Infof(
 						"Error refreshing lock. [Tag %v] [Err: %v] [Acquisition Time: %v]"+
 							" [Current Refresh: %v] [Previous Refresh: %v]"+
 							" [Modified Index: %v]",
