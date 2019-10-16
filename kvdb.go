@@ -140,6 +140,8 @@ var (
 	ErrMemberDoesNotExist = errors.New("Kvdb member does not exist")
 	// ErrNoQuorum kvdb has lost quorum
 	ErrNoQuorum = errors.New("Kvdb lost quorum")
+	// ErrWatchRevisionCompacted requested watch version has been compacted
+	ErrWatchRevisionCompacted = errors.New("Kvdb watch revision compacted")
 )
 
 // KVAction specifies the action on a KV pair. This is useful to make decisions

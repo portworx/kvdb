@@ -955,10 +955,13 @@ func (et *etcdKV) watchStart(
 				continue
 			}
 			if wresp.Canceled == true {
-				// Watch is canceled. Notify the watcher
-				logrus.Errorf("Watch on key %v cancelled. Error: %v", key,
+				logrus.Errorf("Watch on key %v cancelled. Error: %v %v", key,
 					wresp.Err())
-				watchQ.enqueue(key, nil, kvdb.ErrWatchStopped)
+				retError := kvdb.ErrWatchStopped
+				if strings.Contains(rpctypes.ErrGRPCCompacted.Error(), wresp.Err().Error()) {
+					retError = kvdb.ErrWatchRevisionCompacted
+				}
+				watchQ.enqueue(key, nil, retError)
 				return
 			} else {
 				for _, ev := range wresp.Events {
