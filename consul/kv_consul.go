@@ -979,6 +979,14 @@ func (kv *consulKV) watchTreeStart(
 	prevIndex := uint64(0)
 	var cbCreateErr, cbUpdateErr error
 
+	foundStartWatchIndex := false
+	logrus.Infof("starting watchTree %v index %v", prefix, waitIndex)
+	if opts.WaitIndex > 0 {
+		opts.WaitIndex = opts.WaitIndex - 1
+	} else {
+		foundStartWatchIndex = true
+	}
+
 	checkIndex := func(prevIndex *uint64, pair *api.KVPair, newIndex uint64,
 		msg string, lastIndex, waitIndex uint64) {
 		if *prevIndex != 0 && newIndex <= *prevIndex {
@@ -992,6 +1000,17 @@ func (kv *consulKV) watchTreeStart(
 	for {
 		// Make a blocking List query
 		kvPairs, meta, err := kv.client.List(prefix, opts)
+		if meta != nil {
+			if !foundStartWatchIndex {
+				// for a tree either may be returned
+				if meta.LastIndex == waitIndex || meta.LastIndex == (waitIndex+1) {
+					foundStartWatchIndex = true
+				} else {
+					kv.FatalCb("start wait index (%v) missed for key: %v, got: %v",
+						waitIndex, prefix, meta.LastIndex)
+				}
+			}
+		}
 
 		pairs := CKVPairs(kvPairs)
 		sort.Sort(pairs)
@@ -1097,8 +1116,15 @@ func (kv *consulKV) watchKeyStart(
 	cb kvdb.WatchCB,
 ) {
 	key = stripConsecutiveForwardslash(key)
+
+	foundStartWatchIndex := false
 	opts := &api.QueryOptions{
 		WaitIndex: waitIndex,
+	}
+	if opts.WaitIndex > 0 {
+		opts.WaitIndex = opts.WaitIndex - 1
+	} else {
+		foundStartWatchIndex = true
 	}
 
 	// Flags used to detect a deleted key
@@ -1106,6 +1132,18 @@ func (kv *consulKV) watchKeyStart(
 	var cbErr error
 	for {
 		pair, meta, err := kv.client.Get(key, opts)
+
+		if meta != nil {
+			if !foundStartWatchIndex {
+				// for a tree either may be returned
+				if meta.LastIndex == waitIndex {
+					foundStartWatchIndex = true
+				} else {
+					kv.FatalCb("start wait index (%v) missed for key: %v, got: %v",
+						waitIndex, key, meta.LastIndex)
+				}
+			}
+		}
 
 		if err != nil {
 			logrus.Errorf("get: Consul returned an error : %s\n", err.Error())
