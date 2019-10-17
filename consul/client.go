@@ -231,6 +231,7 @@ func (c *consulClientImpl) runWithRetry(f consulFunc) {
 		if !f() {
 			break
 		}
+		time.Sleep(time.Second)
 	}
 }
 
