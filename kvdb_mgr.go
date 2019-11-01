@@ -9,6 +9,7 @@ var (
 	instance          Kvdb
 	datastores        = make(map[string]DatastoreInit)
 	datastoreVersions = make(map[string]DatastoreVersion)
+	recoveryStores    = make(map[string]RecoveryInit)
 	lock              sync.RWMutex
 )
 
@@ -75,4 +76,28 @@ func Version(name string, url string, kvdbOptions map[string]string) (string, er
 		return dsVersion(url, kvdbOptions)
 	}
 	return "", ErrNotSupported
+}
+
+// RegisterRecovery adds specified recovery interface to the list of recovery providing stores
+func RegisterRecovery(name string, recoveryInit RecoveryInit) error {
+	lock.Lock()
+	defer lock.Unlock()
+
+	if _, exists := recoveryStores[name]; exists {
+		return fmt.Errorf("Recovery provider %v is already registered", name)
+	}
+	recoveryStores[name] = recoveryInit
+	return nil
+}
+
+// NewRecovery returns a new instance of Recovery implementation specified
+// by a datastore name
+func NewRecovery(name string) (Recovery, error) {
+	lock.RLock()
+	defer lock.RUnlock()
+
+	if recoveryInit, exists := recoveryStores[name]; exists {
+		return recoveryInit()
+	}
+	return nil, ErrNotSupported
 }

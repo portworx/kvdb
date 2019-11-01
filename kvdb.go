@@ -160,6 +160,9 @@ type DatastoreInit func(domain string, machines []string, options map[string]str
 // DatastoreVersion is called to get the version of a backend KV store
 type DatastoreVersion func(url string, kvdbOptions map[string]string) (string, error)
 
+// RecoveryInit is called to initialize the Recovery interface for a backend KV store
+type RecoveryInit func() (Recovery, error)
+
 // EnumerateSelect function is a callback function provided to EnumerateWithSelect API
 // This fn is executed over all the keys and only those values are returned by Enumerate for which
 // this function return true.
@@ -389,4 +392,19 @@ type Controller interface {
 	// Defragment defrags the underlying database for the given endpoint
 	// with a timeout specified in seconds
 	Defragment(endpoint string, timeout int) error
+}
+
+// Recovery interface provides APIs to recover a kvdb from a failed state
+// It is expected to be called when the connection to a running kvdb server is not
+// available.
+type Recovery interface {
+	// ReinitializeDB re-initializes the underlying kvdb's database.
+	// It removes all the metadata associated with the kvdb but retains all the keys and values.
+	// It takes the location of the original DB file as an input and saves the re-initialized
+	// DB in the target directory
+	ReinitializeDB(
+		sourceDBFilePath string,
+		targetDir string,
+		nodeIP, nodePeerPort, nodeName, clusterIdentifier string,
+	) error
 }
