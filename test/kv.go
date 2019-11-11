@@ -42,8 +42,7 @@ type lockTag struct {
 }
 
 func fatalErrorCb() kvdb.FatalErrorCB {
-	return func(format string, args ...interface{}) {
-		logrus.Panicf(format, args)
+	return func(err error, format string, args ...interface{}) {
 	}
 }
 
@@ -804,7 +803,8 @@ func lock(kv kvdb.Kvdb, t *testing.T) {
 		assert.NoError(t, err, "Unexpected error from Unlock")
 
 		lockTimedout := false
-		fatalLockCb := func(format string, args ...interface{}) {
+		fatalLockCb := func(err error, format string, args ...interface{}) {
+			assert.Equal(t, err, kvdb.ErrLockHoldTimeoutTriggered)
 			logrus.Infof("Lock timeout called: "+format, args...)
 			lockTimedout = true
 		}
