@@ -804,7 +804,6 @@ func lock(kv kvdb.Kvdb, t *testing.T) {
 
 		lockTimedout := false
 		fatalLockCb := func(err error, format string, args ...interface{}) {
-			assert.Equal(t, err, kvdb.ErrLockHoldTimeoutTriggered)
 			logrus.Infof("Lock timeout called: "+format, args...)
 			lockTimedout = true
 		}
