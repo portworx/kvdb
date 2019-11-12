@@ -884,9 +884,6 @@ func (et *etcdKV) refreshLock(
 				)
 				currentRefresh = time.Now()
 				if err != nil {
-					logrus.Infof("XXX   Error refreshing lock. [Tag %v] [Err: %v] [Acquisition Time: %v]"+
-						" [Current Refresh: %v] [Previous Refresh: %v] [Modified Index: %v]",
-						lockMsgString, err, l.AcquisitionTime, currentRefresh, prevRefresh, kvPair)
 					et.FatalCb(kvdb.ErrLockRefreshFailed,
 						"Error refreshing lock. [Tag %v] [Err: %v] [Acquisition Time: %v]"+
 							" [Current Refresh: %v] [Previous Refresh: %v] [Modified Index: %v]",
