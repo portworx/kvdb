@@ -585,7 +585,7 @@ func (kv *etcdKV) refreshLock(
 				)
 				currentRefresh = time.Now()
 				if err != nil {
-					kv.FatalCb(
+					kv.FatalCb(kvdb.ErrLockRefreshFailed,
 						"Error refreshing lock. [Key %v] [Err: %v] [Acquisition Time: %v]"+
 							" [Current Refresh: %v] [Previous Refresh: %v]",
 						keyString, err, l.AcquisitionTime, currentRefresh, prevRefresh,

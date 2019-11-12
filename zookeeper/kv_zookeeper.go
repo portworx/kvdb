@@ -512,7 +512,7 @@ func (z *zookeeperKV) waitForUnlock(
 					}
 					l.Unlocked = true
 				}
-				z.FatalCb("Lock %s hold timeout triggered", lockMsgString)
+				z.LockTimedout(lockMsgString)
 				return
 			}
 		case <-l.Done:

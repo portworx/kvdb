@@ -528,7 +528,8 @@ func (et *etcdKV) CompareAndSet(
 			if kvPair.ModifiedIndex == kvp.ModifiedIndex {
 				// update did not succeed, retry
 				if i == (timeoutMaxRetry - 1) {
-					et.FatalCb("Too many server retries for CAS: %v", *kvp)
+					et.FatalCb(kvdb.ErrNoConnection, "Too many server retries for CAS: %v", *kvp)
+					return nil, txnErr
 				}
 				continue
 			} else if bytes.Compare(kvp.Value, kvPair.Value) == 0 {
@@ -601,7 +602,8 @@ func (et *etcdKV) CompareAndDelete(
 				return nil, txnErr
 			}
 			if i == (timeoutMaxRetry - 1) {
-				et.FatalCb("Too many server retries for CAD: %v", *kvp)
+				et.FatalCb(kvdb.ErrNoConnection, "Too many server retries for CAD: %v", *kvp)
+				return nil, txnErr
 			}
 			continue
 		}
@@ -700,10 +702,20 @@ func (et *etcdKV) Unlock(kvp *kvdb.KVPair) error {
 	l.Lock()
 	// Don't modify kvp here, CompareAndDelete does that.
 	_, err := et.CompareAndDelete(kvp, kvdb.KVFlags(0))
-	if err == nil {
+	connectionError := false
+	if err != nil {
+		connectionError, _ = isRetryNeeded(err, "Unlock", kvp.Key, 300)
+	}
+	if err == nil || connectionError {
 		l.Unlocked = true
+		closeChan := l.Err == nil
 		l.Unlock()
-		l.Done <- struct{}{}
+		// stopping lock refresh will automatically release
+		// the lock, so even if we have connection errors we don't
+		// need to report error.
+		if closeChan {
+			l.Done <- struct{}{}
+		}
 		return nil
 	}
 	l.Unlock()
@@ -872,10 +884,9 @@ func (et *etcdKV) refreshLock(
 				)
 				currentRefresh = time.Now()
 				if err != nil {
-					et.FatalCb(
+					et.FatalCb(kvdb.ErrLockRefreshFailed,
 						"Error refreshing lock. [Tag %v] [Err: %v] [Acquisition Time: %v]"+
-							" [Current Refresh: %v] [Previous Refresh: %v]"+
-							" [Modified Index: %v]",
+							" [Current Refresh: %v] [Previous Refresh: %v] [Modified Index: %v]",
 						lockMsgString, err, l.AcquisitionTime, currentRefresh, prevRefresh, kvPair.ModifiedIndex,
 					)
 					l.Err = err
@@ -945,10 +956,13 @@ func (et *etcdKV) watchStart(
 				continue
 			}
 			if wresp.Canceled == true {
-				// Watch is canceled. Notify the watcher
-				logrus.Errorf("Watch on key %v cancelled. Error: %v", key,
+				logrus.Errorf("Watch on key %v cancelled. Error: %v %v", key,
 					wresp.Err())
-				watchQ.enqueue(key, nil, kvdb.ErrWatchStopped)
+				retError := kvdb.ErrWatchStopped
+				if strings.Contains(rpctypes.ErrGRPCCompacted.Error(), wresp.Err().Error()) {
+					retError = kvdb.ErrWatchRevisionCompacted
+				}
+				watchQ.enqueue(key, nil, retError)
 				return
 			} else {
 				for _, ev := range wresp.Events {
