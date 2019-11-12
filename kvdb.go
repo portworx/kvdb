@@ -398,3 +398,8 @@ type Controller interface {
 	// with a timeout specified in seconds
 	Defragment(endpoint string, timeout int) error
 }
+
+func LogFatalErrorCB(err error, format string, args ...interface{}) {
+	logrus.Errorf("encountered fatal error: %v", err)
+	logrus.Panicf(format, args...)
+}
