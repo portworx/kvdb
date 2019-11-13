@@ -41,8 +41,7 @@ type lockTag struct {
 }
 
 func fatalErrorCb() kvdb.FatalErrorCB {
-	return func(format string, args ...interface{}) {
-		logrus.Panicf(format, args)
+	return func(err error, format string, args ...interface{}) {
 	}
 }
 
@@ -796,7 +795,7 @@ func lock(kv kvdb.Kvdb, t *testing.T) {
 		assert.NoError(t, err, "Unexpected error from Unlock")
 
 		lockTimedout := false
-		fatalLockCb := func(format string, args ...interface{}) {
+		fatalLockCb := func(err error, format string, args ...interface{}) {
 			logrus.Infof("Lock timeout called: "+format, args...)
 			lockTimedout = true
 		}
@@ -817,13 +816,13 @@ func lockBetweenRestarts(kv kvdb.Kvdb, t *testing.T, start StartKvdb, stop StopK
 		// Try to take the lock again
 		// We need this test for consul to check if LockDelay is not set
 		fmt.Println("lock before restarting kvdb")
-		kvPair3, err := lockMethod("key3")
+		kvPairBeforeRestart, err := lockMethod("key3")
 		assert.NoError(t, err, "Unable to take a lock")
 		fmt.Println("stopping kvdb")
 		err = stop()
 		assert.NoError(t, err, "Unable to stop kvdb")
 		// Unlock the key
-		go func() { kv.Unlock(kvPair3) }()
+		go func() { kv.Unlock(kvPairBeforeRestart) }()
 
 		time.Sleep(30 * time.Second)
 
@@ -833,12 +832,13 @@ func lockBetweenRestarts(kv kvdb.Kvdb, t *testing.T, start StartKvdb, stop StopK
 		time.Sleep(40 * time.Second)
 
 		lockChan := make(chan int)
+		var kvPair3 *kvdb.KVPair
 		go func() {
 			kvPair3, err = lockMethod("key3")
 			lockChan <- 1
 		}()
 		select {
-		case <-time.After(5 * time.Second):
+		case <-time.After(20 * time.Second):
 			assert.Fail(t, "Unable to take a lock whose session is expired")
 		case <-lockChan:
 		}
