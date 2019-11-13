@@ -97,6 +97,11 @@ const (
 	DefaultSeparator = "/"
 )
 
+const (
+	WrapperEnableLog          = "WrapperEnableLog"
+	WrapperEnableQuorumFilter = "WrapperEnableQuorumFilter"
+)
+
 var (
 	// ErrNotSupported implemenation of a specific function is not supported.
 	ErrNotSupported = errors.New("implementation not supported")
@@ -141,6 +146,8 @@ var (
 	ErrLockHoldTimeoutTriggered = errors.New("Lock held beyond configured timeout")
 	// ErrNoConnection no connection to server
 	ErrNoConnection = errors.New("No server connection")
+	// ErrNoQuorum kvdb has lost quorum
+	ErrNoQuorum = errors.New("Kvdb lost quorum")
 )
 
 // KVAction specifies the action on a KV pair. This is useful to make decisions
@@ -167,6 +174,10 @@ type DatastoreInit func(domain string, machines []string, options map[string]str
 
 // DatastoreVersion is called to get the version of a backend KV store
 type DatastoreVersion func(url string, kvdbOptions map[string]string) (string, error)
+
+// WrapperInit is called to activate a backend KV store.
+type WrapperInit func(kv Kvdb, domain string, machines []string, options map[string]string,
+	cb FatalErrorCB) (Kvdb, error)
 
 // EnumerateSelect function is a callback function provided to EnumerateWithSelect API
 // This fn is executed over all the keys and only those values are returned by Enumerate for which
@@ -218,6 +229,13 @@ type Tx interface {
 	// afer commit.
 	Abort() error
 }
+
+type KvdbQuorumState uint32
+
+const (
+	KvdbInQuorum KvdbQuorumState = iota
+	KvdbNotInQuorum
+)
 
 // Kvdb interface implemented by backing datastores.
 type Kvdb interface {
@@ -310,6 +328,10 @@ type Kvdb interface {
 	Serialize() ([]byte, error)
 	// Deserialize deserializes the given byte array into a list of kv pairs
 	Deserialize([]byte) (KVPairs, error)
+	// SetQuorumState sets quorum state
+	SetQuorumState(state KvdbQuorumState)
+	// QuorumState returns quorum state
+	QuorumState() KvdbQuorumState
 }
 
 // ReplayCb provides info required for replay

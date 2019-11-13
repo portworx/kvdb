@@ -105,6 +105,14 @@ func (b *BaseKvdb) DeserializeAll(out []byte) (kvdb.KVPairs, error) {
 	return kvps, nil
 }
 
+func (b *BaseKvdb) SetQuorumState(state kvdb.KvdbQuorumState) {
+	// no-op
+}
+
+func (b *BaseKvdb) QuorumState() kvdb.KvdbQuorumState {
+	return kvdb.KvdbInQuorum
+}
+
 // watchUpdate refers to an update to this kvdb
 type watchUpdate struct {
 	// key is the key that was updated
