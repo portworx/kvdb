@@ -221,11 +221,7 @@ func (k *kvQuorumCheckFilter) LockWithTimeout(
 }
 
 func (k *kvQuorumCheckFilter) Unlock(kvp *kvdb.KVPair) error {
-	if k.inQuorum() {
-		return k.kv.Unlock(kvp)
-	} else {
-		return kvdb.ErrNoQuorum
-	}
+	return k.kv.Unlock(kvp)
 }
 
 func (k *kvQuorumCheckFilter) EnumerateWithSelect(

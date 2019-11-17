@@ -1531,8 +1531,6 @@ func noQuorum(kv kvdb.Kvdb, t *testing.T) {
 	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in LockWithID")
 	_, err = kv.LockWithTimeout(key, key, time.Minute, time.Minute)
 	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in LockWithTimeout")
-	err = kv.Unlock(kvp)
-	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected Unlock")
 
 	selectFn := func(val interface{}) bool {
 		t.Fatal("select function called when no quorum exists")
