@@ -45,7 +45,20 @@ func New(
 
 	if dsInit, exists := datastores[name]; exists {
 		kvdb, err := dsInit(domain, machines, options, errorCB)
-		return kvdb, err
+		if err != nil {
+			return kvdb, err
+		}
+		logFileName, ok := options[DebugLogFilenameKey]
+		if ok {
+			wrappedKvdb, err := NewKvdbDebugFilter(kvdb, logFileName)
+			if err != nil {
+				// Best effort for logging kvdb requests
+				// Do not error out
+				return kvdb, nil
+			}
+			return wrappedKvdb, err
+		}
+		return kvdb, nil
 	}
 	return nil, ErrNotSupported
 }
