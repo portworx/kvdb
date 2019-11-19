@@ -39,6 +39,10 @@ type BaseKvdb struct {
 	lock sync.Mutex
 }
 
+func (b *BaseKvdb) WrappedKvdbInfo() *kvdb.KvdbWrapperInfo {
+	return nil
+}
+
 // SetFatalCb callback is invoked when an unrecoverable KVDB error happens.
 func (b *BaseKvdb) SetFatalCb(f kvdb.FatalErrorCB) {
 	b.lock.Lock()

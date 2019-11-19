@@ -9,7 +9,7 @@ var (
 	instance          Kvdb
 	datastores        = make(map[string]DatastoreInit)
 	datastoreVersions = make(map[string]DatastoreVersion)
-	wrappers          = make(map[string]WrapperInit)
+	wrappers          = make(map[WrapperName]WrapperInit)
 	lock              sync.RWMutex
 )
 
@@ -21,12 +21,8 @@ func Instance() Kvdb {
 // SetInstance sets the singleton instance.
 func SetInstance(kvdb Kvdb) error {
 	if instance == nil {
-		lock.Lock()
-		defer lock.Unlock()
-		if instance == nil {
-			instance = kvdb
-			return nil
-		}
+		instance = kvdb
+		return nil
 	}
 	return fmt.Errorf("Kvdb instance is already set to %q", instance.String())
 }
@@ -43,20 +39,64 @@ func New(
 ) (Kvdb, error) {
 	lock.RLock()
 	defer lock.RUnlock()
-
 	if dsInit, exists := datastores[name]; exists {
-		kvdb, err := dsInit(domain, machines, options, errorCB)
-		for _, wrapperOption := range []string{WrapperEnableLog, WrapperEnableQuorumFilter} {
-			if _, ok := options[wrapperOption]; ok && err == nil {
-				kvdb, err = wrappers[wrapperOption](kvdb, domain, machines, options, errorCB)
-			}
-			if err != nil {
-				break
-			}
-		}
-		return kvdb, err
+		return dsInit(domain, machines, options, errorCB)
 	}
 	return nil, ErrNotSupported
+}
+
+// AddWrapper adds wrapper is it is not already added
+func AddWrapper(
+	wrapper WrapperName,
+	kvdb Kvdb,
+	options map[string]string,
+) (Kvdb, error) {
+	lock.Lock()
+	defer lock.Unlock()
+
+	for w := kvdb.WrappedKvdbInfo(); w != nil; w = w.WrappedKvdb.WrappedKvdbInfo() {
+		if w.Name == wrapper {
+			return kvdb, fmt.Errorf("wrapper %v already present in kvdb",
+				wrapper)
+		}
+	}
+	if initFn, ok := wrappers[wrapper]; !ok {
+		return kvdb, fmt.Errorf("wrapper %v not found", wrapper)
+	} else {
+		// keep log wrapper at the top if it exists
+		topWrapper := kvdb.WrappedKvdbInfo()
+		if topWrapper != nil && topWrapper.Name == WrapperLog {
+			newWrapper, err := initFn(topWrapper.WrappedKvdb, options)
+			if err == nil {
+				topWrapper.WrappedKvdb = newWrapper
+				return kvdb, nil
+			} else {
+				return kvdb, err
+			}
+		}
+		return initFn(kvdb, options)
+	}
+}
+
+// RemoveWrapper adds wrapper is it is not already added
+func RemoveWrapper(
+	wrapper WrapperName,
+	kvdb Kvdb,
+) (Kvdb, error) {
+	var prevWrapper *KvdbWrapperInfo
+	for w := kvdb.WrappedKvdbInfo(); w != nil; w = w.WrappedKvdb.WrappedKvdbInfo() {
+		if w.Name == wrapper {
+			if prevWrapper != nil {
+				prevWrapper.WrappedKvdb = w.WrappedKvdb
+				return kvdb, nil
+			} else {
+				// removing the top-most wrapper
+				return w.WrappedKvdb, nil
+			}
+		}
+		prevWrapper = w
+	}
+	return kvdb, nil // did not find the wrapper to remove
 }
 
 // Register adds specified datastore backend to the list of options.
@@ -76,7 +116,7 @@ func Register(name string, dsInit DatastoreInit, dsVersion DatastoreVersion) err
 }
 
 // Register wrapper
-func RegisterWrapper(name string, initFn WrapperInit) error {
+func RegisterWrapper(name WrapperName, initFn WrapperInit) error {
 	lock.Lock()
 	defer lock.Unlock()
 	wrappers[name] = initFn

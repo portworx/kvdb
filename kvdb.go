@@ -97,10 +97,20 @@ const (
 	DefaultSeparator = "/"
 )
 
+type WrapperName string
+
 const (
-	WrapperEnableLog          = "WrapperEnableLog"
-	WrapperEnableQuorumFilter = "WrapperEnableQuorumFilter"
+	WrapperLog          = WrapperName("WrapperLog")
+	WrapperQuorumFilter = WrapperName("WrapperQuorumFilter")
 )
+
+// KvdbWrapperInfo provided wrapper Kvdb info
+type KvdbWrapperInfo struct {
+	// Name is the name of this wrapper
+	Name WrapperName
+	// WrappedKvdb is the Kvdb wrapped by this wrapper
+	WrappedKvdb Kvdb
+}
 
 var (
 	// ErrNotSupported implemenation of a specific function is not supported.
@@ -176,8 +186,7 @@ type DatastoreInit func(domain string, machines []string, options map[string]str
 type DatastoreVersion func(url string, kvdbOptions map[string]string) (string, error)
 
 // WrapperInit is called to activate a backend KV store.
-type WrapperInit func(kv Kvdb, domain string, machines []string, options map[string]string,
-	cb FatalErrorCB) (Kvdb, error)
+type WrapperInit func(kv Kvdb, options map[string]string) (Kvdb, error)
 
 // EnumerateSelect function is a callback function provided to EnumerateWithSelect API
 // This fn is executed over all the keys and only those values are returned by Enumerate for which
@@ -332,6 +341,8 @@ type Kvdb interface {
 	SetQuorumState(state KvdbQuorumState)
 	// QuorumState returns quorum state
 	QuorumState() KvdbQuorumState
+	// WrappedKvdb return wrapped Kvdb or nil if not wrapping kvdb
+	WrappedKvdbInfo() *KvdbWrapperInfo
 }
 
 // ReplayCb provides info required for replay

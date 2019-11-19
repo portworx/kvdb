@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/portworx/kvdb"
-	"github.com/portworx/kvdb/wrappers"
+	_ "github.com/portworx/kvdb/wrappers"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -58,11 +58,7 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop S
 	assert.NoError(t, err, "Unable to start kvdb")
 	// Wait for kvdb to start
 	time.Sleep(5 * time.Second)
-	kvStore, err := datastoreInit("pwx/test", nil, nil, fatalErrorCb())
-	if err != nil {
-		t.Fatalf(err.Error())
-	}
-	kv, err := wrappers.NewKvQuorumCheckFilter(kvStore, "pwx/test", nil, nil, fatalErrorCb())
+	kv, err := datastoreInit("pwx/test", nil, nil, fatalErrorCb())
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
@@ -89,9 +85,45 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop S
 	serialization(kv, t)
 	err = stop()
 	assert.NoError(t, err, "Unable to stop kvdb")
+
 	// ensure wrapper does not crash when kvdb members are stopped.
-	kv.SetQuorumState(kvdb.KvdbNotInQuorum)
-	noQuorum(kv, t)
+	wrapper, err := kvdb.AddWrapper(kvdb.WrapperLog, kv, nil)
+	assert.NoError(t, err, "add log wrapper")
+	assert.Equal(t, kvdb.WrapperLog, wrapper.WrappedKvdbInfo().Name, "get log wrapper name")
+	wrapper, err = kvdb.AddWrapper(kvdb.WrapperQuorumFilter, wrapper, nil)
+	assert.NoError(t, err, "add quorum wrapper")
+	assert.Equal(t, kvdb.WrapperLog, wrapper.WrappedKvdbInfo().Name, "log wrapper must be at top")
+	assert.Equal(t, kvdb.WrapperQuorumFilter,
+		wrapper.WrappedKvdbInfo().WrappedKvdb.WrappedKvdbInfo().Name,
+		"quorum wrapper found")
+	wrapper.SetQuorumState(kvdb.KvdbNotInQuorum)
+	noQuorum(wrapper, t)
+
+	var nilWrapperInfo *kvdb.KvdbWrapperInfo
+	// remove wrapper
+	wrapper, err = kvdb.RemoveWrapper(kvdb.WrapperQuorumFilter, wrapper)
+	assert.NoError(t, err, "remove quorum filter wrapper")
+	assert.Equal(t, kvdb.WrapperLog, wrapper.WrappedKvdbInfo().Name, "get log wrapper name")
+	logrus.Infof("After remove: %v", wrapper.WrappedKvdbInfo().WrappedKvdb.WrappedKvdbInfo())
+	assert.Equal(t, nilWrapperInfo, wrapper.WrappedKvdbInfo().WrappedKvdb.WrappedKvdbInfo(),
+		"quorum wrapper removed")
+
+	// add quorum wrapper again
+	wrapper, err = kvdb.AddWrapper(kvdb.WrapperQuorumFilter, wrapper, nil)
+	assert.NoError(t, err, "add quorum wrapper")
+	assert.Equal(t, kvdb.WrapperLog, wrapper.WrappedKvdbInfo().Name, "log wrapper must be at top")
+	assert.Equal(t, kvdb.WrapperQuorumFilter,
+		wrapper.WrappedKvdbInfo().WrappedKvdb.WrappedKvdbInfo().Name,
+		"quorum wrapper found")
+	wrapper.SetQuorumState(kvdb.KvdbNotInQuorum)
+	noQuorum(wrapper, t)
+
+	// remove all wrappers
+	wrapper, err = kvdb.RemoveWrapper(kvdb.WrapperLog, wrapper)
+	assert.NoError(t, err, "remove quorum filter wrapper")
+	wrapper, err = kvdb.RemoveWrapper(kvdb.WrapperQuorumFilter, wrapper)
+	assert.NoError(t, err, "remove quorum filter wrapper")
+	assert.Equal(t, nilWrapperInfo, wrapper.WrappedKvdbInfo(), "quorum wrapper removed")
 }
 
 // RunBasic runs the basic test suite.
@@ -1562,11 +1594,13 @@ func noQuorum(kv kvdb.Kvdb, t *testing.T) {
 	err = kv.DeleteTree(key)
 	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in DeleteTree")
 
-	// watch must return an error
-	watchCb := func(prefix string, opaque interface{}, kvp *kvdb.KVPair, err error) error {
-		assert.Error(t, err, "watch error expected")
-		return err
-	}
-	kv.WatchKey(key, ttl, key, watchCb)
-	kv.WatchTree(key, ttl, key, watchCb)
+	/*
+		// watch must return an error
+		watchCb := func(prefix string, opaque interface{}, kvp *kvdb.KVPair, err error) error {
+			assert.Error(t, err, "watch error expected")
+			return err
+		}
+		kv.WatchKey(key, ttl, key, watchCb)
+		kv.WatchTree(key, ttl, key, watchCb)
+	*/
 }
