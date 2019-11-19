@@ -22,10 +22,9 @@ func NewKvQuorumCheckFilter(
 	logrus.Infof("creating quorum check wrapper")
 	return &kvQuorumCheckFilter{
 		kvBaseWrapper: kvBaseWrapper{
-			kvdb.KvdbWrapperInfo{
-				Name:        kvdb.WrapperQuorumFilter,
-				WrappedKvdb: kv,
-			}},
+			name:        kvdb.WrapperQuorumFilter,
+			wrappedKvdb: kv,
+		},
 		quorumState: uint32(kvdb.KvdbInQuorum),
 	}, nil
 }
@@ -48,16 +47,16 @@ func Version(url string, kvdbOptions map[string]string) (string, error) {
 }
 
 func (k *kvQuorumCheckFilter) String() string {
-	return k.WrappedKvdb.String()
+	return k.wrappedKvdb.String()
 }
 
 func (k *kvQuorumCheckFilter) Capabilities() int {
-	return k.WrappedKvdb.Capabilities()
+	return k.wrappedKvdb.Capabilities()
 }
 
 func (k *kvQuorumCheckFilter) Get(key string) (*kvdb.KVPair, error) {
 	if k.inQuorum() {
-		return k.WrappedKvdb.Get(key)
+		return k.wrappedKvdb.Get(key)
 	} else {
 		return nil, kvdb.ErrNoQuorum
 	}
@@ -65,7 +64,7 @@ func (k *kvQuorumCheckFilter) Get(key string) (*kvdb.KVPair, error) {
 
 func (k *kvQuorumCheckFilter) Snapshot(prefixes []string, consistent bool) (kvdb.Kvdb, uint64, error) {
 	if k.inQuorum() {
-		return k.WrappedKvdb.Snapshot(prefixes, consistent)
+		return k.wrappedKvdb.Snapshot(prefixes, consistent)
 	} else {
 		return nil, 0, kvdb.ErrNoQuorum
 	}
@@ -77,7 +76,7 @@ func (k *kvQuorumCheckFilter) Put(
 	ttl uint64,
 ) (*kvdb.KVPair, error) {
 	if k.inQuorum() {
-		return k.WrappedKvdb.Put(key, value, ttl)
+		return k.wrappedKvdb.Put(key, value, ttl)
 	} else {
 		return nil, kvdb.ErrNoQuorum
 	}
@@ -85,7 +84,7 @@ func (k *kvQuorumCheckFilter) Put(
 
 func (k *kvQuorumCheckFilter) GetVal(key string, v interface{}) (*kvdb.KVPair, error) {
 	if k.inQuorum() {
-		return k.WrappedKvdb.GetVal(key, v)
+		return k.wrappedKvdb.GetVal(key, v)
 	} else {
 		return nil, kvdb.ErrNoQuorum
 	}
@@ -97,7 +96,7 @@ func (k *kvQuorumCheckFilter) Create(
 	ttl uint64,
 ) (*kvdb.KVPair, error) {
 	if k.inQuorum() {
-		return k.WrappedKvdb.Create(key, value, ttl)
+		return k.wrappedKvdb.Create(key, value, ttl)
 	} else {
 		return nil, kvdb.ErrNoQuorum
 	}
@@ -109,7 +108,7 @@ func (k *kvQuorumCheckFilter) Update(
 	ttl uint64,
 ) (*kvdb.KVPair, error) {
 	if k.inQuorum() {
-		return k.WrappedKvdb.Update(key, value, ttl)
+		return k.wrappedKvdb.Update(key, value, ttl)
 	} else {
 		return nil, kvdb.ErrNoQuorum
 	}
@@ -117,7 +116,7 @@ func (k *kvQuorumCheckFilter) Update(
 
 func (k *kvQuorumCheckFilter) Enumerate(prefix string) (kvdb.KVPairs, error) {
 	if k.inQuorum() {
-		return k.WrappedKvdb.Enumerate(prefix)
+		return k.wrappedKvdb.Enumerate(prefix)
 	} else {
 		return nil, kvdb.ErrNoQuorum
 	}
@@ -125,7 +124,7 @@ func (k *kvQuorumCheckFilter) Enumerate(prefix string) (kvdb.KVPairs, error) {
 
 func (k *kvQuorumCheckFilter) Delete(key string) (*kvdb.KVPair, error) {
 	if k.inQuorum() {
-		return k.WrappedKvdb.Delete(key)
+		return k.wrappedKvdb.Delete(key)
 	} else {
 		return nil, kvdb.ErrNoQuorum
 	}
@@ -133,7 +132,7 @@ func (k *kvQuorumCheckFilter) Delete(key string) (*kvdb.KVPair, error) {
 
 func (k *kvQuorumCheckFilter) DeleteTree(prefix string) error {
 	if k.inQuorum() {
-		return k.WrappedKvdb.DeleteTree(prefix)
+		return k.wrappedKvdb.DeleteTree(prefix)
 	} else {
 		return kvdb.ErrNoQuorum
 	}
@@ -141,7 +140,7 @@ func (k *kvQuorumCheckFilter) DeleteTree(prefix string) error {
 
 func (k *kvQuorumCheckFilter) Keys(prefix, sep string) ([]string, error) {
 	if k.inQuorum() {
-		return k.WrappedKvdb.Keys(prefix, sep)
+		return k.wrappedKvdb.Keys(prefix, sep)
 	} else {
 		return nil, kvdb.ErrNoQuorum
 	}
@@ -153,7 +152,7 @@ func (k *kvQuorumCheckFilter) CompareAndSet(
 	prevValue []byte,
 ) (*kvdb.KVPair, error) {
 	if k.inQuorum() {
-		return k.WrappedKvdb.CompareAndSet(kvp, flags, prevValue)
+		return k.wrappedKvdb.CompareAndSet(kvp, flags, prevValue)
 	} else {
 		return nil, kvdb.ErrNoQuorum
 	}
@@ -164,7 +163,7 @@ func (k *kvQuorumCheckFilter) CompareAndDelete(
 	flags kvdb.KVFlags,
 ) (*kvdb.KVPair, error) {
 	if k.inQuorum() {
-		return k.WrappedKvdb.CompareAndDelete(kvp, flags)
+		return k.wrappedKvdb.CompareAndDelete(kvp, flags)
 	} else {
 		return nil, kvdb.ErrNoQuorum
 	}
@@ -176,7 +175,7 @@ func (k *kvQuorumCheckFilter) WatchKey(
 	opaque interface{},
 	cb kvdb.WatchCB,
 ) error {
-	return k.WrappedKvdb.WatchKey(key, waitIndex, opaque, cb)
+	return k.wrappedKvdb.WatchKey(key, waitIndex, opaque, cb)
 }
 
 func (k *kvQuorumCheckFilter) WatchTree(
@@ -185,12 +184,12 @@ func (k *kvQuorumCheckFilter) WatchTree(
 	opaque interface{},
 	cb kvdb.WatchCB,
 ) error {
-	return k.WrappedKvdb.WatchTree(prefix, waitIndex, opaque, cb)
+	return k.wrappedKvdb.WatchTree(prefix, waitIndex, opaque, cb)
 }
 
 func (k *kvQuorumCheckFilter) Lock(key string) (*kvdb.KVPair, error) {
 	if k.inQuorum() {
-		return k.WrappedKvdb.Lock(key)
+		return k.wrappedKvdb.Lock(key)
 	} else {
 		return nil, kvdb.ErrNoQuorum
 	}
@@ -201,7 +200,7 @@ func (k *kvQuorumCheckFilter) LockWithID(
 	lockerID string,
 ) (*kvdb.KVPair, error) {
 	if k.inQuorum() {
-		return k.WrappedKvdb.LockWithID(key, lockerID)
+		return k.wrappedKvdb.LockWithID(key, lockerID)
 	} else {
 		return nil, kvdb.ErrNoQuorum
 	}
@@ -214,14 +213,14 @@ func (k *kvQuorumCheckFilter) LockWithTimeout(
 	lockHoldDuration time.Duration,
 ) (*kvdb.KVPair, error) {
 	if k.inQuorum() {
-		return k.WrappedKvdb.LockWithTimeout(key, lockerID, lockTryDuration, lockHoldDuration)
+		return k.wrappedKvdb.LockWithTimeout(key, lockerID, lockTryDuration, lockHoldDuration)
 	} else {
 		return nil, kvdb.ErrNoQuorum
 	}
 }
 
 func (k *kvQuorumCheckFilter) Unlock(kvp *kvdb.KVPair) error {
-	return k.WrappedKvdb.Unlock(kvp)
+	return k.wrappedKvdb.Unlock(kvp)
 }
 
 func (k *kvQuorumCheckFilter) EnumerateWithSelect(
@@ -230,7 +229,7 @@ func (k *kvQuorumCheckFilter) EnumerateWithSelect(
 	copySelect kvdb.CopySelect,
 ) ([]interface{}, error) {
 	if k.inQuorum() {
-		return k.WrappedKvdb.EnumerateWithSelect(prefix, enumerateSelect, copySelect)
+		return k.wrappedKvdb.EnumerateWithSelect(prefix, enumerateSelect, copySelect)
 	} else {
 		return nil, kvdb.ErrNoQuorum
 	}
@@ -241,7 +240,7 @@ func (k *kvQuorumCheckFilter) GetWithCopy(
 	copySelect kvdb.CopySelect,
 ) (interface{}, error) {
 	if k.inQuorum() {
-		return k.WrappedKvdb.GetWithCopy(key, copySelect)
+		return k.wrappedKvdb.GetWithCopy(key, copySelect)
 	} else {
 		return nil, kvdb.ErrNoQuorum
 	}
@@ -249,7 +248,7 @@ func (k *kvQuorumCheckFilter) GetWithCopy(
 
 func (k *kvQuorumCheckFilter) TxNew() (kvdb.Tx, error) {
 	if k.inQuorum() {
-		return k.WrappedKvdb.TxNew()
+		return k.wrappedKvdb.TxNew()
 	} else {
 		return nil, kvdb.ErrNoQuorum
 	}
@@ -257,7 +256,7 @@ func (k *kvQuorumCheckFilter) TxNew() (kvdb.Tx, error) {
 
 func (k *kvQuorumCheckFilter) SnapPut(snapKvp *kvdb.KVPair) (*kvdb.KVPair, error) {
 	if k.inQuorum() {
-		return k.WrappedKvdb.SnapPut(snapKvp)
+		return k.wrappedKvdb.SnapPut(snapKvp)
 	} else {
 		return nil, kvdb.ErrNoQuorum
 	}
@@ -265,7 +264,7 @@ func (k *kvQuorumCheckFilter) SnapPut(snapKvp *kvdb.KVPair) (*kvdb.KVPair, error
 
 func (k *kvQuorumCheckFilter) AddUser(username string, password string) error {
 	if k.inQuorum() {
-		return k.WrappedKvdb.AddUser(username, password)
+		return k.wrappedKvdb.AddUser(username, password)
 	} else {
 		return kvdb.ErrNoQuorum
 	}
@@ -273,7 +272,7 @@ func (k *kvQuorumCheckFilter) AddUser(username string, password string) error {
 
 func (k *kvQuorumCheckFilter) RemoveUser(username string) error {
 	if k.inQuorum() {
-		return k.WrappedKvdb.RemoveUser(username)
+		return k.wrappedKvdb.RemoveUser(username)
 	} else {
 		return kvdb.ErrNoQuorum
 	}
@@ -285,7 +284,7 @@ func (k *kvQuorumCheckFilter) GrantUserAccess(
 	subtree string,
 ) error {
 	if k.inQuorum() {
-		return k.WrappedKvdb.GrantUserAccess(username, permType, subtree)
+		return k.wrappedKvdb.GrantUserAccess(username, permType, subtree)
 	} else {
 		return kvdb.ErrNoQuorum
 	}
@@ -297,27 +296,27 @@ func (k *kvQuorumCheckFilter) RevokeUsersAccess(
 	subtree string,
 ) error {
 	if k.inQuorum() {
-		return k.WrappedKvdb.RevokeUsersAccess(username, permType, subtree)
+		return k.wrappedKvdb.RevokeUsersAccess(username, permType, subtree)
 	} else {
 		return kvdb.ErrNoQuorum
 	}
 }
 
 func (k *kvQuorumCheckFilter) SetFatalCb(f kvdb.FatalErrorCB) {
-	k.WrappedKvdb.SetFatalCb(f)
+	k.wrappedKvdb.SetFatalCb(f)
 }
 
 func (k *kvQuorumCheckFilter) SetLockTimeout(timeout time.Duration) {
-	k.WrappedKvdb.SetLockTimeout(timeout)
+	k.wrappedKvdb.SetLockTimeout(timeout)
 }
 
 func (k *kvQuorumCheckFilter) GetLockTimeout() time.Duration {
-	return k.WrappedKvdb.GetLockTimeout()
+	return k.wrappedKvdb.GetLockTimeout()
 }
 
 func (k *kvQuorumCheckFilter) Serialize() ([]byte, error) {
 	if k.inQuorum() {
-		return k.WrappedKvdb.Serialize()
+		return k.wrappedKvdb.Serialize()
 	} else {
 		return nil, kvdb.ErrNoQuorum
 	}
@@ -325,7 +324,7 @@ func (k *kvQuorumCheckFilter) Serialize() ([]byte, error) {
 
 func (k *kvQuorumCheckFilter) Deserialize(b []byte) (kvdb.KVPairs, error) {
 	if k.inQuorum() {
-		return k.WrappedKvdb.Deserialize(b)
+		return k.wrappedKvdb.Deserialize(b)
 	} else {
 		return nil, kvdb.ErrNoQuorum
 	}
@@ -333,7 +332,7 @@ func (k *kvQuorumCheckFilter) Deserialize(b []byte) (kvdb.KVPairs, error) {
 
 func (k *kvQuorumCheckFilter) AddMember(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error) {
 	if k.inQuorum() {
-		return k.WrappedKvdb.AddMember(nodeIP, nodePeerPort, nodeName)
+		return k.wrappedKvdb.AddMember(nodeIP, nodePeerPort, nodeName)
 	} else {
 		return nil, kvdb.ErrNoQuorum
 	}
@@ -341,35 +340,35 @@ func (k *kvQuorumCheckFilter) AddMember(nodeIP, nodePeerPort, nodeName string) (
 
 func (k *kvQuorumCheckFilter) RemoveMember(nodeName, nodeIP string) error {
 	if k.inQuorum() {
-		return k.WrappedKvdb.RemoveMember(nodeName, nodeIP)
+		return k.wrappedKvdb.RemoveMember(nodeName, nodeIP)
 	} else {
 		return kvdb.ErrNoQuorum
 	}
 }
 
 func (k *kvQuorumCheckFilter) UpdateMember(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error) {
-	return k.WrappedKvdb.UpdateMember(nodeIP, nodePeerPort, nodeName)
+	return k.wrappedKvdb.UpdateMember(nodeIP, nodePeerPort, nodeName)
 }
 
 func (k *kvQuorumCheckFilter) ListMembers() (map[string]*kvdb.MemberInfo, error) {
-	return k.WrappedKvdb.ListMembers()
+	return k.wrappedKvdb.ListMembers()
 }
 
 func (k *kvQuorumCheckFilter) SetEndpoints(endpoints []string) error {
 	if k.inQuorum() {
-		return k.WrappedKvdb.SetEndpoints(endpoints)
+		return k.wrappedKvdb.SetEndpoints(endpoints)
 	} else {
 		return kvdb.ErrNoQuorum
 	}
 }
 
 func (k *kvQuorumCheckFilter) GetEndpoints() []string {
-	return k.WrappedKvdb.GetEndpoints()
+	return k.wrappedKvdb.GetEndpoints()
 }
 
 func (k *kvQuorumCheckFilter) Defragment(endpoint string, timeout int) error {
 	if k.inQuorum() {
-		return k.WrappedKvdb.Defragment(endpoint, timeout)
+		return k.wrappedKvdb.Defragment(endpoint, timeout)
 	} else {
 		return kvdb.ErrNoQuorum
 	}

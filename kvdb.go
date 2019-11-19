@@ -72,6 +72,8 @@ const (
 	InsecureSkipVerify = "InsecureSkipVerify"
 	// TransportScheme points to http transport being either http or https.
 	TransportScheme = "TransportScheme"
+	// LogPathOption is the name of the option which specified the log path location
+	LogPathOption = "LogPathOption"
 )
 
 // List of kvdb endpoints supported versions
@@ -100,16 +102,20 @@ const (
 type WrapperName string
 
 const (
+	WrapperNone         = WrapperName("WrapperNone")
 	WrapperLog          = WrapperName("WrapperLog")
 	WrapperQuorumFilter = WrapperName("WrapperQuorumFilter")
 )
 
-// KvdbWrapperInfo provided wrapper Kvdb info
-type KvdbWrapperInfo struct {
+type KvdbWrapper interface {
 	// Name is the name of this wrapper
-	Name WrapperName
+	Name() WrapperName
 	// WrappedKvdb is the Kvdb wrapped by this wrapper
-	WrappedKvdb Kvdb
+	WrappedKvdb() Kvdb
+	// Removed is called when wrapper is removed
+	Removed()
+	// WrappedKvdb is the Kvdb wrapped by this wrapper
+	SetWrappedKvdb(kvdb Kvdb) error
 }
 
 var (
@@ -341,8 +347,7 @@ type Kvdb interface {
 	SetQuorumState(state KvdbQuorumState)
 	// QuorumState returns quorum state
 	QuorumState() KvdbQuorumState
-	// WrappedKvdb return wrapped Kvdb or nil if not wrapping kvdb
-	WrappedKvdbInfo() *KvdbWrapperInfo
+	KvdbWrapper
 }
 
 // ReplayCb provides info required for replay
