@@ -87,41 +87,39 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop S
 	assert.NoError(t, err, "Unable to stop kvdb")
 
 	// ensure wrapper does not crash when kvdb members are stopped.
-	wrapper, err := kvdb.AddWrapper(kvdb.WrapperLog, kv, nil)
+	wrapper, err := kvdb.AddWrapper(kvdb.Wrapper_Log, kv, nil)
 	assert.NoError(t, err, "add log wrapper")
-	assert.Equal(t, kvdb.WrapperLog, wrapper.Name(), "get log wrapper name")
-	wrapper, err = kvdb.AddWrapper(kvdb.WrapperQuorumFilter, wrapper, nil)
+	assert.Equal(t, kvdb.Wrapper_Log, wrapper.Name(), "get log wrapper name")
+	wrapper, err = kvdb.AddWrapper(kvdb.Wrapper_NoQuorum, wrapper, nil)
 	assert.NoError(t, err, "add quorum wrapper")
-	assert.Equal(t, kvdb.WrapperLog, wrapper.Name(), "log wrapper must be at top")
-	assert.Equal(t, kvdb.WrapperQuorumFilter,
+	assert.Equal(t, kvdb.Wrapper_Log, wrapper.Name(), "log wrapper must be at top")
+	assert.Equal(t, kvdb.Wrapper_NoQuorum,
 		wrapper.WrappedKvdb().Name(),
 		"quorum wrapper found")
-	wrapper.SetQuorumState(kvdb.KvdbNotInQuorum)
 	noQuorum(wrapper, t)
 
 	// remove wrapper
-	wrapper, err = kvdb.RemoveWrapper(kvdb.WrapperQuorumFilter, wrapper)
+	wrapper, err = kvdb.RemoveWrapper(kvdb.Wrapper_NoQuorum, wrapper)
 	assert.NoError(t, err, "remove quorum filter wrapper")
-	assert.Equal(t, kvdb.WrapperLog, wrapper.Name(), "get log wrapper name")
-	assert.Equal(t, kvdb.WrapperNone, wrapper.WrappedKvdb().Name(),
+	assert.Equal(t, kvdb.Wrapper_Log, wrapper.Name(), "get log wrapper name")
+	assert.Equal(t, kvdb.Wrapper_None, wrapper.WrappedKvdb().Name(),
 		"quorum wrapper removed")
 
 	// add quorum wrapper again
-	wrapper, err = kvdb.AddWrapper(kvdb.WrapperQuorumFilter, wrapper, nil)
+	wrapper, err = kvdb.AddWrapper(kvdb.Wrapper_NoQuorum, wrapper, nil)
 	assert.NoError(t, err, "add quorum wrapper")
-	assert.Equal(t, kvdb.WrapperLog, wrapper.Name(), "log wrapper must be at top")
-	assert.Equal(t, kvdb.WrapperQuorumFilter,
+	assert.Equal(t, kvdb.Wrapper_Log, wrapper.Name(), "log wrapper must be at top")
+	assert.Equal(t, kvdb.Wrapper_NoQuorum,
 		wrapper.WrappedKvdb().Name(),
 		"quorum wrapper found")
-	wrapper.SetQuorumState(kvdb.KvdbNotInQuorum)
 	noQuorum(wrapper, t)
 
 	// remove all wrappers
-	wrapper, err = kvdb.RemoveWrapper(kvdb.WrapperLog, wrapper)
+	wrapper, err = kvdb.RemoveWrapper(kvdb.Wrapper_Log, wrapper)
 	assert.NoError(t, err, "remove quorum filter wrapper")
-	wrapper, err = kvdb.RemoveWrapper(kvdb.WrapperQuorumFilter, wrapper)
+	wrapper, err = kvdb.RemoveWrapper(kvdb.Wrapper_NoQuorum, wrapper)
 	assert.NoError(t, err, "remove quorum filter wrapper")
-	assert.Equal(t, kvdb.WrapperNone, wrapper.Name(), "quorum wrapper removed")
+	assert.Equal(t, kvdb.Wrapper_None, wrapper.Name(), "quorum wrapper removed")
 }
 
 // RunBasic runs the basic test suite.

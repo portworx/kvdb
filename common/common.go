@@ -41,7 +41,7 @@ type BaseKvdb struct {
 }
 
 func (b *BaseKvdb) Name() kvdb.WrapperName {
-	return kvdb.WrapperNone
+	return kvdb.Wrapper_None
 }
 
 func (b *BaseKvdb) WrappedKvdb() kvdb.Kvdb {
@@ -119,14 +119,6 @@ func (b *BaseKvdb) DeserializeAll(out []byte) (kvdb.KVPairs, error) {
 		return nil, err
 	}
 	return kvps, nil
-}
-
-func (b *BaseKvdb) SetQuorumState(state kvdb.KvdbQuorumState) {
-	// no-op
-}
-
-func (b *BaseKvdb) QuorumState() kvdb.KvdbQuorumState {
-	return kvdb.KvdbInQuorum
 }
 
 // watchUpdate refers to an update to this kvdb

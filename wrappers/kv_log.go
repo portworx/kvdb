@@ -39,13 +39,13 @@ func (b *kvBaseWrapper) SetWrappedKvdb(kvdb kvdb.Kvdb) error {
 	return nil
 }
 
-type kvLogger struct {
+type logKvWrapper struct {
 	kvBaseWrapper
 	logger *logrus.Logger
 	fd     *os.File
 }
 
-func (b *kvLogger) Removed() {
+func (b *logKvWrapper) Removed() {
 	b.logger.SetOutput(os.Stdout)
 	if b.fd != nil {
 		b.fd.Close()
@@ -59,9 +59,9 @@ func NewLogWrapper(
 	options map[string]string,
 ) (kvdb.Kvdb, error) {
 	logrus.Infof("creating kvdb logging wrapper, options: %v", options)
-	wrapper := &kvLogger{
+	wrapper := &logKvWrapper{
 		kvBaseWrapper{
-			name:        kvdb.WrapperLog,
+			name:        kvdb.Wrapper_Log,
 			wrappedKvdb: kv,
 		},
 		nil,
@@ -84,27 +84,15 @@ func NewLogWrapper(
 	return wrapper, nil
 }
 
-func (k *kvLogger) inQuorum() bool {
-	return k.inQuorum()
-}
-
-func (k *kvLogger) SetQuorumState(state kvdb.KvdbQuorumState) {
-	k.wrappedKvdb.SetQuorumState(state)
-}
-
-func (k *kvLogger) QuorumState() kvdb.KvdbQuorumState {
-	return k.wrappedKvdb.QuorumState()
-}
-
-func (k *kvLogger) String() string {
+func (k *logKvWrapper) String() string {
 	return k.wrappedKvdb.String()
 }
 
-func (k *kvLogger) Capabilities() int {
+func (k *logKvWrapper) Capabilities() int {
 	return k.wrappedKvdb.Capabilities()
 }
 
-func (k *kvLogger) Get(key string) (*kvdb.KVPair, error) {
+func (k *logKvWrapper) Get(key string) (*kvdb.KVPair, error) {
 	pair, err := k.wrappedKvdb.Get(key)
 	k.logger.WithFields(logrus.Fields{
 		opType:    "Get",
@@ -114,7 +102,7 @@ func (k *kvLogger) Get(key string) (*kvdb.KVPair, error) {
 	return pair, err
 }
 
-func (k *kvLogger) Snapshot(prefixes []string, consistent bool) (kvdb.Kvdb, uint64, error) {
+func (k *logKvWrapper) Snapshot(prefixes []string, consistent bool) (kvdb.Kvdb, uint64, error) {
 	kv, version, err := k.wrappedKvdb.Snapshot(prefixes, consistent)
 	k.logger.WithFields(logrus.Fields{
 		opType:    "Snapshot",
@@ -123,7 +111,7 @@ func (k *kvLogger) Snapshot(prefixes []string, consistent bool) (kvdb.Kvdb, uint
 	return kv, version, err
 }
 
-func (k *kvLogger) Put(
+func (k *logKvWrapper) Put(
 	key string,
 	value interface{},
 	ttl uint64,
@@ -137,7 +125,7 @@ func (k *kvLogger) Put(
 	return pair, err
 }
 
-func (k *kvLogger) GetVal(key string, v interface{}) (*kvdb.KVPair, error) {
+func (k *logKvWrapper) GetVal(key string, v interface{}) (*kvdb.KVPair, error) {
 	pair, err := k.wrappedKvdb.GetVal(key, v)
 	k.logger.WithFields(logrus.Fields{
 		opType:    "GetValue",
@@ -147,7 +135,7 @@ func (k *kvLogger) GetVal(key string, v interface{}) (*kvdb.KVPair, error) {
 	return pair, err
 }
 
-func (k *kvLogger) Create(
+func (k *logKvWrapper) Create(
 	key string,
 	value interface{},
 	ttl uint64,
@@ -161,7 +149,7 @@ func (k *kvLogger) Create(
 	return pair, err
 }
 
-func (k *kvLogger) Update(
+func (k *logKvWrapper) Update(
 	key string,
 	value interface{},
 	ttl uint64,
@@ -175,7 +163,7 @@ func (k *kvLogger) Update(
 	return pair, err
 }
 
-func (k *kvLogger) Enumerate(prefix string) (kvdb.KVPairs, error) {
+func (k *logKvWrapper) Enumerate(prefix string) (kvdb.KVPairs, error) {
 	pairs, err := k.wrappedKvdb.Enumerate(prefix)
 	k.logger.WithFields(logrus.Fields{
 		opType:    "Enumerate",
@@ -185,7 +173,7 @@ func (k *kvLogger) Enumerate(prefix string) (kvdb.KVPairs, error) {
 	return pairs, err
 }
 
-func (k *kvLogger) Delete(key string) (*kvdb.KVPair, error) {
+func (k *logKvWrapper) Delete(key string) (*kvdb.KVPair, error) {
 	pair, err := k.wrappedKvdb.Delete(key)
 	k.logger.WithFields(logrus.Fields{
 		opType:    "Delete",
@@ -195,7 +183,7 @@ func (k *kvLogger) Delete(key string) (*kvdb.KVPair, error) {
 	return pair, err
 }
 
-func (k *kvLogger) DeleteTree(prefix string) error {
+func (k *logKvWrapper) DeleteTree(prefix string) error {
 	err := k.wrappedKvdb.DeleteTree(prefix)
 	k.logger.WithFields(logrus.Fields{
 		opType:    "DeleteTree",
@@ -204,7 +192,7 @@ func (k *kvLogger) DeleteTree(prefix string) error {
 	return err
 }
 
-func (k *kvLogger) Keys(prefix, sep string) ([]string, error) {
+func (k *logKvWrapper) Keys(prefix, sep string) ([]string, error) {
 	keys, err := k.wrappedKvdb.Keys(prefix, sep)
 	k.logger.WithFields(logrus.Fields{
 		opType:    "Keys",
@@ -214,7 +202,7 @@ func (k *kvLogger) Keys(prefix, sep string) ([]string, error) {
 	return keys, err
 }
 
-func (k *kvLogger) CompareAndSet(
+func (k *logKvWrapper) CompareAndSet(
 	kvp *kvdb.KVPair,
 	flags kvdb.KVFlags,
 	prevValue []byte,
@@ -228,7 +216,7 @@ func (k *kvLogger) CompareAndSet(
 	return pair, err
 }
 
-func (k *kvLogger) CompareAndDelete(
+func (k *logKvWrapper) CompareAndDelete(
 	kvp *kvdb.KVPair,
 	flags kvdb.KVFlags,
 ) (*kvdb.KVPair, error) {
@@ -241,7 +229,7 @@ func (k *kvLogger) CompareAndDelete(
 	return pair, err
 }
 
-func (k *kvLogger) WatchKey(
+func (k *logKvWrapper) WatchKey(
 	key string,
 	waitIndex uint64,
 	opaque interface{},
@@ -255,7 +243,7 @@ func (k *kvLogger) WatchKey(
 	return err
 }
 
-func (k *kvLogger) WatchTree(
+func (k *logKvWrapper) WatchTree(
 	prefix string,
 	waitIndex uint64,
 	opaque interface{},
@@ -269,7 +257,7 @@ func (k *kvLogger) WatchTree(
 	return err
 }
 
-func (k *kvLogger) Lock(key string) (*kvdb.KVPair, error) {
+func (k *logKvWrapper) Lock(key string) (*kvdb.KVPair, error) {
 	pair, err := k.wrappedKvdb.Lock(key)
 	k.logger.WithFields(logrus.Fields{
 		opType:    "Lock",
@@ -279,7 +267,7 @@ func (k *kvLogger) Lock(key string) (*kvdb.KVPair, error) {
 	return pair, err
 }
 
-func (k *kvLogger) LockWithID(
+func (k *logKvWrapper) LockWithID(
 	key string,
 	lockerID string,
 ) (*kvdb.KVPair, error) {
@@ -292,7 +280,7 @@ func (k *kvLogger) LockWithID(
 	return pair, err
 }
 
-func (k *kvLogger) LockWithTimeout(
+func (k *logKvWrapper) LockWithTimeout(
 	key string,
 	lockerID string,
 	lockTryDuration time.Duration,
@@ -307,7 +295,7 @@ func (k *kvLogger) LockWithTimeout(
 	return pair, err
 }
 
-func (k *kvLogger) Unlock(kvp *kvdb.KVPair) error {
+func (k *logKvWrapper) Unlock(kvp *kvdb.KVPair) error {
 	err := k.wrappedKvdb.Unlock(kvp)
 	k.logger.WithFields(logrus.Fields{
 		opType:    "Unlock",
@@ -316,7 +304,7 @@ func (k *kvLogger) Unlock(kvp *kvdb.KVPair) error {
 	return err
 }
 
-func (k *kvLogger) EnumerateWithSelect(
+func (k *logKvWrapper) EnumerateWithSelect(
 	prefix string,
 	enumerateSelect kvdb.EnumerateSelect,
 	copySelect kvdb.CopySelect,
@@ -330,7 +318,7 @@ func (k *kvLogger) EnumerateWithSelect(
 	return vals, err
 }
 
-func (k *kvLogger) GetWithCopy(
+func (k *logKvWrapper) GetWithCopy(
 	key string,
 	copySelect kvdb.CopySelect,
 ) (interface{}, error) {
@@ -343,7 +331,7 @@ func (k *kvLogger) GetWithCopy(
 	return pair, err
 }
 
-func (k *kvLogger) TxNew() (kvdb.Tx, error) {
+func (k *logKvWrapper) TxNew() (kvdb.Tx, error) {
 	tx, err := k.wrappedKvdb.TxNew()
 	k.logger.WithFields(logrus.Fields{
 		opType:    "Snapshot",
@@ -352,7 +340,7 @@ func (k *kvLogger) TxNew() (kvdb.Tx, error) {
 	return tx, err
 }
 
-func (k *kvLogger) SnapPut(snapKvp *kvdb.KVPair) (*kvdb.KVPair, error) {
+func (k *logKvWrapper) SnapPut(snapKvp *kvdb.KVPair) (*kvdb.KVPair, error) {
 	pair, err := k.wrappedKvdb.SnapPut(snapKvp)
 	k.logger.WithFields(logrus.Fields{
 		opType:    "SnapPut",
@@ -362,7 +350,7 @@ func (k *kvLogger) SnapPut(snapKvp *kvdb.KVPair) (*kvdb.KVPair, error) {
 	return pair, err
 }
 
-func (k *kvLogger) AddUser(username string, password string) error {
+func (k *logKvWrapper) AddUser(username string, password string) error {
 	err := k.wrappedKvdb.AddUser(username, password)
 	k.logger.WithFields(logrus.Fields{
 		opType:    "AddUser",
@@ -371,7 +359,7 @@ func (k *kvLogger) AddUser(username string, password string) error {
 	return err
 }
 
-func (k *kvLogger) RemoveUser(username string) error {
+func (k *logKvWrapper) RemoveUser(username string) error {
 	err := k.wrappedKvdb.RemoveUser(username)
 	k.logger.WithFields(logrus.Fields{
 		opType:    "RemoveUser",
@@ -380,7 +368,7 @@ func (k *kvLogger) RemoveUser(username string) error {
 	return err
 }
 
-func (k *kvLogger) GrantUserAccess(
+func (k *logKvWrapper) GrantUserAccess(
 	username string,
 	permType kvdb.PermissionType,
 	subtree string,
@@ -393,7 +381,7 @@ func (k *kvLogger) GrantUserAccess(
 	return err
 }
 
-func (k *kvLogger) RevokeUsersAccess(
+func (k *logKvWrapper) RevokeUsersAccess(
 	username string,
 	permType kvdb.PermissionType,
 	subtree string,
@@ -406,27 +394,27 @@ func (k *kvLogger) RevokeUsersAccess(
 	return err
 }
 
-func (k *kvLogger) SetFatalCb(f kvdb.FatalErrorCB) {
+func (k *logKvWrapper) SetFatalCb(f kvdb.FatalErrorCB) {
 	k.wrappedKvdb.SetFatalCb(f)
 }
 
-func (k *kvLogger) SetLockTimeout(timeout time.Duration) {
+func (k *logKvWrapper) SetLockTimeout(timeout time.Duration) {
 	k.wrappedKvdb.SetLockTimeout(timeout)
 }
 
-func (k *kvLogger) GetLockTimeout() time.Duration {
+func (k *logKvWrapper) GetLockTimeout() time.Duration {
 	return k.wrappedKvdb.GetLockTimeout()
 }
 
-func (k *kvLogger) Serialize() ([]byte, error) {
+func (k *logKvWrapper) Serialize() ([]byte, error) {
 	return k.wrappedKvdb.Serialize()
 }
 
-func (k *kvLogger) Deserialize(b []byte) (kvdb.KVPairs, error) {
+func (k *logKvWrapper) Deserialize(b []byte) (kvdb.KVPairs, error) {
 	return k.wrappedKvdb.Deserialize(b)
 }
 
-func (k *kvLogger) AddMember(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error) {
+func (k *logKvWrapper) AddMember(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error) {
 	members, err := k.wrappedKvdb.AddMember(nodeIP, nodePeerPort, nodeName)
 	k.logger.WithFields(logrus.Fields{
 		opType:    "AddMember",
@@ -436,7 +424,7 @@ func (k *kvLogger) AddMember(nodeIP, nodePeerPort, nodeName string) (map[string]
 	return members, err
 }
 
-func (k *kvLogger) RemoveMember(nodeName, nodeIP string) error {
+func (k *logKvWrapper) RemoveMember(nodeName, nodeIP string) error {
 	err := k.wrappedKvdb.RemoveMember(nodeName, nodeIP)
 	k.logger.WithFields(logrus.Fields{
 		opType:    "RemoveMember",
@@ -445,7 +433,7 @@ func (k *kvLogger) RemoveMember(nodeName, nodeIP string) error {
 	return err
 }
 
-func (k *kvLogger) UpdateMember(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error) {
+func (k *logKvWrapper) UpdateMember(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error) {
 	members, err := k.wrappedKvdb.UpdateMember(nodeIP, nodePeerPort, nodeName)
 	k.logger.WithFields(logrus.Fields{
 		opType:    "UpdateMember",
@@ -455,7 +443,7 @@ func (k *kvLogger) UpdateMember(nodeIP, nodePeerPort, nodeName string) (map[stri
 	return members, err
 }
 
-func (k *kvLogger) ListMembers() (map[string]*kvdb.MemberInfo, error) {
+func (k *logKvWrapper) ListMembers() (map[string]*kvdb.MemberInfo, error) {
 	members, err := k.wrappedKvdb.ListMembers()
 	k.logger.WithFields(logrus.Fields{
 		opType:    "ListMembers",
@@ -465,7 +453,7 @@ func (k *kvLogger) ListMembers() (map[string]*kvdb.MemberInfo, error) {
 	return members, err
 }
 
-func (k *kvLogger) SetEndpoints(endpoints []string) error {
+func (k *logKvWrapper) SetEndpoints(endpoints []string) error {
 	err := k.wrappedKvdb.SetEndpoints(endpoints)
 	k.logger.WithFields(logrus.Fields{
 		opType:    "SetEndpoints",
@@ -474,7 +462,7 @@ func (k *kvLogger) SetEndpoints(endpoints []string) error {
 	return err
 }
 
-func (k *kvLogger) GetEndpoints() []string {
+func (k *logKvWrapper) GetEndpoints() []string {
 	endpoints := k.wrappedKvdb.GetEndpoints()
 	k.logger.WithFields(logrus.Fields{
 		opType: "GetEndpoints",
@@ -483,6 +471,6 @@ func (k *kvLogger) GetEndpoints() []string {
 	return endpoints
 }
 
-func (k *kvLogger) Defragment(endpoint string, timeout int) error {
+func (k *logKvWrapper) Defragment(endpoint string, timeout int) error {
 	return k.wrappedKvdb.Defragment(endpoint, timeout)
 }

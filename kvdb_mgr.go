@@ -64,7 +64,7 @@ func AddWrapper(
 		return kvdb, fmt.Errorf("wrapper %v not found", wrapper)
 	} else {
 		// keep log wrapper at the top if it exists
-		if kvdb.Name() == WrapperLog {
+		if kvdb.Name() == Wrapper_Log {
 			newWrapper, err := initFn(kvdb.WrappedKvdb(), options)
 			if err == nil {
 				kvdb.SetWrappedKvdb(newWrapper)

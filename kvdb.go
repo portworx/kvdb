@@ -102,9 +102,9 @@ const (
 type WrapperName string
 
 const (
-	WrapperNone         = WrapperName("WrapperNone")
-	WrapperLog          = WrapperName("WrapperLog")
-	WrapperQuorumFilter = WrapperName("WrapperQuorumFilter")
+	Wrapper_None     = WrapperName("Wrapper_None")
+	Wrapper_Log      = WrapperName("Wrapper_Log")
+	Wrapper_NoQuorum = WrapperName("Wrapper_NoQuorum")
 )
 
 type KvdbWrapper interface {
@@ -245,13 +245,6 @@ type Tx interface {
 	Abort() error
 }
 
-type KvdbQuorumState uint32
-
-const (
-	KvdbInQuorum KvdbQuorumState = iota
-	KvdbNotInQuorum
-)
-
 // Kvdb interface implemented by backing datastores.
 type Kvdb interface {
 	Controller
@@ -343,10 +336,6 @@ type Kvdb interface {
 	Serialize() ([]byte, error)
 	// Deserialize deserializes the given byte array into a list of kv pairs
 	Deserialize([]byte) (KVPairs, error)
-	// SetQuorumState sets quorum state
-	SetQuorumState(state KvdbQuorumState)
-	// QuorumState returns quorum state
-	QuorumState() KvdbQuorumState
 	KvdbWrapper
 }
 
