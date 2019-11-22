@@ -20,11 +20,8 @@ func Instance() Kvdb {
 
 // SetInstance sets the singleton instance.
 func SetInstance(kvdb Kvdb) error {
-	if instance == nil {
-		instance = kvdb
-		return nil
-	}
-	return fmt.Errorf("Kvdb instance is already set to %q", instance.String())
+	instance = kvdb
+	return nil
 }
 
 // New return a new instance of KVDB as specified by datastore name.
