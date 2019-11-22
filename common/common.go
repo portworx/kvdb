@@ -40,7 +40,7 @@ type BaseKvdb struct {
 	lock sync.Mutex
 }
 
-func (b *BaseKvdb) Name() kvdb.WrapperName {
+func (b *BaseKvdb) WrapperName() kvdb.WrapperName {
 	return kvdb.Wrapper_None
 }
 

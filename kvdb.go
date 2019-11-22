@@ -108,8 +108,8 @@ const (
 )
 
 type KvdbWrapper interface {
-	// Name is the name of this wrapper
-	Name() WrapperName
+	// WrapperName is the name of this wrapper
+	WrapperName() WrapperName
 	// WrappedKvdb is the Kvdb wrapped by this wrapper
 	WrappedKvdb() Kvdb
 	// Removed is called when wrapper is removed

@@ -52,7 +52,7 @@ func AddWrapper(
 	defer lock.Unlock()
 
 	for w := kvdb; w != nil; w = w.WrappedKvdb() {
-		if w.Name() == wrapper {
+		if w.WrapperName() == wrapper {
 			return kvdb, fmt.Errorf("wrapper %v already present in kvdb",
 				wrapper)
 		}
@@ -61,7 +61,7 @@ func AddWrapper(
 		return kvdb, fmt.Errorf("wrapper %v not found", wrapper)
 	} else {
 		// keep log wrapper at the top if it exists
-		if kvdb.Name() == Wrapper_Log {
+		if kvdb.WrapperName() == Wrapper_Log {
 			newWrapper, err := initFn(kvdb.WrappedKvdb(), options)
 			if err == nil {
 				kvdb.SetWrappedKvdb(newWrapper)
@@ -81,7 +81,7 @@ func RemoveWrapper(
 ) (Kvdb, error) {
 	var prevWrapper Kvdb
 	for w := kvdb; w != nil; w = w.WrappedKvdb() {
-		if w.Name() == wrapper {
+		if w.WrapperName() == wrapper {
 			w.Removed()
 			if prevWrapper != nil {
 				prevWrapper.SetWrappedKvdb(w.WrappedKvdb())

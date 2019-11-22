@@ -23,7 +23,7 @@ type kvBaseWrapper struct {
 	wrappedKvdb kvdb.Kvdb
 }
 
-func (b *kvBaseWrapper) Name() kvdb.WrapperName {
+func (b *kvBaseWrapper) WrapperName() kvdb.WrapperName {
 	return b.name
 }
 
