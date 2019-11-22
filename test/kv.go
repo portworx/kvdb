@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/portworx/kvdb"
+	_ "github.com/portworx/kvdb/wrappers"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -84,6 +85,41 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop S
 	serialization(kv, t)
 	err = stop()
 	assert.NoError(t, err, "Unable to stop kvdb")
+
+	// ensure wrapper does not crash when kvdb members are stopped.
+	wrapper, err := kvdb.AddWrapper(kvdb.Wrapper_Log, kv, nil)
+	assert.NoError(t, err, "add log wrapper")
+	assert.Equal(t, kvdb.Wrapper_Log, wrapper.WrapperName(), "get log wrapper name")
+	wrapper, err = kvdb.AddWrapper(kvdb.Wrapper_NoQuorum, wrapper, nil)
+	assert.NoError(t, err, "add quorum wrapper")
+	assert.Equal(t, kvdb.Wrapper_Log, wrapper.WrapperName(), "log wrapper must be at top")
+	assert.Equal(t, kvdb.Wrapper_NoQuorum,
+		wrapper.WrappedKvdb().WrapperName(),
+		"quorum wrapper found")
+	noQuorum(wrapper, t)
+
+	// remove wrapper
+	wrapper, err = kvdb.RemoveWrapper(kvdb.Wrapper_NoQuorum, wrapper)
+	assert.NoError(t, err, "remove quorum filter wrapper")
+	assert.Equal(t, kvdb.Wrapper_Log, wrapper.WrapperName(), "get log wrapper name")
+	assert.Equal(t, kvdb.Wrapper_None, wrapper.WrappedKvdb().WrapperName(),
+		"quorum wrapper removed")
+
+	// add quorum wrapper again
+	wrapper, err = kvdb.AddWrapper(kvdb.Wrapper_NoQuorum, wrapper, nil)
+	assert.NoError(t, err, "add quorum wrapper")
+	assert.Equal(t, kvdb.Wrapper_Log, wrapper.WrapperName(), "log wrapper must be at top")
+	assert.Equal(t, kvdb.Wrapper_NoQuorum,
+		wrapper.WrappedKvdb().WrapperName(),
+		"quorum wrapper found")
+	noQuorum(wrapper, t)
+
+	// remove all wrappers
+	wrapper, err = kvdb.RemoveWrapper(kvdb.Wrapper_Log, wrapper)
+	assert.NoError(t, err, "remove quorum filter wrapper")
+	wrapper, err = kvdb.RemoveWrapper(kvdb.Wrapper_NoQuorum, wrapper)
+	assert.NoError(t, err, "remove quorum filter wrapper")
+	assert.Equal(t, kvdb.Wrapper_None, wrapper.WrapperName(), "quorum wrapper removed")
 }
 
 // RunBasic runs the basic test suite.
@@ -1486,4 +1522,79 @@ func serialization(kv kvdb.Kvdb, t *testing.T) {
 			t.Fatalf("Unexpected values returned by deserialize: %v", kvp.Key)
 		}
 	}
+}
+
+func noQuorum(kv kvdb.Kvdb, t *testing.T) {
+	key := "key"
+	value := "value"
+	sep := "/"
+	ttl := uint64(0)
+
+	assert.True(t, len(kv.String()) > 0, "Unexpected error in String")
+
+	_, err := kv.Create(key, value, ttl)
+	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in Create")
+	_, err = kv.Get(key)
+	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in Get")
+	_, err = kv.Put(key, value, ttl)
+	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in Put")
+	_, _, err = kv.Snapshot(nil, true)
+	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in Snapshot")
+	_, err = kv.GetVal(key, value)
+	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in GetVal")
+	_, err = kv.Update(key, value, ttl)
+	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in Update")
+	_, err = kv.Enumerate(key)
+	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in Enumerate")
+	_, err = kv.Keys(key, sep)
+	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in Keys")
+
+	kvp := &kvdb.KVPair{Key: key, Value: []byte(value)}
+	_, err = kv.CompareAndSet(kvp, 0, []byte(value))
+	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in CompareAndSet")
+
+	_, err = kv.Lock(key)
+	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in Lock")
+	_, err = kv.LockWithID(key, key)
+	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in LockWithID")
+	_, err = kv.LockWithTimeout(key, key, time.Minute, time.Minute)
+	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in LockWithTimeout")
+
+	selectFn := func(val interface{}) bool {
+		t.Fatal("select function called when no quorum exists")
+		return false
+	}
+	copyFn := func(val interface{}) interface{} {
+		t.Fatal("copy function called when no quorum exists")
+		return val
+	}
+	_, err = kv.EnumerateWithSelect(key, selectFn, copyFn)
+	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in EnumerateWithSelect")
+
+	_, err = kv.SnapPut(nil)
+	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in SnapPut")
+	err = kv.AddUser(key, value)
+	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in AddUser")
+	err = kv.RemoveUser(key)
+	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in RemoveUser")
+	_, err = kv.TxNew()
+	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in TxNew")
+
+	_, err = kv.Serialize()
+	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in Serialize")
+	_, err = kv.Deserialize([]byte{})
+	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in Serialize")
+
+	_, err = kv.Delete(key)
+	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in Delete")
+	err = kv.DeleteTree(key)
+	assert.Error(t, err, kvdb.ErrNoQuorum, "error expected in DeleteTree")
+
+	// watch must return an error
+	watchCb := func(prefix string, opaque interface{}, kvp *kvdb.KVPair, err error) error {
+		assert.Error(t, err, "watch error expected")
+		return err
+	}
+	kv.WatchKey(key, ttl, key, watchCb)
+	kv.WatchTree(key, ttl, key, watchCb)
 }
