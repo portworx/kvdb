@@ -145,7 +145,23 @@ func New(
 	}
 	kvClient, err := e.New(cfg)
 	if err != nil {
-		return nil, err
+		if len(tls.CAFile) > 0 || len(tls.CertFile) > 0 {
+			// With secure etcd cluster, etcd client has a bug
+			// where it fails to connect to the etcd cluster if
+			// first endpoint in the list is down.
+			// Shuffle the list of IPs and try again
+			for i := 0; i < len(cfg.Endpoints); i++ {
+				endpoints := rotateEndpointsByOne(cfg.Endpoints)
+				cfg.Endpoints = endpoints
+				kvClient, err = e.New(cfg)
+				if err == nil {
+					break
+				}
+			}
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 	// Creating a separate client for maintenance APIs. Currently the maintenance client
 	// is only used for the Status API, to fetch the endpoint status. However if the Status
@@ -1600,4 +1616,9 @@ func isRetryNeeded(err error, fn string, key string, retryCount int) (bool, erro
 		logrus.Errorf("[%v: %v] kvdb error: %v, retry count %v \n", fn, key, err, retryCount)
 		return true, err
 	}
+}
+
+func rotateEndpointsByOne(endpoints []string) []string {
+	copy(endpoints, append(endpoints[len(endpoints)-1:], endpoints[:len(endpoints)-1]...))
+	return endpoints
 }
