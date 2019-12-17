@@ -1,6 +1,7 @@
 package wrappers
 
 import (
+	"math/rand"
 	"time"
 
 	"github.com/portworx/kvdb"
@@ -9,6 +10,7 @@ import (
 
 type noKvdbQuorumWrapper struct {
 	kvBaseWrapper
+	randGen *rand.Rand
 }
 
 // NewNoKvdbQuorumWrapper constructs a new kvdb.Kvdb.
@@ -22,6 +24,7 @@ func NewNoKvdbQuorumWrapper(
 			name:        kvdb.Wrapper_NoQuorum,
 			wrappedKvdb: kv,
 		},
+		randGen: rand.New(rand.NewSource(time.Now().UnixNano())),
 	}, nil
 }
 
@@ -105,12 +108,18 @@ func (k *noKvdbQuorumWrapper) CompareAndDelete(
 	return nil, kvdb.ErrNoQuorum
 }
 
+func (k *noKvdbQuorumWrapper) delayWatch() {
+	time.Sleep(time.Duration(20+k.randGen.Intn(20)) * time.Second)
+}
+
 func (k *noKvdbQuorumWrapper) WatchKey(
 	key string,
 	waitIndex uint64,
 	opaque interface{},
 	cb kvdb.WatchCB,
 ) error {
+	// slow-down retrying watch since we don't know if kvdb is still up
+	k.delayWatch()
 	return k.wrappedKvdb.WatchKey(key, waitIndex, opaque, cb)
 }
 
@@ -120,6 +129,8 @@ func (k *noKvdbQuorumWrapper) WatchTree(
 	opaque interface{},
 	cb kvdb.WatchCB,
 ) error {
+	// slow-down retrying watch since we don't know if kvdb is still up
+	k.delayWatch()
 	return k.wrappedKvdb.WatchTree(prefix, waitIndex, opaque, cb)
 }
 
