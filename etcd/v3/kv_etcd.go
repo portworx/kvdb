@@ -75,6 +75,10 @@ func (w *watchQ) enqueue(key string, kvp *kvdb.KVPair, err error) bool {
 	return !w.done
 }
 
+func isWatchClosedError(err error) bool {
+	return err == kvdb.ErrWatchRevisionCompacted || err == kvdb.ErrWatchStopped
+}
+
 func (w *watchQ) start() {
 	for {
 		key, kvp, err := w.q.Dequeue()
@@ -82,7 +86,7 @@ func (w *watchQ) start() {
 		if err != nil {
 			w.done = true
 			logrus.Infof("Watch cb for key %v returned err: %v", key, err)
-			if err != kvdb.ErrWatchStopped {
+			if !isWatchClosedError(err) {
 				// The caller returned an error. Indicate the caller
 				// that the watch has been stopped
 				_ = w.cb(key, w.opaque, nil, kvdb.ErrWatchStopped)
