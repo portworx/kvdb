@@ -509,22 +509,20 @@ func (et *etcdKV) CompareAndSet(
 		txnErr, err error
 	)
 	key := et.domain + kvp.Key
-
-	opts := []e.OpOption{}
-	if (flags & kvdb.KVTTL) != 0 {
-		leaseResult, err = et.getLeaseWithRetries(key, kvp.TTL)
-		if err != nil {
-			return nil, err
-		}
-		opts = append(opts, e.WithLease(leaseResult.ID))
-	}
-
 	cmp := e.Compare(e.Value(key), "=", string(prevValue))
 	if (flags & kvdb.KVModifiedIndex) != 0 {
 		cmp = e.Compare(e.ModRevision(key), "=", int64(kvp.ModifiedIndex))
 	}
 
 	for i := 0; i < timeoutMaxRetry; i++ {
+		opts := []e.OpOption{}
+		if (flags & kvdb.KVTTL) != 0 {
+			leaseResult, err = et.getLeaseWithRetries(key, kvp.TTL)
+			if err != nil {
+				return nil, err
+			}
+			opts = append(opts, e.WithLease(leaseResult.ID))
+		}
 		ctx, cancel := et.Context()
 		txnResponse, txnErr = et.kvClient.Txn(ctx).
 			If(cmp).
