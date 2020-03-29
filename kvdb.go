@@ -163,7 +163,9 @@ var (
 	// ErrNoConnection no connection to server
 	ErrNoConnection = errors.New("No server connection")
 	// ErrNoQuorum kvdb has lost quorum
-	ErrNoQuorum = errors.New("Kvdb lost quorum")
+	ErrNoQuorum = errors.New("KVDB connection failed, either node has " +
+		"networking issues or KVDB members are down or KVDB cluster is unhealthy. " +
+		"All operations (get/update/delete) are unavailable.")
 )
 
 // KVAction specifies the action on a KV pair. This is useful to make decisions
