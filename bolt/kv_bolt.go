@@ -944,6 +944,14 @@ func (kv *boltKV) EnumerateWithSelect(
 	return nil, kvdb.ErrNotSupported
 }
 
+func (kv *boltKV) EnumerateKVPWithSelect(
+	prefix string,
+	enumerateSelect kvdb.EnumerateKVPSelect,
+	copySelect kvdb.CopyKVPSelect,
+) (kvdb.KVPairs, error) {
+	return nil, kvdb.ErrNotSupported
+}
+
 func (kv *boltKV) GetWithCopy(
 	key string,
 	copySelect kvdb.CopySelect,

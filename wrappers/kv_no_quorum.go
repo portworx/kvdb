@@ -166,6 +166,14 @@ func (k *noKvdbQuorumWrapper) EnumerateWithSelect(
 	return nil, kvdb.ErrNoQuorum
 }
 
+func (k *noKvdbQuorumWrapper) EnumerateKVPWithSelect(
+	prefix string,
+	enumerateSelect kvdb.EnumerateKVPSelect,
+	copySelect kvdb.CopyKVPSelect,
+) (kvdb.KVPairs, error) {
+	return nil, kvdb.ErrNoQuorum
+}
+
 func (k *noKvdbQuorumWrapper) GetWithCopy(
 	key string,
 	copySelect kvdb.CopySelect,

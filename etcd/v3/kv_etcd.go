@@ -1256,6 +1256,14 @@ func (et *etcdKV) EnumerateWithSelect(
 	return nil, kvdb.ErrNotSupported
 }
 
+func (et *etcdKV) EnumerateKVPWithSelect(
+	prefix string,
+	enumerateSelect kvdb.EnumerateKVPSelect,
+	copySelect kvdb.CopyKVPSelect,
+) (kvdb.KVPairs, error) {
+	return nil, kvdb.ErrNotSupported
+}
+
 func (et *etcdKV) GetWithCopy(
 	key string,
 	copySelect kvdb.CopySelect,
