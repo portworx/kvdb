@@ -205,6 +205,15 @@ type EnumerateSelect func(val interface{}) bool
 // This fn should perform a deep copy of the input interface and return the copy
 type CopySelect func(val interface{}) interface{}
 
+// EnumerateKVPSelect function is a callback function provided to EnumerateKVPWithSelect API
+// This fn is executed over all the keys and only those values are returned by Enumerate for which
+// this function return true.
+type EnumerateKVPSelect func(kvp *KVPair, val interface{}) bool
+
+// CopyKVPSelect function is a callback function provided to EnumerateKVPWithSelect API
+// This fn should perform a deep copy of the input KVPair and return the copy
+type CopyKVPSelect func(kvp *KVPair, val interface{}) *KVPair
+
 // KVPair represents the results of an operation on KVDB.
 type KVPair struct {
 	// Key for this kv pair.
@@ -275,6 +284,9 @@ type Kvdb interface {
 	// EnumerateWithSelect returns a copy of all values under the prefix that satisfy the select
 	// function in the provided output array of interfaces
 	EnumerateWithSelect(prefix string, enumerateSelect EnumerateSelect, copySelect CopySelect) ([]interface{}, error)
+	// EnumerateKVPWithSelect returns a copy of all the KVPairs under the prefix that satisfy the select
+	// function in the provided output array of key-value pairs
+	EnumerateKVPWithSelect(prefix string, enumerateSelect EnumerateKVPSelect, copySelect CopyKVPSelect) (KVPairs, error)
 	// Delete deletes the KVPair specified by the key. ErrNotFound is returned
 	// if the key is not found. The old KVPair is returned if successful.
 	Delete(key string) (*KVPair, error)

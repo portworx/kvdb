@@ -294,6 +294,14 @@ func (z *zookeeperKV) EnumerateWithSelect(
 	return nil, kvdb.ErrNotSupported
 }
 
+func (z *zookeeperKV) EnumerateKVPWithSelect(
+	prefix string,
+	enumerateSelect kvdb.EnumerateKVPSelect,
+	copySelect kvdb.CopyKVPSelect,
+) (kvdb.KVPairs, error) {
+	return nil, kvdb.ErrNotSupported
+}
+
 func (z *zookeeperKV) Delete(key string) (*kvdb.KVPair, error) {
 	kvp, err := z.Get(key)
 	if err != nil {

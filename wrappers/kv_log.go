@@ -318,6 +318,20 @@ func (k *logKvWrapper) EnumerateWithSelect(
 	return vals, err
 }
 
+func (k *logKvWrapper) EnumerateKVPWithSelect(
+	prefix string,
+	enumerateSelect kvdb.EnumerateKVPSelect,
+	copySelect kvdb.CopyKVPSelect,
+) (kvdb.KVPairs, error) {
+	vals, err := k.wrappedKvdb.EnumerateKVPWithSelect(prefix, enumerateSelect, copySelect)
+	k.logger.WithFields(logrus.Fields{
+		opType:    "EnumerateKVPWithSelect",
+		"length":  len(vals),
+		errString: err,
+	}).Info()
+	return vals, err
+}
+
 func (k *logKvWrapper) GetWithCopy(
 	key string,
 	copySelect kvdb.CopySelect,
