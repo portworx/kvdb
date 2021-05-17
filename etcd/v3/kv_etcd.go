@@ -696,7 +696,10 @@ func (et *etcdKV) LockWithTimeout(
 	lockTag := ec.LockerIDInfo{LockerID: lockerID}
 	kvPair, err := et.Create(key, lockTag, ttl)
 	startTime := time.Now()
-	for count := 0; err != nil; count++ {
+
+	// Create() will return ErrExist if the lock is being held already. In that case,
+	// we need to retry.
+	for count := 0; err == kvdb.ErrExist; count++ {
 		time.Sleep(duration)
 		kvPair, err = et.Create(key, lockTag, ttl)
 		if count > 0 && count%15 == 0 && err != nil {
