@@ -185,6 +185,7 @@ func TestKeys(t *testing.T) {
 		{"foo", []string{"keys"}},
 		{"foo/keys", []string{"key1", "key2", "key3d"}},
 		{"foo/keys/non-existent", []string{}},
+		{"foo/keys/key3", []string{}},
 		{"foo/keys/key3d", []string{"key3", "key3b"}},
 	}
 	for i, td := range results {
@@ -201,6 +202,24 @@ func TestKeys(t *testing.T) {
 	results = results[1:] // the first test will not work on 3rd pass -- let's skip it
 	for i, td := range results {
 		res, err := kv.Keys(td.input+"/", "/")
+		assert.NoError(t, err, "Unexpected error on test# %d : %v", i+1, td)
+		assert.Equal(t, td.expected, res, "Unexpected result on test# %d : %v", i+1, td)
+	}
+
+	// using different separator ('e')
+	results = []struct {
+		input    string
+		expected []string
+	}{
+		{"", []string{"foo/k"}},
+		{"foo/keys/non-existent", []string{}},
+		{"foo/ke", []string{"ys/k"}},
+		{"foo/k", []string{"ys/k"}},
+		{"foo/keys/ke", []string{"y1", "y2", "y3d/k"}},
+		{"foo/keys/k", []string{"y1", "y2", "y3d/k"}},
+	}
+	for i, td := range results {
+		res, err := kv.Keys(td.input, "e")
 		assert.NoError(t, err, "Unexpected error on test# %d : %v", i+1, td)
 		assert.Equal(t, td.expected, res, "Unexpected result on test# %d : %v", i+1, td)
 	}
