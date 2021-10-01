@@ -11,6 +11,7 @@ import (
 	"github.com/portworx/kvdb/etcd/common"
 	"github.com/portworx/kvdb/test"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -148,6 +149,80 @@ func testWithRestarts(t *testing.T, testFn func(chan int, kvdb.Kvdb, *kvdb.KVPai
 	case <-lockChan:
 	}
 
+}
+
+func TestKeys(t *testing.T) {
+	err := common.TestStart(true)
+	require.NoError(t, err, "Unable to start kvdb")
+	kv := newKv(t)
+	require.NotNil(t, kv)
+
+	data := []struct {
+		key, val string
+	}{
+		{"foo/keys/key1", "val1"},
+		{"foo/keys/key2", "val2"},
+		{"foo/keys/key3d/key3", "val3"},
+		{"foo/keys/key3d/key3b", "val3b"},
+	}
+	defer func() {
+		kv.DeleteTree("foo/keys")
+	}()
+
+	// load the data
+	for i, td := range data {
+		_, err := kv.Put(td.key, []byte(td.val), 0)
+		assert.NoError(t, err, "Unxpected error in Put on test# %d : %v", i+1, td)
+	}
+
+	// check the Keys()
+	results := []struct {
+		input    string
+		expected []string
+	}{
+		{"", []string{"foo"}},
+		{"non-existent", []string{}},
+		{"foo", []string{"keys"}},
+		{"foo/keys", []string{"key1", "key2", "key3d"}},
+		{"foo/keys/non-existent", []string{}},
+		{"foo/keys/key3", []string{}},
+		{"foo/keys/key3d", []string{"key3", "key3b"}},
+	}
+	for i, td := range results {
+		res, err := kv.Keys(td.input, "/")
+		assert.NoError(t, err, "Unexpected error on test# %d : %v", i+1, td)
+		assert.Equal(t, td.expected, res, "Unexpected result on test# %d : %v", i+1, td)
+	}
+	for i, td := range results {
+		res, err := kv.Keys(td.input, "")
+		assert.NoError(t, err, "Unexpected error on test# %d : %v", i+1, td)
+		assert.Equal(t, td.expected, res, "Unexpected result on test# %d : %v", i+1, td)
+	}
+
+	results = results[1:] // the first test will not work on 3rd pass -- let's skip it
+	for i, td := range results {
+		res, err := kv.Keys(td.input+"/", "/")
+		assert.NoError(t, err, "Unexpected error on test# %d : %v", i+1, td)
+		assert.Equal(t, td.expected, res, "Unexpected result on test# %d : %v", i+1, td)
+	}
+
+	// using different separator ('e')
+	results = []struct {
+		input    string
+		expected []string
+	}{
+		{"", []string{"foo/k"}},
+		{"foo/keys/non-existent", []string{}},
+		{"foo/ke", []string{"ys/k"}},
+		{"foo/k", []string{"ys/k"}},
+		{"foo/keys/ke", []string{"y1", "y2", "y3d/k"}},
+		{"foo/keys/k", []string{"y1", "y2", "y3d/k"}},
+	}
+	for i, td := range results {
+		res, err := kv.Keys(td.input, "e")
+		assert.NoError(t, err, "Unexpected error on test# %d : %v", i+1, td)
+		assert.Equal(t, td.expected, res, "Unexpected result on test# %d : %v", i+1, td)
+	}
 }
 
 func newKv(t *testing.T) kvdb.Kvdb {

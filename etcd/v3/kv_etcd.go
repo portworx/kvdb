@@ -444,8 +444,11 @@ func (et *etcdKV) DeleteTree(prefix string) error {
 
 func (et *etcdKV) Keys(prefix, sep string) ([]string, error) {
 	var (
-		err    error
-		result *e.GetResponse
+		retList = make([]string, 0, 10)
+		seen    = make(map[string]bool)
+		err     error
+		result  *e.GetResponse
+		retry   bool
 	)
 	if "" == sep {
 		sep = "/"
@@ -456,52 +459,46 @@ func (et *etcdKV) Keys(prefix, sep string) ([]string, error) {
 		prefix += sep
 		lenPrefix += lenSep
 	}
-	retList := make([]string, 0, 10)
-	nextKey := et.domain + prefix
 	for i := 0; i < et.GetRetryCount(); i++ {
-		for {
-			ctx, cancel := et.Context()
-			// looking for the first key immediately after "nextKey"
-			result, err = et.kvClient.Get(ctx, nextKey, e.WithFromKey(), e.WithLimit(1), e.WithKeysOnly())
-			if err == nil && result != nil {
-				kvs := et.handleGetResponse(result, false)
-				if len(kvs) == 0 {
-					// no more keys, break out
-					break
-				}
-				key := kvs[0].Key
+		ctx, cancel := et.Context()
+		result, err = et.kvClient.Get(
+			ctx,
+			et.domain+prefix,
+			e.WithPrefix(),
+			e.WithKeysOnly(),
+			e.WithSort(e.SortByKey, e.SortAscend),
+		)
+		cancel()
+		if err == nil && result != nil {
+			kvs := et.handleGetResponse(result, false)
+			for _, kv := range kvs {
+				key := kv.Key
 				if lenPrefix > 0 {
 					if strings.HasPrefix(key, prefix) {
-						// strip prefix (if used)
+						// strip prefix
 						key = key[lenPrefix:]
-					} else {
-						// .. no longer our prefix, stop the scan
-						break
 					}
 				}
 				if idx := strings.Index(key, sep); idx > 0 {
 					// extract key's first "directory"
 					key = key[:idx]
 				}
-				retList = append(retList, key)
-				// reset nextKey to "prefix/<last_found>~" (note: "~" is at the end of printable ascii(7))
-				nextKey = et.domain + prefix + key + "~"
-				continue
+				if !seen[key] {
+					// add unique "first level" keys/dirs
+					retList = append(retList, key)
+					seen[key] = true
+				}
 			}
-
-			cancel()
-			retry, err := isRetryNeeded(err, "keys", prefix, i)
-			if retry {
-				continue
-			}
-			if err == kvdb.ErrNotFound {
-				break
-			}
-			return nil, err
+			return retList, nil
 		}
-		return retList, nil
+
+		retry, err = isRetryNeeded(err, "keys", prefix, i)
+		if retry {
+			continue
+		}
+		return retList, err
 	}
-	return nil, err
+	return retList, nil
 }
 
 func (et *etcdKV) CompareAndSet(
@@ -981,7 +978,7 @@ func (et *etcdKV) watchStart(
 				continue
 			}
 			if wresp.Canceled == true {
-				logrus.Errorf("Watch on key %v cancelled. Error: %v %v", key,
+				logrus.Errorf("Watch on key %v cancelled. Error: %v", key,
 					wresp.Err())
 				retError := kvdb.ErrWatchStopped
 				if strings.Contains(rpctypes.ErrGRPCCompacted.Error(), wresp.Err().Error()) {
@@ -1501,7 +1498,7 @@ func (et *etcdKV) ListMembers() (map[string]*kvdb.MemberInfo, error) {
 		// ClientURLs but return an error status
 		// In case of https support, certificate can be generated just
 		// for one url, check each url.
-		for i := len(member.ClientURLs)-1; i >= 0; i-- {
+		for i := len(member.ClientURLs) - 1; i >= 0; i-- {
 			// Use the context with no leader requirement as we might be hitting
 			// an endpoint which is down
 			ctx, cancel := et.MaintenanceContext()
