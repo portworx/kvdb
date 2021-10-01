@@ -415,15 +415,15 @@ type Controller interface {
 	// called on a kvdb node where kvdb is already running. It should be
 	// followed by a Setup call on the actual node
 	// Returns: map of nodeID to peerUrls of all members in the initial cluster or error
-	AddMember(endpoint, nodeName string) (map[string][]string, error)
+	AddMember(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error)
 
 	// RemoveMember removes a member from an existing kvdb cluster
 	// Returns: error if it fails to remove a member
-	RemoveMember(nodeName, endpoint string) error
+	RemoveMember(nodeName, nodeIP string) error
 
 	// UpdateMember updates the IP for the given node in an existing kvdb cluster
 	// Returns: map of nodeID to peerUrls of all members from the existing cluster
-	UpdateMember(endpoint, nodeName string) (map[string][]string, error)
+	UpdateMember(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error)
 
 	// ListMembers enumerates the members of the kvdb cluster
 	// Returns: the nodeID  to memberInfo mappings of all the members

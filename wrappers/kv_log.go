@@ -428,8 +428,8 @@ func (k *logKvWrapper) Deserialize(b []byte) (kvdb.KVPairs, error) {
 	return k.wrappedKvdb.Deserialize(b)
 }
 
-func (k *logKvWrapper) AddMember(endpoint, nodeName string) (map[string][]string, error) {
-	members, err := k.wrappedKvdb.AddMember(endpoint, nodeName)
+func (k *logKvWrapper) AddMember(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error) {
+	members, err := k.wrappedKvdb.AddMember(nodeIP, nodePeerPort, nodeName)
 	k.logger.WithFields(logrus.Fields{
 		opType:    "AddMember",
 		output:    members,
@@ -447,8 +447,8 @@ func (k *logKvWrapper) RemoveMember(nodeName, nodeIP string) error {
 	return err
 }
 
-func (k *logKvWrapper) UpdateMember(endpoint, nodeName string) (map[string][]string, error) {
-	members, err := k.wrappedKvdb.UpdateMember(endpoint, nodeName)
+func (k *logKvWrapper) UpdateMember(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error) {
+	members, err := k.wrappedKvdb.UpdateMember(nodeIP, nodePeerPort, nodeName)
 	k.logger.WithFields(logrus.Fields{
 		opType:    "UpdateMember",
 		output:    members,

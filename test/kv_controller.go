@@ -66,7 +66,7 @@ func testAddMember(kv kvdb.Kvdb, t *testing.T) {
 	// Add node 1
 	index := 1
 	controllerLog("Adding node 1")
-	initCluster, err := kv.AddMember(constructURL(localhost, peerPorts[index]), names[index])
+	initCluster, err := kv.AddMember(localhost, peerPorts[index], names[index])
 	require.NoError(t, err, "Error on AddMember")
 	require.Equal(t, 2, len(initCluster), "Init Cluster length does not match")
 	cmd, err := startEtcd(index, initCluster, "existing")
@@ -84,7 +84,7 @@ func testRemoveMember(kv kvdb.Kvdb, t *testing.T) {
 	// Add node 2
 	index := 2
 	controllerLog("Adding node 2")
-	initCluster, err := kv.AddMember(constructURL(localhost, peerPorts[index]), names[index])
+	initCluster, err := kv.AddMember(localhost, peerPorts[index], names[index])
 	require.NoError(t, err, "Error on AddMember")
 	require.Equal(t, 3, len(initCluster), "Init Cluster length does not match")
 	cmd, err := startEtcd(index, initCluster, "existing")
@@ -123,7 +123,7 @@ func testReAdd(kv kvdb.Kvdb, t *testing.T) {
 	controllerLog("Re-adding node 1")
 	// For re-adding we need to delete the data-dir of this member
 	os.RemoveAll(dataDirs[index])
-	initCluster, err := kv.AddMember(constructURL(localhost, peerPorts[index]), names[index])
+	initCluster, err := kv.AddMember(localhost, peerPorts[index], names[index])
 	require.NoError(t, err, "Error on AddMember")
 	require.Equal(t, 3, len(initCluster), "Init Cluster length does not match")
 	cmd, err := startEtcd(index, initCluster, "existing")
@@ -148,7 +148,7 @@ func testUpdateMember(kv kvdb.Kvdb, t *testing.T) {
 	peerPorts[index] = "33380"
 
 	// Update the member
-	initCluster, err := kv.UpdateMember(constructURL(localhost, peerPorts[index]), names[index])
+	initCluster, err := kv.UpdateMember(localhost, peerPorts[index], names[index])
 	require.NoError(t, err, "Error on UpdateMember")
 	require.Equal(t, 3, len(initCluster), "Initial cluster length does not match")
 	cmd, err = startEtcd(index, initCluster, "existing")
@@ -160,7 +160,7 @@ func testUpdateMember(kv kvdb.Kvdb, t *testing.T) {
 	require.Equal(t, 3, len(list), "List returned different length of cluster")
 
 	// Update an invalid member
-	_, err = kv.UpdateMember(constructURL(localhost, peerPorts[index]), "foobar")
+	_, err = kv.UpdateMember(localhost, peerPorts[index], "foobar")
 	require.EqualError(t, kvdb.ErrMemberDoesNotExist, err.Error(), "Unexpected error on UpdateMember")
 }
 
@@ -183,7 +183,7 @@ func testMemberStatus(kv kvdb.Kvdb, t *testing.T) {
 
 	index := 3
 	controllerLog("Adding node 3")
-	initCluster, err := kv.AddMember(constructURL(localhost, peerPorts[index]), names[index])
+	initCluster, err := kv.AddMember(localhost, peerPorts[index], names[index])
 	require.NoError(t, err, "Error on AddMember")
 	cmd, err := startEtcd(index, initCluster, "existing")
 	require.NoError(t, err, "Error on start etcd")
@@ -194,7 +194,7 @@ func testMemberStatus(kv kvdb.Kvdb, t *testing.T) {
 
 	index = 4
 	controllerLog("Adding node 4")
-	initCluster, err = kv.AddMember(constructURL(localhost, peerPorts[index]), names[index])
+	initCluster, err = kv.AddMember(localhost, peerPorts[index], names[index])
 	require.NoError(t, err, "Error on AddMember")
 	cmd, err = startEtcd(index, initCluster, "existing")
 	require.NoError(t, err, "Error on start etcd")
@@ -330,9 +330,4 @@ func controllerLog(log string) {
 	fmt.Println("--------------------")
 	fmt.Println(log)
 	fmt.Println("--------------------")
-}
-
-func constructURL(ip string, port string) string {
-	ip = strings.TrimPrefix(ip, urlPrefix)
-	return urlPrefix + ip + ":" + port
 }

@@ -1348,10 +1348,11 @@ func (et *etcdKV) RevokeUsersAccess(username string, permType kvdb.PermissionTyp
 }
 
 func (et *etcdKV) AddMember(
-	endpoint string,
+	nodeIP string,
+	nodePeerPort string,
 	nodeName string,
 ) (map[string][]string, error) {
-	peerURLs := et.listenPeerUrls(endpoint)
+	peerURLs := et.listenPeerUrls(nodeIP, nodePeerPort)
 	ctx, cancel := et.MaintenanceContextWithLeader()
 	_, err := et.kvClient.MemberAdd(ctx, peerURLs)
 	cancel()
@@ -1377,10 +1378,11 @@ func (et *etcdKV) AddMember(
 }
 
 func (et *etcdKV) UpdateMember(
-	endpoint string,
+	nodeIP string,
+	nodePeerPort string,
 	nodeName string,
 ) (map[string][]string, error) {
-	peerURLs := et.listenPeerUrls(endpoint)
+	peerURLs := et.listenPeerUrls(nodeIP, nodePeerPort)
 	ctx, cancel := et.MaintenanceContextWithLeader()
 
 	memberListResponse, err := et.kvClient.MemberList(ctx)
@@ -1414,7 +1416,7 @@ func (et *etcdKV) UpdateMember(
 
 func (et *etcdKV) RemoveMember(
 	nodeName string,
-	endpoint string,
+	nodeIP string,
 ) error {
 	fn := "RemoveMember"
 	ctx, cancel := et.MaintenanceContextWithLeader()
@@ -1432,7 +1434,7 @@ func (et *etcdKV) RemoveMember(
 		if member.Name == "" {
 			// In case of a failed start of an etcd member, the Name field will be empty
 			// We then try to match the IPs.
-			if strings.Contains(member.PeerURLs[0], endpoint) {
+			if strings.Contains(member.PeerURLs[0], nodeIP) {
 				removeMemberID = member.ID
 			}
 
@@ -1466,7 +1468,7 @@ func (et *etcdKV) RemoveMember(
 				return err
 			}
 			if i == (removeMemberRetries - 1) {
-				return fmt.Errorf("Too many retries for RemoveMember: %v %v", nodeName, endpoint)
+				return fmt.Errorf("Too many retries for RemoveMember: %v %v", nodeName, nodeIP)
 			}
 			time.Sleep(2 * time.Second)
 			continue
@@ -1496,15 +1498,13 @@ func (et *etcdKV) ListMembers() (map[string]*kvdb.MemberInfo, error) {
 		// etcd versions < v3.2.15 will return empty ClientURLs if
 		// the node is unhealthy. For versions >= v3.2.15 they populate
 		// ClientURLs but return an error status
-		// In case of https support, certificate can be generated just
-		// for one url, check each url.
-		for i := len(member.ClientURLs) - 1; i >= 0; i-- {
+		if len(member.ClientURLs) != 0 {
 			// Use the context with no leader requirement as we might be hitting
 			// an endpoint which is down
 			ctx, cancel := et.MaintenanceContext()
 			endpointStatus, err := et.maintenanceClient.Status(
 				ctx,
-				member.ClientURLs[i],
+				member.ClientURLs[0],
 			)
 			cancel()
 			if err == nil {
@@ -1515,7 +1515,6 @@ func (et *etcdKV) ListMembers() (map[string]*kvdb.MemberInfo, error) {
 				isHealthy = true
 				// Only set the urls if status is healthy
 				clientURLs = member.ClientURLs
-				break
 			}
 		}
 		resp[member.Name] = &kvdb.MemberInfo{
@@ -1569,8 +1568,13 @@ func (et *etcdKV) Defragment(endpoint string, timeout int) error {
 
 }
 
-func (et *etcdKV) listenPeerUrls(endpoint string) []string {
-	return []string{endpoint}
+func (et *etcdKV) listenPeerUrls(ip string, port string) []string {
+	return []string{et.constructURL(ip, port)}
+}
+
+func (et *etcdKV) constructURL(ip string, port string) string {
+	ip = strings.TrimPrefix(ip, urlPrefix)
+	return urlPrefix + ip + ":" + port
 }
 
 func (et *etcdKV) getLeaseWithRetries(key string, ttl int64) (*e.LeaseGrantResponse, error) {

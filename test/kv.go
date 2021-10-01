@@ -518,7 +518,7 @@ func concurrentEnum(kv kvdb.Kvdb, t *testing.T) {
 					key := fmt.Sprintf("%s/%d-%d", prefix, id, j%100000)
 					_, err := kv.Put(key, content, 0)
 					if err != nil {
-						logrus.WithError(err).Warnf("Error inserting key %s", key)
+						logrus.WithError(err).Warnf("Error inserting key $s", key)
 						numFails++
 						// let's tolerate some errors, since we're in race w/ Deleter
 						assert.True(t, numFails < 10, "Too many failures on PUT")
