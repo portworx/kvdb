@@ -233,7 +233,7 @@ func (k *noKvdbQuorumWrapper) Deserialize(b []byte) (kvdb.KVPairs, error) {
 	return nil, kvdb.ErrNoQuorum
 }
 
-func (k *noKvdbQuorumWrapper) AddMember(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error) {
+func (k *noKvdbQuorumWrapper) AddMember(endpoint, nodeName string) (map[string][]string, error) {
 	return nil, kvdb.ErrNoQuorum
 }
 
@@ -241,8 +241,8 @@ func (k *noKvdbQuorumWrapper) RemoveMember(nodeName, nodeIP string) error {
 	return kvdb.ErrNoQuorum
 }
 
-func (k *noKvdbQuorumWrapper) UpdateMember(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error) {
-	return k.wrappedKvdb.UpdateMember(nodeIP, nodePeerPort, nodeName)
+func (k *noKvdbQuorumWrapper) UpdateMember(endpoint, nodeName string) (map[string][]string, error) {
+	return k.wrappedKvdb.UpdateMember(endpoint, nodeName)
 }
 
 func (k *noKvdbQuorumWrapper) ListMembers() (map[string]*kvdb.MemberInfo, error) {

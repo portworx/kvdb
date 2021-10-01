@@ -8,7 +8,7 @@ var (
 
 type controllerNotSupported struct{}
 
-func (c *controllerNotSupported) AddMember(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error) {
+func (c *controllerNotSupported) AddMember(endpoint, nodeName string) (map[string][]string, error) {
 	return nil, ErrNotSupported
 }
 
@@ -16,7 +16,7 @@ func (c *controllerNotSupported) RemoveMember(nodeID string, nodeIP string) erro
 	return ErrNotSupported
 }
 
-func (c *controllerNotSupported) UpdateMember(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error) {
+func (c *controllerNotSupported) UpdateMember(endpoint, nodeName string) (map[string][]string, error) {
 	return nil, ErrNotSupported
 }
 
