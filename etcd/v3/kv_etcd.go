@@ -32,7 +32,7 @@ const (
 	defaultDefragTimeout = 30
 	// defaultSessionTimeout in seconds is used for etcd watch
 	// to detect connectivity issues
-	defaultSessionTimeout = 120
+	defaultSessionTimeout = 50
 	// All the below timeouts are similar to the ones set in etcdctl
 	// and are mainly used for etcd client's load balancing.
 	defaultDialTimeout      = 2 * time.Second
