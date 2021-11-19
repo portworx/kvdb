@@ -134,6 +134,12 @@ func (k *noKvdbQuorumWrapper) WatchTree(
 	return k.wrappedKvdb.WatchTree(prefix, waitIndex, opaque, cb)
 }
 
+func (k *noKvdbQuorumWrapper) Compact(
+	index uint64,
+) error {
+	return kvdb.ErrNoQuorum
+}
+
 func (k *noKvdbQuorumWrapper) Lock(key string) (*kvdb.KVPair, error) {
 	return nil, kvdb.ErrNoQuorum
 }

@@ -350,6 +350,8 @@ type Kvdb interface {
 	Serialize() ([]byte, error)
 	// Deserialize deserializes the given byte array into a list of kv pairs
 	Deserialize([]byte) (KVPairs, error)
+	// Compact removes the history before the specified index/revision to reduce the space and memory usage
+	Compact(index uint64) error
 	KvdbWrapper
 }
 
