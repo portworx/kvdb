@@ -849,6 +849,10 @@ func (kv *boltKV) WatchTree(
 	return nil
 }
 
+func (kv *boltKV) Compact(index uint64) error {
+	return kvdb.ErrNotSupported
+}
+
 func (kv *boltKV) Lock(key string) (*kvdb.KVPair, error) {
 	return kv.LockWithID(key, "locked")
 }

@@ -310,7 +310,7 @@ func (et *etcdKV) Create(
 	if txnErr != nil {
 		return nil, txnErr
 	}
-	if txnResponse.Succeeded == true {
+	if txnResponse.Succeeded {
 		// The key did exist before
 		return nil, kvdb.ErrExist
 	}
@@ -354,7 +354,7 @@ func (et *etcdKV) Update(
 	if txnErr != nil {
 		return nil, txnErr
 	}
-	if txnResponse.Succeeded == false {
+	if !txnResponse.Succeeded {
 		// The key did not exist before
 		return nil, kvdb.ErrNotFound
 	}
@@ -411,7 +411,7 @@ func (et *etcdKV) Delete(key string) (*kvdb.KVPair, error) {
 		if result.Deleted == 0 {
 			return nil, kvdb.ErrNotFound
 		} else if result.Deleted > 1 {
-			return nil, fmt.Errorf("Incorrect number of keys: %v deleted, result: %v",
+			return nil, fmt.Errorf("incorrect number of keys: %v deleted, result: %v",
 				key, result)
 		}
 		kvp.Action = kvdb.KVDelete
@@ -450,7 +450,7 @@ func (et *etcdKV) Keys(prefix, sep string) ([]string, error) {
 		result  *e.GetResponse
 		retry   bool
 	)
-	if "" == sep {
+	if sep == "" {
 		sep = "/"
 	}
 	lenPrefix := len(prefix)
@@ -554,13 +554,13 @@ func (et *etcdKV) CompareAndSet(
 					return nil, txnErr
 				}
 				continue
-			} else if bytes.Compare(kvp.Value, kvPair.Value) == 0 {
+			} else if bytes.Equal(kvp.Value, kvPair.Value) {
 				return kvPair, nil
 			}
 			// else someone else updated the value, return error
 			return nil, txnErr
 		}
-		if txnResponse.Succeeded == false {
+		if !txnResponse.Succeeded {
 			if len(txnResponse.Responses) == 0 {
 				logrus.Infof("Etcd did not return any transaction responses "+
 					"for key (%v) index (%v)", kvp.Key, kvp.ModifiedIndex)
@@ -629,7 +629,7 @@ func (et *etcdKV) CompareAndDelete(
 			}
 			continue
 		}
-		if txnResponse.Succeeded == false {
+		if !txnResponse.Succeeded {
 			if len(txnResponse.Responses) == 0 {
 				logrus.Infof("Etcd did not return any transaction responses for key (%v)", kvp.Key)
 			} else {
@@ -667,6 +667,26 @@ func (et *etcdKV) WatchTree(
 ) error {
 	prefix = et.domain + prefix
 	go et.watchStart(prefix, true, waitIndex, opaque, cb)
+	return nil
+}
+
+func (et *etcdKV) isErrCompacted(err error) bool {
+	// err.Error():
+	//              "etcdserver: mvcc: required revision has been compacted"
+	// ErrGRPCCompacted.Error():
+	//              "rpc error: code = OutOfRange desc = etcdserver: mvcc: required revision has been compacted"
+	return strings.Contains(rpctypes.ErrGRPCCompacted.Error(), err.Error())
+}
+
+func (et *etcdKV) Compact(
+	index uint64,
+) error {
+	ctx, cancel := et.Context()
+	_, err := et.kvClient.Compact(ctx, int64(index))
+	cancel()
+	if err != nil && !et.isErrCompacted(err) {
+		return err
+	}
 	return nil
 }
 
@@ -719,7 +739,7 @@ func (et *etcdKV) LockWithTimeout(
 func (et *etcdKV) Unlock(kvp *kvdb.KVPair) error {
 	l, ok := kvp.Lock.(*ec.EtcdLock)
 	if !ok {
-		return fmt.Errorf("Invalid lock structure for key %v", string(kvp.Key))
+		return fmt.Errorf("invalid lock structure for key %v", string(kvp.Key))
 	}
 	l.Lock()
 	// Don't modify kvp here, CompareAndDelete does that.
@@ -896,7 +916,7 @@ func (et *etcdKV) refreshLock(
 		select {
 		case <-refresh.C:
 			l.Lock()
-			for !l.Unlocked {
+			if !l.Unlocked {
 				et.CheckLockTimeout(lockMsgString, startTime, lockHoldDuration)
 				kvPair.TTL = ttl
 				kvp, err := et.CompareAndSet(
@@ -917,7 +937,6 @@ func (et *etcdKV) refreshLock(
 				}
 				prevRefresh = currentRefresh
 				kvPair.ModifiedIndex = kvp.ModifiedIndex
-				break
 			}
 			l.Unlock()
 		case <-l.Done:
@@ -974,14 +993,14 @@ func (et *etcdKV) watchStart(
 	watchQ := newWatchQ(opaque, cb, watchRet)
 	go func() {
 		for wresp := range watchChan {
-			if wresp.Created == true {
+			if wresp.Created {
 				continue
 			}
-			if wresp.Canceled == true {
+			if wresp.Canceled {
 				logrus.Errorf("Watch on key %v cancelled. Error: %v", key,
 					wresp.Err())
 				retError := kvdb.ErrWatchStopped
-				if strings.Contains(rpctypes.ErrGRPCCompacted.Error(), wresp.Err().Error()) {
+				if et.isErrCompacted(wresp.Err()) {
 					retError = kvdb.ErrWatchRevisionCompacted
 				}
 				watchQ.enqueue(key, nil, retError)
@@ -1087,7 +1106,7 @@ func (et *etcdKV) Snapshot(prefixes []string, consistent bool) (kvdb.Kvdb, uint6
 		m, ok = opaque.(*sync.Mutex)
 		if !ok {
 			logrus.Infof("Snapshot error, failed to get mutex")
-			watchErr = fmt.Errorf("Failed to get mutex")
+			watchErr = fmt.Errorf("failed to get mutex")
 			sendErr = watchErr
 			goto errordone
 		}
@@ -1118,14 +1137,14 @@ func (et *etcdKV) Snapshot(prefixes []string, consistent bool) (kvdb.Kvdb, uint6
 		// For a consistent snapshot, start a watch to track updates
 		// happening until we enumerate all the keys
 		if err := et.WatchTree("", 0, mutex, cb); err != nil {
-			return nil, 0, fmt.Errorf("Failed to start watch: %v", err)
+			return nil, 0, fmt.Errorf("failed to start watch: %v", err)
 		}
 		r = rand.New(rand.NewSource(time.Now().UnixNano())).Int63()
 		bootStrapKeyLow = ec.Bootstrap + strconv.FormatInt(r, 10) +
 			strconv.FormatInt(time.Now().UnixNano(), 10)
 		kvPair, err := et.Put(bootStrapKeyLow, time.Now().UnixNano(), 0)
 		if err != nil {
-			return nil, 0, fmt.Errorf("Failed to create snap bootstrap key %v, "+
+			return nil, 0, fmt.Errorf("failed to create snap bootstrap key %v, "+
 				"err: %v", bootStrapKeyLow, err)
 		}
 		lowestKvdbIndex = kvPair.ModifiedIndex
@@ -1138,14 +1157,14 @@ func (et *etcdKV) Snapshot(prefixes []string, consistent bool) (kvdb.Kvdb, uint6
 		et.FatalCb,
 	)
 	if err != nil {
-		return nil, 0, fmt.Errorf("Failed to create in-mem kv store: %v", err)
+		return nil, 0, fmt.Errorf("failed to create in-mem kv store: %v", err)
 	}
 
 	// enumerate prefix function
 	enumeratePrefix := func(snapDb kvdb.Kvdb, prefix string) error {
 		kvPairs, err := et.Enumerate(prefix)
 		if err != nil {
-			return fmt.Errorf("Failed to enumerate %v: err: %v", prefix,
+			return fmt.Errorf("failed to enumerate %v: err: %v", prefix,
 				err)
 		}
 
@@ -1155,24 +1174,24 @@ func (et *etcdKV) Snapshot(prefixes []string, consistent bool) (kvdb.Kvdb, uint6
 				// Only create a leaf node
 				_, err := snapDb.SnapPut(kvPair)
 				if err != nil {
-					return fmt.Errorf("Failed creating snap: %v", err)
+					return fmt.Errorf("failed creating snap: %v", err)
 				}
 			} else {
 				newKvPairs, err := et.Enumerate(kvPair.Key)
 				if err != nil {
-					return fmt.Errorf("Failed to get child keys: %v", err)
+					return fmt.Errorf("failed to get child keys: %v", err)
 				}
 				if len(newKvPairs) == 0 {
 					// empty value for this key
 					_, err := snapDb.SnapPut(kvPair)
 					if err != nil {
-						return fmt.Errorf("Failed creating snap: %v", err)
+						return fmt.Errorf("failed creating snap: %v", err)
 					}
 				} else if len(newKvPairs) == 1 {
 					// empty value for this key
 					_, err := snapDb.SnapPut(newKvPairs[0])
 					if err != nil {
-						return fmt.Errorf("Failed creating snap: %v", err)
+						return fmt.Errorf("failed creating snap: %v", err)
 					}
 				} else {
 					kvPairs = append(kvPairs, newKvPairs...)
@@ -1204,7 +1223,7 @@ func (et *etcdKV) Snapshot(prefixes []string, consistent bool) (kvdb.Kvdb, uint6
 		strconv.FormatInt(time.Now().UnixNano(), 10)
 	kvPair, err := et.Put(bootStrapKeyHigh, time.Now().UnixNano(), 0)
 	if err != nil {
-		return nil, 0, fmt.Errorf("Failed to create snap bootstrap key %v, "+
+		return nil, 0, fmt.Errorf("failed to create snap bootstrap key %v, "+
 			"err: %v", bootStrapKeyHigh, err)
 	}
 
@@ -1232,7 +1251,7 @@ func (et *etcdKV) Snapshot(prefixes []string, consistent bool) (kvdb.Kvdb, uint6
 				_, err = snapDb.SnapPut(kvPair)
 			}
 			if err != nil {
-				return nil, 0, fmt.Errorf("Failed to apply update to snap: %v", err)
+				return nil, 0, fmt.Errorf("failed to apply update to snap: %v", err)
 			}
 
 		}
@@ -1240,12 +1259,12 @@ func (et *etcdKV) Snapshot(prefixes []string, consistent bool) (kvdb.Kvdb, uint6
 
 	_, err = et.Delete(bootStrapKeyLow)
 	if err != nil {
-		return nil, 0, fmt.Errorf("Failed to delete snap bootstrap key: %v, "+
+		return nil, 0, fmt.Errorf("failed to delete snap bootstrap key: %v, "+
 			"err: %v", bootStrapKeyLow, err)
 	}
 	_, err = et.Delete(bootStrapKeyHigh)
 	if err != nil {
-		return nil, 0, fmt.Errorf("Failed to delete snap bootstrap key: %v, "+
+		return nil, 0, fmt.Errorf("failed to delete snap bootstrap key: %v, "+
 			"err: %v", bootStrapKeyHigh, err)
 	}
 
@@ -1442,9 +1461,7 @@ func (et *etcdKV) RemoveMember(
 			removeMemberID = member.ID
 		} else {
 			// This member is healthy and does not need to be removed.
-			for _, clientURL := range member.ClientURLs {
-				newClientUrls = append(newClientUrls, clientURL)
-			}
+			newClientUrls = append(newClientUrls, member.ClientURLs...)
 		}
 	}
 	et.kvClient.SetEndpoints(newClientUrls...)
@@ -1468,7 +1485,7 @@ func (et *etcdKV) RemoveMember(
 				return err
 			}
 			if i == (removeMemberRetries - 1) {
-				return fmt.Errorf("Too many retries for RemoveMember: %v %v", nodeName, nodeIP)
+				return fmt.Errorf("too many retries for RemoveMember: %v %v", nodeName, nodeIP)
 			}
 			time.Sleep(2 * time.Second)
 			continue

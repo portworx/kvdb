@@ -548,6 +548,10 @@ func (kv *consulKV) WatchTree(prefix string, waitIndex uint64, opaque interface{
 	return nil
 }
 
+func (kv *consulKV) Compact(index uint64) error {
+	return kvdb.ErrNotSupported
+}
+
 func (kv *consulKV) Lock(key string) (*kvdb.KVPair, error) {
 	return kv.LockWithID(key, "locked")
 }

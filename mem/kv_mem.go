@@ -611,6 +611,12 @@ func (kv *memKV) WatchTree(
 	return nil
 }
 
+func (kv *memKV) Compact(
+	index uint64,
+) error {
+	return kvdb.ErrNotSupported
+}
+
 func (kv *memKV) Lock(key string) (*kvdb.KVPair, error) {
 	return kv.LockWithID(key, "locked")
 }

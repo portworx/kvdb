@@ -257,6 +257,17 @@ func (k *logKvWrapper) WatchTree(
 	return err
 }
 
+func (k *logKvWrapper) Compact(
+	index uint64,
+) error {
+	err := k.wrappedKvdb.Compact(index)
+	k.logger.WithFields(logrus.Fields{
+		opType:    "Compact",
+		errString: err,
+	}).Info()
+	return err
+}
+
 func (k *logKvWrapper) Lock(key string) (*kvdb.KVPair, error) {
 	pair, err := k.wrappedKvdb.Lock(key)
 	k.logger.WithFields(logrus.Fields{

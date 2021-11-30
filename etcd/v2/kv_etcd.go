@@ -355,6 +355,12 @@ func (kv *etcdKV) WatchTree(
 	return nil
 }
 
+func (kv *etcdKV) Compact(
+	index uint64,
+) error {
+	return kvdb.ErrNotSupported
+}
+
 func (kv *etcdKV) Lock(key string) (*kvdb.KVPair, error) {
 	return kv.LockWithID(key, "locked")
 }
