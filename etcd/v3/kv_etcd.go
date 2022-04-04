@@ -44,7 +44,7 @@ const (
 )
 
 var (
-	defaultMachines = []string{"http://127.0.0.1:2379"}
+	defaultMachines = []string{"http://127.0.0.1:2379", "http://[::1]:2379"}
 	// mLock is a lock over the maintenanceClient
 	mLock sync.Mutex
 )
