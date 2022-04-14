@@ -317,6 +317,7 @@ func (et *etcdKV) Create(
 
 	rangeResponse := txnResponse.Responses[1].GetResponseRange()
 	kvPair := et.resultToKv(rangeResponse.Kvs[0], "create")
+	kvPair.KVDBIndex = uint64(txnResponse.Header.Revision)
 	return kvPair, nil
 }
 
