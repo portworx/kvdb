@@ -259,7 +259,7 @@ func testMemberStatus(kv kvdb.Kvdb, t *testing.T) {
 	select {
 	case <-c:
 		return
-	case <-time.After(5 * time.Minute):
+	case <-time.After(10 * time.Minute):
 		t.Fatalf("testMemberStatus timeout")
 	}
 }
@@ -306,6 +306,10 @@ func startEtcd(index int, initCluster map[string][]string, initState string) (*e
 		"--initial-cluster-state=" +
 			initState,
 	}
+
+	// unset env that can prevent etcd startup
+	os.Unsetenv("ETCD_LISTEN_CLIENT_URLS")
+	os.Unsetenv("ETCDCTL_API")
 
 	cmd := exec.Command("/tmp/test-etcd/etcd", etcdArgs...)
 	cmd.Stdout = ioutil.Discard
