@@ -1497,53 +1497,84 @@ func (et *etcdKV) RemoveMember(
 }
 
 func (et *etcdKV) ListMembers() (map[string]*kvdb.MemberInfo, error) {
-	ctx, cancel := et.MaintenanceContextWithLeader()
-	memberListResponse, err := et.kvClient.MemberList(ctx)
-	cancel()
-	if err != nil {
-		return nil, err
-	}
-	resp := make(map[string]*kvdb.MemberInfo)
-	mLock.Lock()
-	defer mLock.Unlock()
-	for _, member := range memberListResponse.Members {
-		var (
-			leader     bool
-			dbSize     int64
-			isHealthy  bool
-			clientURLs []string
-		)
-		// etcd versions < v3.2.15 will return empty ClientURLs if
-		// the node is unhealthy. For versions >= v3.2.15 they populate
-		// ClientURLs but return an error status
-		if len(member.ClientURLs) != 0 {
+	var (
+		fnMemberStatus = func(cliURL string) (*kvdb.MemberInfo, uint64, error) {
+			if cliURL == "" {
+				return nil, 0, fmt.Errorf("Must provide client URL")
+			}
 			// Use the context with no leader requirement as we might be hitting
 			// an endpoint which is down
 			ctx, cancel := et.MaintenanceContext()
-			endpointStatus, err := et.maintenanceClient.Status(
-				ctx,
-				member.ClientURLs[0],
-			)
+			endpointStatus, err := et.maintenanceClient.Status(ctx, cliURL)
 			cancel()
-			if err == nil {
-				if member.ID == endpointStatus.Leader {
-					leader = true
+
+			if err != nil {
+				return nil, 0, err
+			}
+
+			mid := endpointStatus.Header.MemberId
+			return &kvdb.MemberInfo{
+				// PeerUrls:   .. must fill later
+				ClientUrls: []string{cliURL},
+				Leader:     endpointStatus.Leader == mid,
+				DbSize:     endpointStatus.DbSize,
+				IsHealthy:  true,
+				ID:         strconv.FormatUint(mid, 16),
+			}, mid, nil
+		}
+	)
+	ctx, cancel := et.MaintenanceContextWithLeader()
+	memberListResponse, err := et.kvClient.MemberList(ctx)
+	cancel()
+
+	if err != nil {
+		return nil, err
+	}
+
+	membersMap := make(map[uint64]*kvdb.MemberInfo)
+	mLock.Lock()
+	defer mLock.Unlock()
+
+	// Get status from Endpoints
+	for _, ep := range et.GetEndpoints() {
+		mi, mid, err := fnMemberStatus(ep)
+		if err != nil || mi == nil {
+			logrus.WithError(err).Warnf("kvClient.Status(%s) returned error", ep)
+			continue
+		}
+		membersMap[mid] = mi
+	}
+
+	// Get status from MemberList() nodes, that were missing from GetEndpoints() list
+	for _, member := range memberListResponse.Members {
+		for _, cu := range member.ClientURLs {
+			if _, has := membersMap[member.ID]; !has {
+
+				mi, mid, err := fnMemberStatus(cu)
+				if err != nil || mi == nil {
+					logrus.WithError(err).Warnf("kvClient.Status(%s) returned error", cu)
+					continue
 				}
-				dbSize = endpointStatus.DbSize
-				isHealthy = true
-				// Only set the urls if status is healthy
-				clientURLs = member.ClientURLs
+				membersMap[mid] = mi
 			}
 		}
-		resp[member.Name] = &kvdb.MemberInfo{
-			PeerUrls:   member.PeerURLs,
-			ClientUrls: clientURLs,
-			Leader:     leader,
-			DbSize:     dbSize,
-			IsHealthy:  isHealthy,
-			ID:         strconv.FormatUint(member.ID, 16),
+	}
+
+	// Fill PeerURLs; also, remap with "Name" as a key
+	resp := make(map[string]*kvdb.MemberInfo)
+	for _, member := range memberListResponse.Members {
+		if mi, has := membersMap[member.ID]; has {
+			mi.PeerUrls = member.PeerURLs
+			resp[member.Name] = mi
+		} else {
+			// no status -- add "blank" MemberInfo
+			resp[member.Name] = &kvdb.MemberInfo{
+				PeerUrls: member.PeerURLs,
+				ID:       strconv.FormatUint(member.ID, 16),
+			}
 		}
 	}
+
 	return resp, nil
 }
 
