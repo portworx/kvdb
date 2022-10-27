@@ -39,6 +39,7 @@ const (
 	defaultKeepAliveTime    = 2 * time.Second
 	defaultKeepAliveTimeout = 6 * time.Second
 	urlPrefix               = "http://"
+	urlSecPrefix            = "https://"
 	// timeoutMaxRetry is maximum retries before faulting
 	timeoutMaxRetry = 30
 )
@@ -1622,8 +1623,12 @@ func (et *etcdKV) listenPeerUrls(ip string, port string) []string {
 }
 
 func (et *etcdKV) constructURL(ip string, port string) string {
-	ip = strings.TrimPrefix(ip, urlPrefix)
-	return urlPrefix + ip + ":" + port
+	prefix := urlPrefix
+	if et.EtcdCommon.IsTLSEnabled() {
+		prefix = urlSecPrefix
+	}
+	ip = strings.TrimPrefix(ip, prefix)
+	return prefix + ip + ":" + port
 }
 
 func (et *etcdKV) getLeaseWithRetries(key string, ttl int64) (*e.LeaseGrantResponse, error) {
