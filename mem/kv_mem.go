@@ -219,7 +219,7 @@ func New(
 	}
 
 	mem := &memKV{
-		BaseKvdb:   common.BaseKvdb{FatalCb: fatalErrorCb},
+		BaseKvdb:   common.BaseKvdb{FatalCb: fatalErrorCb, LockTryDuration: kvdb.DefaultLockTryDuration},
 		m:          make(map[string]*memKVPair),
 		dist:       NewWatchDistributor(),
 		domain:     domain,
@@ -625,7 +625,22 @@ func (kv *memKV) LockWithID(
 	key string,
 	lockerID string,
 ) (*kvdb.KVPair, error) {
-	return kv.LockWithTimeout(key, lockerID, kvdb.DefaultLockTryDuration, kv.GetLockTimeout())
+	return kv.LockWithTimeout(key, lockerID, kv.LockTryDuration, kv.GetLockHoldDuration())
+}
+
+func (kv *memKV) IsKeyLocked(key string) (bool, string, error) {
+	key = kv.domain + key
+	if _, ok := kv.locks[key]; !ok {
+		return false, "", kvdb.ErrInvalidLock
+	}
+	var lockerID string
+	_, err := kv.GetVal(key, &lockerID)
+	if err == kvdb.ErrNotFound {
+		return false, "", nil
+	} else if err != nil {
+		return false, "", err
+	}
+	return true, lockerID, nil
 }
 
 func (kv *memKV) LockWithTimeout(
