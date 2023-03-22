@@ -194,7 +194,7 @@ func New(
 		domain = domain + "/"
 	}
 	return &etcdKV{
-		common.BaseKvdb{FatalCb: fatalErrorCb},
+		common.BaseKvdb{FatalCb: fatalErrorCb, LockTryDuration: kvdb.DefaultLockTryDuration},
 		kvClient,
 		e.NewAuth(kvClient),
 		mClient,
@@ -700,7 +700,7 @@ func (et *etcdKV) LockWithID(key string, lockerID string) (
 	*kvdb.KVPair,
 	error,
 ) {
-	return et.LockWithTimeout(key, lockerID, kvdb.DefaultLockTryDuration, et.GetLockTimeout())
+	return et.LockWithTimeout(key, lockerID, et.LockTryDuration, et.GetLockHoldDuration())
 }
 
 func (et *etcdKV) LockWithTimeout(
@@ -736,6 +736,22 @@ func (et *etcdKV) LockWithTimeout(
 	kvPair.Lock = &ec.EtcdLock{Done: make(chan struct{}), AcquisitionTime: time.Now()}
 	go et.refreshLock(kvPair, lockerID, lockHoldDuration)
 	return kvPair, err
+}
+
+func (et *etcdKV) IsKeyLocked(key string) (bool, string, error) {
+	key = et.domain + key
+	kvPair, err := et.Get(key)
+	if err == kvdb.ErrNotFound {
+		return false, "", nil
+	} else if err != nil {
+		return false, "", err
+	}
+	var lockIdInfo ec.LockerIDInfo
+	err = json.Unmarshal(kvPair.Value, &lockIdInfo)
+	if err != nil {
+		return false, "", kvdb.ErrInvalidLock
+	}
+	return true, lockIdInfo.LockerID, nil
 }
 
 func (et *etcdKV) Unlock(kvp *kvdb.KVPair) error {

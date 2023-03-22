@@ -861,7 +861,7 @@ func (kv *boltKV) LockWithID(
 	key string,
 	lockerID string,
 ) (*kvdb.KVPair, error) {
-	return kv.LockWithTimeout(key, lockerID, kvdb.DefaultLockTryDuration, kv.GetLockTimeout())
+	return kv.LockWithTimeout(key, lockerID, kvdb.DefaultLockTryDuration, kv.GetLockHoldDuration())
 }
 
 func (kv *boltKV) LockWithTimeout(
@@ -946,6 +946,10 @@ func (kv *boltKV) EnumerateWithSelect(
 	copySelect kvdb.CopySelect,
 ) ([]interface{}, error) {
 	return nil, kvdb.ErrNotSupported
+}
+
+func (kv *boltKV) IsKeyLocked(key string) (bool, string, error) {
+	return false, "", kvdb.ErrNotSupported
 }
 
 func (kv *boltKV) EnumerateKVPWithSelect(

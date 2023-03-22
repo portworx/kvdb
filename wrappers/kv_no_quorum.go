@@ -13,6 +13,7 @@ type noKvdbQuorumWrapper struct {
 	randGen *rand.Rand
 }
 
+
 // NewNoKvdbQuorumWrapper constructs a new kvdb.Kvdb.
 func NewNoKvdbQuorumWrapper(
 	kv kvdb.Kvdb,
@@ -75,6 +76,10 @@ func (k *noKvdbQuorumWrapper) Update(
 	ttl uint64,
 ) (*kvdb.KVPair, error) {
 	return nil, kvdb.ErrNoQuorum
+}
+
+func (k *noKvdbQuorumWrapper) GetLockTryDuration() time.Duration{
+	return k.wrappedKvdb.GetLockTryDuration()
 }
 
 func (k *noKvdbQuorumWrapper) Enumerate(prefix string) (kvdb.KVPairs, error) {
@@ -142,6 +147,10 @@ func (k *noKvdbQuorumWrapper) Compact(
 
 func (k *noKvdbQuorumWrapper) Lock(key string) (*kvdb.KVPair, error) {
 	return nil, kvdb.ErrNoQuorum
+}
+
+func (k *noKvdbQuorumWrapper) IsKeyLocked(key string) (bool, string, error) {
+	return false, "", kvdb.ErrNoQuorum
 }
 
 func (k *noKvdbQuorumWrapper) LockWithID(
@@ -223,12 +232,12 @@ func (k *noKvdbQuorumWrapper) SetFatalCb(f kvdb.FatalErrorCB) {
 	k.wrappedKvdb.SetFatalCb(f)
 }
 
-func (k *noKvdbQuorumWrapper) SetLockTimeout(timeout time.Duration) {
-	k.wrappedKvdb.SetLockTimeout(timeout)
+func (k *noKvdbQuorumWrapper) SetLockHoldDuration(timeout time.Duration) {
+	k.wrappedKvdb.SetLockHoldDuration(timeout)
 }
 
-func (k *noKvdbQuorumWrapper) GetLockTimeout() time.Duration {
-	return k.wrappedKvdb.GetLockTimeout()
+func (k *noKvdbQuorumWrapper) GetLockHoldDuration() time.Duration {
+	return k.wrappedKvdb.GetLockHoldDuration()
 }
 
 func (k *noKvdbQuorumWrapper) Serialize() ([]byte, error) {
