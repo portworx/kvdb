@@ -92,7 +92,8 @@ func newClient(
 
 	return &zookeeperKV{
 		BaseKvdb: common.BaseKvdb{
-			FatalCb: fatalErrorCb,
+			FatalCb:         fatalErrorCb,
+			LockTryDuration: kvdb.DefaultLockTryDuration,
 		},
 		client:     zkClient,
 		domain:     domain,
@@ -464,7 +465,7 @@ func (z *zookeeperKV) Lock(key string) (*kvdb.KVPair, error) {
 }
 
 func (z *zookeeperKV) LockWithID(key, lockerID string) (*kvdb.KVPair, error) {
-	return z.LockWithTimeout(key, lockerID, kvdb.DefaultLockTryDuration, z.GetLockTimeout())
+	return z.LockWithTimeout(key, lockerID, z.LockTryDuration, z.GetLockHoldDuration())
 }
 
 func (z *zookeeperKV) LockWithTimeout(
@@ -500,6 +501,10 @@ func (z *zookeeperKV) LockWithTimeout(
 	kvPair.Lock = &zookeeperLock{Done: make(chan struct{})}
 	go z.waitForUnlock(kvPair, lockerID, lockHoldDuration)
 	return kvPair, err
+}
+
+func (z *zookeeperKV) IsKeyLocked(key string) (bool, string, error) {
+	return false, "", kvdb.ErrNotSupported
 }
 
 func (z *zookeeperKV) waitForUnlock(

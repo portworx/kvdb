@@ -151,7 +151,7 @@ func testLockBetweenClientRestarts(t *testing.T) {
 	assert.NoError(t, err, "Unable to create a client")
 	assert.NotNil(t, zk)
 
-	zk.SetLockTimeout(time.Minute)
+	zk.SetLockHoldDuration(time.Minute)
 
 	// Lock before restarting client
 	kvPair, err := zk.Lock("lock_key")
@@ -189,7 +189,7 @@ func testLockWithIDBetweenClientRestarts(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, zk)
 
-	zk.SetLockTimeout(time.Minute)
+	zk.SetLockHoldDuration(time.Minute)
 
 	// Lock before restarting client
 	kvPair, err := zk.LockWithID("lock_key", "lock_with_id")
@@ -227,7 +227,7 @@ func testLockWithTimeoutBetweenClientRestarts(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, zk)
 
-	zk.SetLockTimeout(time.Minute)
+	zk.SetLockHoldDuration(time.Minute)
 
 	// Lock before restarting client
 	kvPair, err := zk.LockWithTimeout("lock_key", "lock_with_id",

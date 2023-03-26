@@ -291,6 +291,10 @@ func (k *logKvWrapper) LockWithID(
 	return pair, err
 }
 
+func (k *logKvWrapper) IsKeyLocked(key string) (bool, string, error) {
+	return k.wrappedKvdb.IsKeyLocked(key)
+}
+
 func (k *logKvWrapper) LockWithTimeout(
 	key string,
 	lockerID string,
@@ -423,12 +427,16 @@ func (k *logKvWrapper) SetFatalCb(f kvdb.FatalErrorCB) {
 	k.wrappedKvdb.SetFatalCb(f)
 }
 
-func (k *logKvWrapper) SetLockTimeout(timeout time.Duration) {
-	k.wrappedKvdb.SetLockTimeout(timeout)
+func (k *logKvWrapper) SetLockHoldDuration(timeout time.Duration) {
+	k.wrappedKvdb.SetLockHoldDuration(timeout)
 }
 
-func (k *logKvWrapper) GetLockTimeout() time.Duration {
-	return k.wrappedKvdb.GetLockTimeout()
+func (k *logKvWrapper) GetLockTryDuration() time.Duration{
+	return k.wrappedKvdb.GetLockTryDuration()
+}
+
+func (k *logKvWrapper) GetLockHoldDuration() time.Duration {
+	return k.wrappedKvdb.GetLockHoldDuration()
 }
 
 func (k *logKvWrapper) Serialize() ([]byte, error) {

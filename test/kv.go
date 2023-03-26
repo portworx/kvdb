@@ -746,7 +746,7 @@ func lock(kv kvdb.Kvdb, t *testing.T) {
 	lockMethods := getLockMethods(kv)
 
 	for _, lockMethod := range lockMethods {
-		kv.SetLockTimeout(time.Duration(0))
+		kv.SetLockHoldDuration(time.Duration(0))
 		fmt.Println("lock")
 
 		key := "locktest"
@@ -836,13 +836,13 @@ func lock(kv kvdb.Kvdb, t *testing.T) {
 			lockTimedout = true
 		}
 		kv.SetFatalCb(fatalLockCb)
-		kv.SetLockTimeout(5 * time.Second)
-		assert.Equal(t, kv.GetLockTimeout(), 5*time.Second, "get lock timeout")
+		kv.SetLockHoldDuration(5 * time.Second)
+		assert.Equal(t, kv.GetLockHoldDuration(), 5*time.Second, "get lock timeout")
 		kvPair2, err = lockMethod("key2")
 		time.Sleep(15 * time.Second)
 		assert.True(t, lockTimedout, "lock timeout not called")
 		err = kv.Unlock(kvPair2)
-		kv.SetLockTimeout(5 * time.Second)
+		kv.SetLockHoldDuration(5 * time.Second)
 	}
 }
 
