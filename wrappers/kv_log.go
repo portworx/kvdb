@@ -431,7 +431,7 @@ func (k *logKvWrapper) SetLockHoldDuration(timeout time.Duration) {
 	k.wrappedKvdb.SetLockHoldDuration(timeout)
 }
 
-func (k *logKvWrapper) GetLockTryDuration() time.Duration{
+func (k *logKvWrapper) GetLockTryDuration() time.Duration {
 	return k.wrappedKvdb.GetLockTryDuration()
 }
 
@@ -466,6 +466,15 @@ func (k *logKvWrapper) RemoveMember(nodeName, nodeIP string) error {
 	return err
 }
 
+func (k *logKvWrapper) RemoveMemberByID(removeMemberID uint64) error {
+	err := k.wrappedKvdb.RemoveMemberByID(removeMemberID)
+	k.logger.WithFields(logrus.Fields{
+		opType:    "RemoveMemberByID",
+		errString: err,
+	}).Info()
+	return err
+}
+
 func (k *logKvWrapper) UpdateMember(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error) {
 	members, err := k.wrappedKvdb.UpdateMember(nodeIP, nodePeerPort, nodeName)
 	k.logger.WithFields(logrus.Fields{
@@ -476,7 +485,7 @@ func (k *logKvWrapper) UpdateMember(nodeIP, nodePeerPort, nodeName string) (map[
 	return members, err
 }
 
-func (k *logKvWrapper) ListMembers() (map[string]*kvdb.MemberInfo, error) {
+func (k *logKvWrapper) ListMembers() (map[uint64]*kvdb.MemberInfo, error) {
 	members, err := k.wrappedKvdb.ListMembers()
 	k.logger.WithFields(logrus.Fields{
 		opType:    "ListMembers",
