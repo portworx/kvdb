@@ -1484,6 +1484,10 @@ func (et *etcdKV) RemoveMember(
 	et.kvClient.SetEndpoints(newClientUrls...)
 	et.maintenanceClient.SetEndpoints(newClientUrls...)
 
+	if removeMemberID == uint64(0) {
+		// Member not found. No need to remove it
+		return nil
+	}
 	return et.removeMember(removeMemberID)
 }
 
@@ -1536,6 +1540,7 @@ func (et *etcdKV) RemoveMemberByID(
 		if member.ID == removeMemberID {
 			found = true
 			removeMemberClientURLs = append(removeMemberClientURLs, member.ClientURLs...)
+			break
 		}
 	}
 	if !found {
@@ -1551,6 +1556,7 @@ func (et *etcdKV) RemoveMemberByID(
 		for _, removeClientURL := range removeMemberClientURLs {
 			if removeClientURL == currentEndpoint {
 				found = true
+				break
 			}
 		}
 		if !found {
