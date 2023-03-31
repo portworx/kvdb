@@ -46,8 +46,8 @@ const (
 
 var (
 	defaultMachines = []string{"http://127.0.0.1:2379", "http://[::1]:2379"}
-	// maintenanceClientLock is a lock over the maintenanceClient
-	maintenanceClientLock sync.Mutex
+	// mLock is a lock over the maintenanceClient
+	mLock sync.Mutex
 )
 
 // watchQ to collect updates without blocking
@@ -1455,6 +1455,7 @@ func (et *etcdKV) RemoveMember(
 	nodeName string,
 	nodeIP string,
 ) error {
+	fn := "RemoveMember"
 	ctx, cancel := et.MaintenanceContextWithLeader()
 	memberListResponse, err := et.kvClient.MemberList(ctx)
 	cancel()
@@ -1483,19 +1484,9 @@ func (et *etcdKV) RemoveMember(
 	}
 	et.kvClient.SetEndpoints(newClientUrls...)
 	et.maintenanceClient.SetEndpoints(newClientUrls...)
-
-	if removeMemberID == uint64(0) {
-		// Member not found. No need to remove it
-		return nil
-	}
-	return et.removeMember(removeMemberID)
-}
-
-func (et *etcdKV) removeMember(removeMemberID uint64) error {
-	fn := "removeMember"
 	removeMemberRetries := 5
 	for i := 0; i < removeMemberRetries; i++ {
-		ctx, cancel := et.MaintenanceContextWithLeader()
+		ctx, cancel = et.MaintenanceContextWithLeader()
 		_, err := et.kvClient.MemberRemove(ctx, removeMemberID)
 		cancel()
 
@@ -1506,13 +1497,13 @@ func (et *etcdKV) removeMember(removeMemberID uint64) error {
 				return nil
 			}
 			// Check if we need to retry
-			retry, err := isRetryNeeded(err, fn, "", i)
+			retry, err := isRetryNeeded(err, fn, nodeName, i)
 			if !retry {
 				// For all others return immediately
 				return err
 			}
 			if i == (removeMemberRetries - 1) {
-				return fmt.Errorf("too many retries for RemoveMember: %v", removeMemberID)
+				return fmt.Errorf("too many retries for RemoveMember: %v %v", nodeName, nodeIP)
 			}
 			time.Sleep(2 * time.Second)
 			continue
@@ -1522,55 +1513,7 @@ func (et *etcdKV) removeMember(removeMemberID uint64) error {
 	return nil
 }
 
-func (et *etcdKV) RemoveMemberByID(
-	removeMemberID uint64,
-) error {
-	ctx, cancel := et.MaintenanceContextWithLeader()
-	memberListResponse, err := et.kvClient.MemberList(ctx)
-	cancel()
-	if err != nil {
-		return err
-	}
-	var (
-		removeMemberClientURLs, newClientURLs []string
-		found                                 bool
-	)
-
-	for _, member := range memberListResponse.Members {
-		if member.ID == removeMemberID {
-			found = true
-			removeMemberClientURLs = append(removeMemberClientURLs, member.ClientURLs...)
-			break
-		}
-	}
-	if !found {
-		// Member does not exist
-		return nil
-	}
-	currentEndpoints := et.kvClient.Endpoints()
-
-	// Remove the clientURLs for the member which is being removed from
-	// the active set of endpoints
-	for _, currentEndpoint := range currentEndpoints {
-		found := false
-		for _, removeClientURL := range removeMemberClientURLs {
-			if removeClientURL == currentEndpoint {
-				found = true
-				break
-			}
-		}
-		if !found {
-			newClientURLs = append(newClientURLs, currentEndpoint)
-		}
-	}
-
-	et.kvClient.SetEndpoints(newClientURLs...)
-	et.maintenanceClient.SetEndpoints(newClientURLs...)
-
-	return et.removeMember(removeMemberID)
-}
-
-func (et *etcdKV) ListMembers() (map[uint64]*kvdb.MemberInfo, error) {
+func (et *etcdKV) ListMembers() (map[string]*kvdb.MemberInfo, error) {
 	var (
 		fnMemberStatus = func(cliURL string) (*kvdb.MemberInfo, uint64, error) {
 			if cliURL == "" {
@@ -1606,8 +1549,8 @@ func (et *etcdKV) ListMembers() (map[uint64]*kvdb.MemberInfo, error) {
 	}
 
 	membersMap := make(map[uint64]*kvdb.MemberInfo)
-	maintenanceClientLock.Lock()
-	defer maintenanceClientLock.Unlock()
+	mLock.Lock()
+	defer mLock.Unlock()
 
 	// Get status from Endpoints
 	for _, ep := range et.GetEndpoints() {
@@ -1634,24 +1577,22 @@ func (et *etcdKV) ListMembers() (map[uint64]*kvdb.MemberInfo, error) {
 		}
 	}
 
-	// Fill in other details in the MemberInfo object
+	// Fill PeerURLs; also, remap with "Name" as a key
+	resp := make(map[string]*kvdb.MemberInfo)
 	for _, member := range memberListResponse.Members {
 		if mi, has := membersMap[member.ID]; has {
 			mi.PeerUrls = member.PeerURLs
-			mi.Name = member.Name
-			mi.HasStarted = len(member.Name) > 0
+			resp[member.Name] = mi
 		} else {
 			// no status -- add "blank" MemberInfo
-			membersMap[member.ID] = &kvdb.MemberInfo{
-				PeerUrls:   member.PeerURLs,
-				Name:       member.Name,
-				HasStarted: len(member.Name) > 0,
-				ID:         strconv.FormatUint(member.ID, 16),
+			resp[member.Name] = &kvdb.MemberInfo{
+				PeerUrls: member.PeerURLs,
+				ID:       strconv.FormatUint(member.ID, 16),
 			}
 		}
 	}
 
-	return membersMap, nil
+	return resp, nil
 }
 
 func (et *etcdKV) Serialize() ([]byte, error) {
