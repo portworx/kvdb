@@ -370,7 +370,7 @@ func deleteTree(kv kvdb.Kvdb, t *testing.T) {
 	prefix := "tree"
 	keys := map[string]string{
 		prefix + "/1cbc9a98-072a-4793-8608-01ab43db96c8": "bar",
-		prefix + "/foo":                                  "baz",
+		prefix + "/foo": "baz",
 	}
 
 	for key, val := range keys {
@@ -407,7 +407,7 @@ func enumerate(kv kvdb.Kvdb, t *testing.T) {
 	prefix := "enumerate"
 	keys := map[string]string{
 		prefix + "/1cbc9a98-072a-4793-8608-01ab43db96c8": "bar",
-		prefix + "/foo":                                  "baz",
+		prefix + "/foo": "baz",
 	}
 
 	kv.DeleteTree(prefix)
