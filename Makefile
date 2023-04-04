@@ -1,35 +1,33 @@
 ifndef PKGS
-PKGS := $(shell go list ./... 2>&1 | grep -v test)
+PKGS := $(shell go list ./... 2>&1 | grep -v test | grep -v vendor)
 endif
+
+HAS_ERRCHECK := $(shell command -v errcheck 2> /dev/null)
 
 all: test
 
-deps:
-	dep ensure -v
+vendor:
+	go mod download
+	go mod tidy -compat=1.17
+	go mod vendor
 
-updatedeps:
-	dep ensure -update -v
+build:
+	@echo ">>> go build"
+	go build $(PKGS)
 
-build: deps
-	go build ./...
-
-install: deps
-	go install ./...
-
-lint:
-	go get -v github.com/golang/lint/golint
-	for file in $$(find . -name '*.go' | grep -v '\.pb\.go' | grep -v '\.pb\.gw\.go'); do \
-		golint $${file}; \
-		if [ -n "$$(golint $${file})" ]; then \
-			exit 1; \
-		fi; \
-	done
+install:
+	@echo ">>> go install"
+	go install $(PKGS)
 
 vet:
-	go vet ./...
+	@echo ">>> go vet"
+	go vet $(PKGS)
 
 errcheck:
-	go get -v github.com/kisielk/errcheck
+ifndef HAS_ERRCHECK
+	-GO111MODULE=off go get -u github.com/kisielk/errcheck
+endif
+	@echo ">>> errcheck"
 	errcheck \
 		github.com/portworx/kvdb \
 		github.com/portworx/kvdb/common \
@@ -38,11 +36,12 @@ errcheck:
 		github.com/portworx/kvdb/wrappers \
 		github.com/portworx/kvdb/zookeeper
 
-pretest: deps errcheck lint vet
+pretest: errcheck vet
 
 gotest:
 	for pkg in $(PKGS); \
 		do \
+			echo ">>> Testing $${pkg}"; \
 			go test --timeout 1h -v -tags unittest -coverprofile=profile.out -covermode=atomic $(BUILD_OPTIONS) $${pkg} || exit 1; \
 			if [ -f profile.out ]; then \
 				cat profile.out >> coverage.txt; \
@@ -66,11 +65,9 @@ clean:
 
 .PHONY: \
 	all \
-	deps \
-	updatedeps \
+	vendor \
 	build \
 	install \
-	lint \
 	vet \
 	errcheck \
 	pretest \
