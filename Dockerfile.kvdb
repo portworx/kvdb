@@ -15,7 +15,7 @@ RUN apt-get update && \
 
 
 RUN curl -s -L https://dl.google.com/go/go1.17.13.linux-amd64.tar.gz | tar -C /usr/local/ -xz  && \
-  curl -s -L https://github.com/coreos/etcd/releases/download/v3.4.24/etcd-v3.4.24-linux-amd64.tar.gz -o /tmp/etcd-v3.4.24-linux-amd64.tar.gz  && \
+  curl -s -L https://github.com/etcd-io/etcd/releases/download/v3.4.24/etcd-v3.4.24-linux-amd64.tar.gz -o /tmp/etcd-v3.4.24-linux-amd64.tar.gz  && \
   mkdir -p /tmp/test-etcd && tar xzvf /tmp/etcd-v3.4.24-linux-amd64.tar.gz -C /tmp/test-etcd --strip-components=1 && cp /tmp/test-etcd/etcd /usr/local/bin  && \
   curl -s -L https://releases.hashicorp.com/consul/1.0.0/consul_1.0.0_linux_amd64.zip -o /tmp/consul.zip && \
   mkdir -p /tmp/test-consul && unzip /tmp/consul.zip -d /tmp/test-consul && cp /tmp/test-consul/consul /usr/local/bin/ && \
