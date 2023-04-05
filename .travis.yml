@@ -6,7 +6,7 @@ language: go
 go:
 - 1.17.13
 install:
-- go get -u github.com/vbatts/git-validation
+- go install github.com/vbatts/git-validation@master
 script:
 - git-validation -run DCO,short-subject
 - make docker-test

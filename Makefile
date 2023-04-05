@@ -1,6 +1,7 @@
 ifndef PKGS
-PKGS := $(shell go list ./... 2>&1 | grep -v test | grep -v vendor)
+PKGS := $(shell go list ./... 2>&1 | grep -v test)
 endif
+$(info PKGS=$(PKGS))
 
 HAS_ERRCHECK := $(shell command -v errcheck 2> /dev/null)
 
@@ -39,6 +40,10 @@ endif
 pretest: errcheck vet
 
 gotest:
+	@echo ">>> gotest"
+ifeq ($(PKGS),"")
+	$(error Error: No packages found to test)
+endif
 	for pkg in $(PKGS); \
 		do \
 			echo ">>> Testing $${pkg}"; \
