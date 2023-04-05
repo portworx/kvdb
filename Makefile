@@ -25,7 +25,7 @@ vet:
 
 errcheck:
 ifndef HAS_ERRCHECK
-	-GO111MODULE=off go get -u github.com/kisielk/errcheck
+	go install github.com/kisielk/errcheck@latest
 endif
 	@echo ">>> errcheck"
 	errcheck \
