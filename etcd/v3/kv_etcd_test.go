@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coreos/etcd/etcdserver"
-	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
+	"go.etcd.io/etcd/etcdserver"
+	"go.etcd.io/etcd/etcdserver/api/v3rpc/rpctypes"
 	"github.com/portworx/kvdb"
 	"github.com/portworx/kvdb/etcd/common"
 	"github.com/portworx/kvdb/test"
