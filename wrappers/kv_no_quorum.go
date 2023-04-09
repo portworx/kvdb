@@ -13,7 +13,6 @@ type noKvdbQuorumWrapper struct {
 	randGen *rand.Rand
 }
 
-
 // NewNoKvdbQuorumWrapper constructs a new kvdb.Kvdb.
 func NewNoKvdbQuorumWrapper(
 	kv kvdb.Kvdb,
@@ -78,7 +77,7 @@ func (k *noKvdbQuorumWrapper) Update(
 	return nil, kvdb.ErrNoQuorum
 }
 
-func (k *noKvdbQuorumWrapper) GetLockTryDuration() time.Duration{
+func (k *noKvdbQuorumWrapper) GetLockTryDuration() time.Duration {
 	return k.wrappedKvdb.GetLockTryDuration()
 }
 
@@ -256,11 +255,15 @@ func (k *noKvdbQuorumWrapper) RemoveMember(nodeName, nodeIP string) error {
 	return kvdb.ErrNoQuorum
 }
 
+func (k *noKvdbQuorumWrapper) RemoveMemberByID(removeMemberID uint64) error {
+	return kvdb.ErrNoQuorum
+}
+
 func (k *noKvdbQuorumWrapper) UpdateMember(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error) {
 	return k.wrappedKvdb.UpdateMember(nodeIP, nodePeerPort, nodeName)
 }
 
-func (k *noKvdbQuorumWrapper) ListMembers() (map[string]*kvdb.MemberInfo, error) {
+func (k *noKvdbQuorumWrapper) ListMembers() (map[uint64]*kvdb.MemberInfo, error) {
 	return k.wrappedKvdb.ListMembers()
 }
 

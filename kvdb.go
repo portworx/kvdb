@@ -315,12 +315,12 @@ type Kvdb interface {
 	Snapshot(prefixes []string, consistent bool) (Kvdb, uint64, error)
 	// SnapPut records the key value pair including the index.
 	SnapPut(kvp *KVPair) (*KVPair, error)
-	// Lock specfied key and associate a lockerID with it, probably to identify
+	// LockWithID locks the specified key and associates a lockerID with it, probably to identify
 	// who acquired the lock. The KVPair returned should be used to unlock.
 	LockWithID(key string, lockerID string) (*KVPair, error)
-	// Lock specfied key. The KVPair returned should be used to unlock.
+	// Lock locks the specified key. The KVPair returned should be used to unlock.
 	Lock(key string) (*KVPair, error)
-	// Lock with specified key and associate a lockerID with it.
+	// LockWithTimeout locks with specified key and associates a lockerID with it.
 	// lockTryDuration is the maximum time that can be spent trying to acquire
 	// lock, else return error.
 	// lockHoldDuration is the maximum time the lock can be held, after which
@@ -407,33 +407,48 @@ const (
 
 // MemberInfo represents a member of the kvdb cluster
 type MemberInfo struct {
-	PeerUrls   []string
+	// PeerUrls is this member's URL on which it talks to its peers
+	PeerUrls []string
+	// ClientUrls is this member's URL on which clients can reach this member.
 	ClientUrls []string
-	Leader     bool
-	DbSize     int64
-	IsHealthy  bool
-	ID         string
+	// Leader indicates if this member is the leader of this cluster.
+	Leader bool
+	// DbSize is the current DB size as seen by this member.
+	DbSize int64
+	// IsHealthy indicates the health of the member.
+	IsHealthy bool
+	// ID is the string representation of member's ID
+	ID string
+	// Name of the member. A member which has not started has an empty Name.
+	Name string
+	// HasStarted indicates if this member has successfully started kvdb.
+	HasStarted bool
 }
 
 // Controller interface provides APIs to manage Kvdb Cluster and Kvdb Clients.
 type Controller interface {
-	// AddMember adds a new member to an existing kvdb cluster. Add should be
-	// called on a kvdb node where kvdb is already running. It should be
-	// followed by a Setup call on the actual node
-	// Returns: map of nodeID to peerUrls of all members in the initial cluster or error
+	// AddMember adds a new member to an existing kvdb cluster. Add API should be
+	// invoked on an existing kvdb node where kvdb is already running. It should be
+	// followed by a Setup call on the node which is being added.
+	// Returns: map of nodeID to peerUrls of all members in the initial cluster or error.
 	AddMember(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error)
 
-	// RemoveMember removes a member from an existing kvdb cluster
+	// RemoveMember removes a member based on its Name from an existing kvdb cluster.
 	// Returns: error if it fails to remove a member
 	RemoveMember(nodeName, nodeIP string) error
+
+	// RemoveMemberByID removes a member based on its ID from an existing kvdb cluster.
+	// Returns: error if it fails to remove a member
+	RemoveMemberByID(memberID uint64) error
 
 	// UpdateMember updates the IP for the given node in an existing kvdb cluster
 	// Returns: map of nodeID to peerUrls of all members from the existing cluster
 	UpdateMember(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error)
 
-	// ListMembers enumerates the members of the kvdb cluster
-	// Returns: the nodeID  to memberInfo mappings of all the members
-	ListMembers() (map[string]*MemberInfo, error)
+	// ListMembers enumerates the members of the kvdb cluster. It includes both the
+	// started and unstarted members.
+	// Returns: the member's ID  to MemberInfo mappings for all the members
+	ListMembers() (map[uint64]*MemberInfo, error)
 
 	// SetEndpoints set the kvdb endpoints for the client
 	SetEndpoints(endpoints []string) error
