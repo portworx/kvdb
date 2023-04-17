@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 
+	_ "github.com/golang/mock/mockgen/model"
 	"github.com/sirupsen/logrus"
 )
 
@@ -257,6 +258,8 @@ type Tx interface {
 }
 
 // Kvdb interface implemented by backing datastores.
+//
+//go:generate mockgen -package=mock -destination=mock/mock_kvdb.go . Kvdb
 type Kvdb interface {
 	Controller
 	// String representation of backend datastore.
