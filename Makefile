@@ -1,5 +1,5 @@
 ifndef PKGS
-PKGS := $(shell go list ./... 2>&1 | grep -v test)
+PKGS := $(shell go list ./... 2>&1 | grep -v test | grep -v mock)
 endif
 $(info PKGS=$(PKGS))
 
@@ -64,6 +64,9 @@ docker-test:
 		-v $(GOPATH)/src/github.com/portworx/kvdb:/go/src/github.com/portworx/kvdb \
 		portworx/kvdb:test_container \
 		make gotest
+
+mockgen:
+	go generate -x ./...
 
 clean:
 	go clean -i ./...
