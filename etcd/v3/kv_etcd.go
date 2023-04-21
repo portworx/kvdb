@@ -1389,9 +1389,31 @@ func (et *etcdKV) AddMember(
 	nodePeerPort string,
 	nodeName string,
 ) (map[string][]string, error) {
+	return et.addMember(nodeIP, nodePeerPort, nodeName, false)
+}
+
+func (et *etcdKV) AddLearner(
+	nodeIP string,
+	nodePeerPort string,
+	nodeName string,
+) (map[string][]string, error) {
+	return et.addMember(nodeIP, nodePeerPort, nodeName, true)
+}
+
+func (et *etcdKV) addMember(
+	nodeIP string,
+	nodePeerPort string,
+	nodeName string,
+	isLearner bool,
+) (map[string][]string, error) {
+	var err error
 	peerURLs := et.listenPeerUrls(nodeIP, nodePeerPort)
 	ctx, cancel := et.MaintenanceContextWithLeader()
-	_, err := et.kvClient.MemberAdd(ctx, peerURLs)
+	if isLearner {
+		_, err = et.kvClient.MemberAddAsLearner(ctx, peerURLs)
+	} else {
+		_, err = et.kvClient.MemberAdd(ctx, peerURLs)
+	}
 	cancel()
 	if err != nil {
 		return nil, err
