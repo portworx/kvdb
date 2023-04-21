@@ -12,6 +12,10 @@ func (c *controllerNotSupported) AddMember(nodeIP, nodePeerPort, nodeName string
 	return nil, ErrNotSupported
 }
 
+func (c *controllerNotSupported) AddLearner(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error) {
+	return nil, ErrNotSupported
+}
+
 func (c *controllerNotSupported) RemoveMember(nodeID string, nodeIP string) error {
 	return ErrNotSupported
 }

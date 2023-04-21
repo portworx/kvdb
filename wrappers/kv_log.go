@@ -457,6 +457,16 @@ func (k *logKvWrapper) AddMember(nodeIP, nodePeerPort, nodeName string) (map[str
 	return members, err
 }
 
+func (k *logKvWrapper) AddLearner(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error) {
+	members, err := k.wrappedKvdb.AddLearner(nodeIP, nodePeerPort, nodeName)
+	k.logger.WithFields(logrus.Fields{
+		opType:    "AddLearner",
+		output:    members,
+		errString: err,
+	}).Info()
+	return members, err
+}
+
 func (k *logKvWrapper) RemoveMember(nodeName, nodeIP string) error {
 	err := k.wrappedKvdb.RemoveMember(nodeName, nodeIP)
 	k.logger.WithFields(logrus.Fields{

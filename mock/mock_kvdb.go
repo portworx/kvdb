@@ -35,6 +35,21 @@ func (m *MockKvdb) EXPECT() *MockKvdbMockRecorder {
 	return m.recorder
 }
 
+// AddLearner mocks base method.
+func (m *MockKvdb) AddLearner(arg0, arg1, arg2 string) (map[string][]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddLearner", arg0, arg1, arg2)
+	ret0, _ := ret[0].(map[string][]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AddLearner indicates an expected call of AddLearner.
+func (mr *MockKvdbMockRecorder) AddLearner(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddLearner", reflect.TypeOf((*MockKvdb)(nil).AddLearner), arg0, arg1, arg2)
+}
+
 // AddMember mocks base method.
 func (m *MockKvdb) AddMember(arg0, arg1, arg2 string) (map[string][]string, error) {
 	m.ctrl.T.Helper()

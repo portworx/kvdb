@@ -436,6 +436,10 @@ type Controller interface {
 	// Returns: map of nodeID to peerUrls of all members in the initial cluster or error.
 	AddMember(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error)
 
+	// AddLearner is same as AddMember except that the new member is added as a learner.
+	// It is caller's responsibility to promote it to a full voting member.
+	AddLearner(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error)
+
 	// RemoveMember removes a member based on its Name from an existing kvdb cluster.
 	// Returns: error if it fails to remove a member
 	RemoveMember(nodeName, nodeIP string) error

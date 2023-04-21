@@ -251,6 +251,10 @@ func (k *noKvdbQuorumWrapper) AddMember(nodeIP, nodePeerPort, nodeName string) (
 	return nil, kvdb.ErrNoQuorum
 }
 
+func (k *noKvdbQuorumWrapper) AddLearner(nodeIP, nodePeerPort, nodeName string) (map[string][]string, error) {
+	return nil, kvdb.ErrNoQuorum
+}
+
 func (k *noKvdbQuorumWrapper) RemoveMember(nodeName, nodeIP string) error {
 	return kvdb.ErrNoQuorum
 }
