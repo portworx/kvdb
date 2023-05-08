@@ -20,6 +20,7 @@ import (
 	"go.etcd.io/etcd/etcdserver/api/v3rpc/rpctypes"
 	"go.etcd.io/etcd/mvcc/mvccpb"
 	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 )
 
 const (
@@ -151,6 +152,12 @@ func New(
 		TLS:                  tlsCfg,
 		DialKeepAliveTime:    defaultKeepAliveTime,
 		DialKeepAliveTimeout: defaultKeepAliveTimeout,
+
+		// As per the comment in go.etcd.io/etcd/clientv3/config.go, we need to pass "grpc.WithBlock()"
+		// to block until the underlying connection is up. Without this, Dial returns immediately and
+		// connecting the server happens in background. This is a behavior change in 3.4.
+		// We use WithBlock to preserve the old behavior.
+		DialOptions: []grpc.DialOption{grpc.WithBlock()},
 
 		// The time required for a request to fail - 30 sec
 		//HeaderTimeoutPerRequest: time.Duration(10) * time.Second,
