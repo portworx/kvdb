@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/portworx/kvdb"
 	"go.etcd.io/etcd/pkg/transport"
 	"go.etcd.io/etcd/version"
-	"github.com/portworx/kvdb"
 )
 
 const (
@@ -103,6 +103,7 @@ func (ec *etcdCommon) GetAuthInfoFromOptions() (transport.TLSInfo, string, strin
 	var (
 		username       string
 		password       string
+		caFile         string
 		certFile       string
 		keyFile        string
 		trustedCAFile  string
@@ -115,6 +116,8 @@ func (ec *etcdCommon) GetAuthInfoFromOptions() (transport.TLSInfo, string, strin
 		username = ec.options[kvdb.UsernameKey]
 		// Check if password provided
 		password = ec.options[kvdb.PasswordKey]
+		// Check if CA file provided
+		caFile = ec.options[kvdb.CAFileKey]
 		// Check if certificate file provided
 		certFile = ec.options[kvdb.CertFileKey]
 		// Check if certificate key is provided
@@ -131,6 +134,9 @@ func (ec *etcdCommon) GetAuthInfoFromOptions() (transport.TLSInfo, string, strin
 				clientCertAuth = false
 			}
 		}
+	}
+	if trustedCAFile == "" && caFile != "" {
+		trustedCAFile = caFile
 	}
 	t := transport.TLSInfo{
 		CertFile:       certFile,
