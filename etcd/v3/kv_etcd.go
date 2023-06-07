@@ -1440,6 +1440,10 @@ func (et *etcdKV) addMember(
 			resp[member.Name] = member.PeerURLs
 		}
 	}
+	if _, ok := resp[nodeName]; !ok {
+		logrus.Warnf("%s not found in kvdb memberlist. Adding it explicitly.", nodeName)
+		resp[nodeName] = peerURLs
+	}
 	return resp, nil
 }
 
