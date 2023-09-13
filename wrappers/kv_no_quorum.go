@@ -169,6 +169,9 @@ func (k *noKvdbQuorumWrapper) LockWithTimeout(
 }
 
 func (k *noKvdbQuorumWrapper) Unlock(kvp *kvdb.KVPair) error {
+	if kvp == nil {
+		return kvdb.ErrEmptyValue
+	}
 	return k.wrappedKvdb.Unlock(kvp)
 }
 
