@@ -79,6 +79,7 @@ func Run(datastoreInit kvdb.DatastoreInit, t *testing.T, start StartKvdb, stop S
 	watchTree(kv, t)
 	watchWithIndex(kv, t)
 	collect(kv, t)
+	lockTimeoutError(kv, t)
 	lockBasic(kv, t)
 	lock(kv, t)
 	lockBetweenRestarts(kv, t, start, stop)
@@ -883,8 +884,43 @@ func lockBetweenRestarts(kv kvdb.Kvdb, t *testing.T, start StartKvdb, stop StopK
 	}
 }
 
-func lockBasic(kv kvdb.Kvdb, t *testing.T) {
+func getTimeoutLock(kv kvdb.Kvdb, key string, lockerID string, tryDuration time.Duration, holdDuration time.Duration, kvChan chan *kvdb.KVPair, errChan chan error) {
+	kvPair, err := kv.LockWithTimeout(key, lockerID, tryDuration, holdDuration)
+	kvChan <- kvPair
+	errChan <- err
+}
 
+func lockTimeoutError(kv kvdb.Kvdb, t *testing.T) {
+	fmt.Println("lockTimeoutError() started")
+
+	kvChan := make(chan *kvdb.KVPair)
+	errChan := make(chan error)
+	key := "timeoutLockTest"
+	holdDuration := 30 * time.Second
+	tryDuration := 5 * time.Second
+	go getTimeoutLock(kv, key, "timeouttest1", tryDuration, holdDuration, kvChan, errChan)
+	time.Sleep(2 * time.Second)
+	go getTimeoutLock(kv, key, "timeouttest2", tryDuration, holdDuration, kvChan, errChan)
+	kvPair1, kvPair2 := <-kvChan, <-kvChan
+	err1, err2 := <-errChan, <-errChan
+	assert.NotNil(t, kvPair1, "Problem in acquiring Lock")
+	assert.Nil(t, kvPair2, "Lock acquired incorrectly")
+	assert.NoError(t, err1, "Unexpected error while trying to acquire lock")
+	assert.Error(t, err2, "Unexpected behaviour")
+	// error return while failing to acquire lock
+	fmt.Println(err2)
+
+	err := kv.Unlock(kvPair1)
+	assert.NoError(t, err, "Unexpected error while unlock")
+	go getTimeoutLock(kv, key, "timeouttest3", tryDuration, holdDuration, kvChan, errChan)
+	kvPair2 = <-kvChan
+	assert.NotNil(t, kvPair2, "Problem in acquiring Lock after Unlock")
+
+	fmt.Println("lockTimeoutError() ended successfully")
+}
+
+func lockBasic(kv kvdb.Kvdb, t *testing.T) {
+	fmt.Println("Starting lock basic")
 	lockMethods := getLockMethods(kv)
 
 	for _, lockMethod := range lockMethods {
@@ -932,7 +968,7 @@ func lockBasic(kv kvdb.Kvdb, t *testing.T) {
 
 	err = kv.Unlock(kvPair)
 	assert.NoError(t, err, "Unexpected error from Unlock")
-
+	fmt.Println("Ending lock basic")
 }
 
 func watchFn(

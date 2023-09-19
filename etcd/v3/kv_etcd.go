@@ -3,6 +3,7 @@ package etcdv3
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strconv"
@@ -733,7 +734,7 @@ func (et *etcdKV) LockWithTimeout(
 			}
 		}
 		if err != nil && time.Since(startTime) > lockTryDuration {
-			return nil, err
+			return nil, errors.New("Lock already taken")
 		}
 	}
 	if err != nil {
