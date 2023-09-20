@@ -907,8 +907,6 @@ func lockTimeoutError(kv kvdb.Kvdb, t *testing.T) {
 	assert.Nil(t, kvPair2, "Lock acquired incorrectly")
 	assert.NoError(t, err1, "Unexpected error while trying to acquire lock")
 	assert.Error(t, err2, "Unexpected behaviour")
-	// error return while failing to acquire lock
-	fmt.Println(err2)
 
 	err := kv.Unlock(kvPair1)
 	assert.NoError(t, err, "Unexpected error while unlock")
@@ -920,7 +918,6 @@ func lockTimeoutError(kv kvdb.Kvdb, t *testing.T) {
 }
 
 func lockBasic(kv kvdb.Kvdb, t *testing.T) {
-	fmt.Println("Starting lock basic")
 	lockMethods := getLockMethods(kv)
 
 	for _, lockMethod := range lockMethods {

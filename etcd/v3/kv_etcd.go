@@ -3,7 +3,6 @@ package etcdv3
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math/rand"
 	"strconv"
@@ -734,7 +733,10 @@ func (et *etcdKV) LockWithTimeout(
 			}
 		}
 		if err != nil && time.Since(startTime) > lockTryDuration {
-			return nil, errors.New("Lock already taken")
+			currLockerTag := ec.LockerIDInfo{LockerID: ""}
+			if _, errGet := et.GetVal(key, &currLockerTag); errGet == nil {
+				return nil, fmt.Errorf("failed to take a lock on %v: lock taken by: %v ", key, currLockerTag.LockerID)
+			}
 		}
 	}
 	if err != nil {
