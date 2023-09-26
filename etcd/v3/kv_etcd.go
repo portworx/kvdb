@@ -737,6 +737,7 @@ func (et *etcdKV) LockWithTimeout(
 			if _, errGet := et.GetVal(key, &currLockerTag); errGet == nil {
 				return nil, fmt.Errorf("failed to take a lock on %v: lock taken by: %v ", key, currLockerTag.LockerID)
 			}
+			return nil, fmt.Errorf("failed to take a lock on %v", key)
 		}
 	}
 	if err != nil {
