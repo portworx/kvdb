@@ -307,7 +307,7 @@ func (kv *boltKV) get(key string) (*kvdb.KVPair, error) {
 		logrus.Panicf("Double pre")
 	}
 	val := bucket.Get([]byte(key))
-	logrus.Warnf("XXX getting on %v = %v", key, string(val))
+	logrus.Debugf("XXX getting on %v = %v", key, string(val))
 	if val == nil {
 		return nil, kvdb.ErrNotFound
 	}
@@ -392,7 +392,7 @@ func (kv *boltKV) put(
 		return nil, err
 	}
 
-	logrus.Warnf("XXX putting on %v with %v %v", key, ttl, time.Duration(ttl))
+	logrus.Debugf("XXX putting on %v with %v %v", key, ttl, time.Duration(ttl))
 	if err = bucket.Put([]byte(key), enc); err != nil {
 		logrus.Warnf("Requested KVP could not be inserted into internal KVDB: %v (%v)",
 			kvp,
@@ -419,7 +419,7 @@ func (kv *boltKV) put(
 			// TODO: handle error
 			kv.mutex.Lock()
 			defer kv.mutex.Unlock()
-			logrus.Warnf("XXX TRIGGERING auto delete on %v %v", key, ttl)
+			logrus.Debugf("XXX TRIGGERING auto delete on %v %v", key, ttl)
 			if _, err := kv.delete(key); err != nil {
 				logrus.Warnf("Error while performing a timed DB delete on key %v: %v", key, err)
 			}
@@ -508,7 +508,7 @@ func (kv *boltKV) delete(key string) (*kvdb.KVPair, error) {
 		return nil, kvdb.ErrNotFound
 	}
 
-	logrus.Warnf("XXX deleting on %v", key)
+	logrus.Debugf("XXX deleting on %v", key)
 	if err = bucket.Delete([]byte(key)); err != nil {
 		logrus.Warnf("Requested KVP for delete could not be deleted from internal KVDB: %v (%v)",
 			kvp,
@@ -781,7 +781,7 @@ func (kv *boltKV) CompareAndDelete(
 
 	// XXX FIXME this needs to be atomic cluster wide
 
-	logrus.Warnf("XXX Checking %v", kvp.Key)
+	logrus.Debugf("XXX Checking %v", kvp.Key)
 	result, err := kv.exists(kvp.Key)
 	if err != nil {
 		return nil, err
@@ -896,7 +896,7 @@ func (kv *boltKV) LockWithTimeout(
 
 	lockChan := make(chan int)
 	kv.mutex.Lock()
-	logrus.Warnf("XXX Locked %v", key)
+	logrus.Debugf("XXX Locked %v", key)
 	kv.locks[key] = lockChan
 	kv.mutex.Unlock()
 	if lockHoldDuration > 0 {
@@ -905,10 +905,10 @@ func (kv *boltKV) LockWithTimeout(
 			for {
 				select {
 				case <-timeout:
-					logrus.Warnf("XXX LOCK timeout on %v after %v", key, lockHoldDuration)
+					logrus.Debugf("XXX LOCK timeout on %v after %v", key, lockHoldDuration)
 					kv.LockTimedout(key)
 				case <-lockChan:
-					logrus.Warnf("XXX LOCK chan wakeup on %v", key)
+					logrus.Debugf("XXX LOCK chan wakeup on %v", key)
 					return
 				}
 			}
@@ -919,19 +919,19 @@ func (kv *boltKV) LockWithTimeout(
 }
 
 func (kv *boltKV) Unlock(kvp *kvdb.KVPair) error {
-	logrus.Warnf("XXX Unlocking %v", kvp)
+	logrus.Debugf("XXX Unlocking %v", kvp)
 	if kvp == nil {
 		logrus.Panicf("Unlock on a nil kvp")
 	}
 	kv.mutex.Lock()
 	lockChan, ok := kv.locks[kvp.Key]
-	logrus.Warnf("XXX Unlock chan %v on %v", lockChan, kvp.Key)
+	logrus.Debugf("XXX Unlock chan %v on %v", lockChan, kvp.Key)
 	if ok {
 		delete(kv.locks, kvp.Key)
 	}
 	kv.mutex.Unlock()
 	if lockChan != nil {
-		logrus.Warnf("XXX Waking up chan on %v", kvp.Key)
+		logrus.Debugf("XXX Waking up chan on %v", kvp.Key)
 		close(lockChan)
 	}
 
@@ -992,14 +992,14 @@ func (kv *boltKV) watchCb(
 	treeWatch bool,
 ) {
 	for {
-		logrus.Warnf("XXX watchCb on %v", prefix)
+		logrus.Debugf("XXX watchCb on %v", prefix)
 		update := q.Dequeue()
-		logrus.Warnf("XXX watchCb compare on %v %v %v %v %v",
+		logrus.Debugf("XXX watchCb compare on %v %v %v %v %v",
 			treeWatch, update.key, prefix, v.waitIndex, update.kvp.ModifiedIndex)
 		if ((treeWatch && strings.HasPrefix(update.key, prefix)) ||
 			(!treeWatch && update.key == prefix)) &&
 			(v.waitIndex == 0 || v.waitIndex < update.kvp.ModifiedIndex) {
-			logrus.Warnf("XXX watchCb FIRED on %v", prefix)
+			logrus.Debugf("XXX watchCb FIRED on %v", prefix)
 			err := v.cb(update.key, v.opaque, &update.kvp, update.err)
 			if err != nil {
 				_ = v.cb("", v.opaque, nil, kvdb.ErrWatchStopped)
