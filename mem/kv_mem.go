@@ -691,7 +691,7 @@ func (kv *memKV) LockWithTimeout(
 			for {
 				select {
 				case <-timeout:
-					kv.LockTimedout(key)
+					kv.LockTimedout(key, lockHoldDuration)
 				case <-lockChan:
 					return
 				}

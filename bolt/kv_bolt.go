@@ -906,7 +906,7 @@ func (kv *boltKV) LockWithTimeout(
 				select {
 				case <-timeout:
 					logrus.Warnf("XXX LOCK timeout on %v after %v", key, lockHoldDuration)
-					kv.LockTimedout(key)
+					kv.LockTimedout(key, lockHoldDuration)
 				case <-lockChan:
 					logrus.Warnf("XXX LOCK chan wakeup on %v", key)
 					return

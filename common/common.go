@@ -89,7 +89,7 @@ func (b *BaseKvdb) CheckLockTimeout(
 	b.lock.Lock()
 	defer b.lock.Unlock()
 	if lockTimeout > 0 && time.Since(startTime) > lockTimeout {
-		b.lockTimedout(key)
+		b.lockTimedout(key, lockTimeout)
 	}
 }
 
@@ -101,15 +101,15 @@ func (b *BaseKvdb) GetLockHoldDuration() time.Duration {
 }
 
 // LockTimedout does lock timedout.
-func (b *BaseKvdb) LockTimedout(key string) {
+func (b *BaseKvdb) LockTimedout(key string, timedOutAfter time.Duration) {
 	b.lock.Lock()
 	defer b.lock.Unlock()
-	b.lockTimedout(key)
+	b.lockTimedout(key, timedOutAfter)
 }
 
 // lockTimedout function is invoked if lock is held past configured timeout.
-func (b *BaseKvdb) lockTimedout(key string) {
-	b.FatalCb(kvdb.ErrLockHoldTimeoutTriggered, "Lock %s hold timeout triggered", key)
+func (b *BaseKvdb) lockTimedout(key string, timedOutAfter time.Duration) {
+	b.FatalCb(kvdb.ErrLockHoldTimeoutTriggered, "Lock %s hold timeout triggered after %s", key, timedOutAfter)
 }
 
 // SerializeAll Serializes all key value pairs to a byte array.

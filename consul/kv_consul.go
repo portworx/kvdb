@@ -929,7 +929,7 @@ func (kv *consulKV) renewLockSession(
 			for {
 				select {
 				case <-timeout:
-					kv.LockTimedout(fmt.Sprintf("Key:%s,Tag:%v", key, tag))
+					kv.LockTimedout(fmt.Sprintf("Key:%s,Tag:%v", key, tag), lockTimeout)
 				case <-doneCh:
 					return
 				}
