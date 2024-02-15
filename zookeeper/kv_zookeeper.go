@@ -531,7 +531,7 @@ func (z *zookeeperKV) waitForUnlock(
 					}
 					l.Unlocked = true
 				}
-				z.LockTimedout(lockMsgString)
+				z.LockTimedout(lockMsgString, lockHoldDuration)
 				return
 			}
 		case <-l.Done:
