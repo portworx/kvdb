@@ -8,6 +8,8 @@ import (
 )
 
 var siPrefixTable = map[float64]string{
+	-30: "q", // quecto
+	-27: "r", // ronto
 	-24: "y", // yocto
 	-21: "z", // zepto
 	-18: "a", // atto
@@ -25,6 +27,8 @@ var siPrefixTable = map[float64]string{
 	18:  "E", // exa
 	21:  "Z", // zetta
 	24:  "Y", // yotta
+	27:  "R", // ronna
+	30:  "Q", // quetta
 }
 
 var revSIPrefixTable = revfmap(siPrefixTable)
@@ -91,6 +95,16 @@ func ComputeSI(input float64) (float64, string) {
 func SI(input float64, unit string) string {
 	value, prefix := ComputeSI(input)
 	return Ftoa(value) + " " + prefix + unit
+}
+
+// SIWithDigits works like SI but limits the resulting string to the
+// given number of decimal places.
+//
+// e.g. SIWithDigits(1000000, 0, "B") -> 1 MB
+// e.g. SIWithDigits(2.2345e-12, 2, "F") -> 2.23 pF
+func SIWithDigits(input float64, decimals int, unit string) string {
+	value, prefix := ComputeSI(input)
+	return FtoaWithDigits(value, decimals) + " " + prefix + unit
 }
 
 var errInvalid = errors.New("invalid input")
