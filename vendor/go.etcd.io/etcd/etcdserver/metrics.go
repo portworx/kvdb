@@ -18,11 +18,9 @@ import (
 	goruntime "runtime"
 	"time"
 
-	"go.etcd.io/etcd/pkg/runtime"
-	"go.etcd.io/etcd/version"
-
+	"github.com/coreos/etcd/pkg/runtime"
+	"github.com/coreos/etcd/version"
 	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/zap"
 )
 
 var (
@@ -43,26 +41,6 @@ var (
 		Subsystem: "server",
 		Name:      "leader_changes_seen_total",
 		Help:      "The number of leader changes seen.",
-	})
-	isLearner = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "etcd",
-		Subsystem: "server",
-		Name:      "is_learner",
-		Help:      "Whether or not this member is a learner. 1 if is, 0 otherwise.",
-	})
-	learnerPromoteFailed = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "etcd",
-		Subsystem: "server",
-		Name:      "learner_promote_failures",
-		Help:      "The total number of failed learner promotions (likely learner not ready) while this member is leader.",
-	},
-		[]string{"Reason"},
-	)
-	learnerPromoteSucceed = prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace: "etcd",
-		Subsystem: "server",
-		Name:      "learner_promote_successes",
-		Help:      "The total number of successful learner promotions while this member is leader.",
 	})
 	heartbeatSendFailures = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: "etcd",
@@ -106,6 +84,12 @@ var (
 		Name:      "proposals_failed_total",
 		Help:      "The total number of failed proposals seen.",
 	})
+	leaseExpired = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "etcd_debugging",
+		Subsystem: "server",
+		Name:      "lease_expired_total",
+		Help:      "The total number of expired leases.",
+	})
 	slowReadIndex = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: "etcd",
 		Subsystem: "server",
@@ -117,12 +101,6 @@ var (
 		Subsystem: "server",
 		Name:      "read_indexes_failed_total",
 		Help:      "The total number of failed read indexes seen.",
-	})
-	leaseExpired = prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace: "etcd_debugging",
-		Subsystem: "server",
-		Name:      "lease_expired_total",
-		Help:      "The total number of expired leases.",
 	})
 	quotaBackendBytes = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "etcd",
@@ -177,16 +155,13 @@ func init() {
 	prometheus.MustRegister(proposalsApplied)
 	prometheus.MustRegister(proposalsPending)
 	prometheus.MustRegister(proposalsFailed)
+	prometheus.MustRegister(leaseExpired)
 	prometheus.MustRegister(slowReadIndex)
 	prometheus.MustRegister(readIndexFailed)
-	prometheus.MustRegister(leaseExpired)
 	prometheus.MustRegister(quotaBackendBytes)
 	prometheus.MustRegister(currentVersion)
 	prometheus.MustRegister(currentGoVersion)
 	prometheus.MustRegister(serverID)
-	prometheus.MustRegister(isLearner)
-	prometheus.MustRegister(learnerPromoteSucceed)
-	prometheus.MustRegister(learnerPromoteFailed)
 	prometheus.MustRegister(fdUsed)
 	prometheus.MustRegister(fdLimit)
 
@@ -198,7 +173,7 @@ func init() {
 	}).Set(1)
 }
 
-func monitorFileDescriptor(lg *zap.Logger, done <-chan struct{}) {
+func monitorFileDescriptor(done <-chan struct{}) {
 	// This ticker will check File Descriptor Requirements ,and count all fds in used.
 	// And recorded some logs when in used >= limit/5*4. Just recorded message.
 	// If fds was more than 10K,It's low performance due to FDUsage() works.
@@ -209,30 +184,18 @@ func monitorFileDescriptor(lg *zap.Logger, done <-chan struct{}) {
 	for {
 		used, err := runtime.FDUsage()
 		if err != nil {
-			if lg != nil {
-				lg.Warn("failed to get file descriptor usage", zap.Error(err))
-			} else {
-				plog.Errorf("cannot monitor file descriptor usage (%v)", err)
-			}
+			plog.Errorf("cannot monitor file descriptor usage (%v)", err)
 			return
 		}
 		fdUsed.Set(float64(used))
 		limit, err := runtime.FDLimit()
 		if err != nil {
-			if lg != nil {
-				lg.Warn("failed to get file descriptor limit", zap.Error(err))
-			} else {
-				plog.Errorf("cannot monitor file descriptor usage (%v)", err)
-			}
+			plog.Errorf("cannot monitor file descriptor usage (%v)", err)
 			return
 		}
 		fdLimit.Set(float64(limit))
 		if used >= limit/5*4 {
-			if lg != nil {
-				lg.Warn("80% of file descriptors are used", zap.Uint64("used", used), zap.Uint64("limit", limit))
-			} else {
-				plog.Warningf("80%% of the file descriptor limit is used [used = %d, limit = %d]", used, limit)
-			}
+			plog.Warningf("80%% of the file descriptor limit is used [used = %d, limit = %d]", used, limit)
 		}
 		select {
 		case <-ticker.C:
