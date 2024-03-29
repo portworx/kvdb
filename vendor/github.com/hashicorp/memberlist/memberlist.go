@@ -1,6 +1,3 @@
-// Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
-
 /*
 memberlist is a library that manages cluster
 membership and member failure detection using a gossip based protocol.
@@ -19,7 +16,6 @@ package memberlist
 
 import (
 	"container/list"
-	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -30,23 +26,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/armon/go-metrics"
-	"github.com/hashicorp/go-multierror"
-	"github.com/hashicorp/go-sockaddr"
+	multierror "github.com/hashicorp/go-multierror"
+	sockaddr "github.com/hashicorp/go-sockaddr"
 	"github.com/miekg/dns"
 )
-
-var errNodeNamesAreRequired = errors.New("memberlist: node names are required by configuration but one was not provided")
 
 type Memberlist struct {
 	sequenceNum uint32 // Local sequence number
 	incarnation uint32 // Local incarnation number
 	numNodes    uint32 // Number of known nodes (estimate)
 	pushPullReq uint32 // Number of push/pull requests
-
-	advertiseLock sync.RWMutex
-	advertiseAddr net.IP
-	advertisePort uint16
 
 	config         *Config
 	shutdown       int32 // Used as an atomic boolean value
@@ -57,7 +46,7 @@ type Memberlist struct {
 	shutdownLock sync.Mutex // Serializes calls to Shutdown
 	leaveLock    sync.Mutex // Serializes calls to Leave
 
-	transport NodeAwareTransport
+	transport Transport
 
 	handoffCh            chan struct{}
 	highPriorityMsgQueue *list.List
@@ -66,8 +55,8 @@ type Memberlist struct {
 
 	nodeLock   sync.RWMutex
 	nodes      []*nodeState          // Known nodes
-	nodeMap    map[string]*nodeState // Maps Node.Name -> NodeState
-	nodeTimers map[string]*suspicion // Maps Node.Name -> suspicion timer
+	nodeMap    map[string]*nodeState // Maps Addr.String() -> NodeState
+	nodeTimers map[string]*suspicion // Maps Addr.String() -> suspicion timer
 	awareness  *awareness
 
 	tickerLock sync.Mutex
@@ -81,18 +70,6 @@ type Memberlist struct {
 	broadcasts *TransmitLimitedQueue
 
 	logger *log.Logger
-
-	// metricLabels is the slice of labels to put on all emitted metrics
-	metricLabels []metrics.Label
-}
-
-// BuildVsnArray creates the array of Vsn
-func (conf *Config) BuildVsnArray() []uint8 {
-	return []uint8{
-		ProtocolVersionMin, ProtocolVersionMax, conf.ProtocolVersion,
-		conf.DelegateProtocolMin, conf.DelegateProtocolMax,
-		conf.DelegateProtocolVersion,
-	}
 }
 
 // newMemberlist creates the network listeners.
@@ -142,10 +119,9 @@ func newMemberlist(conf *Config) (*Memberlist, error) {
 	transport := conf.Transport
 	if transport == nil {
 		nc := &NetTransportConfig{
-			BindAddrs:    []string{conf.BindAddr},
-			BindPort:     conf.BindPort,
-			Logger:       logger,
-			MetricLabels: conf.MetricLabels,
+			BindAddrs: []string{conf.BindAddr},
+			BindPort:  conf.BindPort,
+			Logger:    logger,
 		}
 
 		// See comment below for details about the retry in here.
@@ -189,54 +165,27 @@ func newMemberlist(conf *Config) (*Memberlist, error) {
 		transport = nt
 	}
 
-	nodeAwareTransport, ok := transport.(NodeAwareTransport)
-	if !ok {
-		logger.Printf("[DEBUG] memberlist: configured Transport is not a NodeAwareTransport and some features may not work as desired")
-		nodeAwareTransport = &shimNodeAwareTransport{transport}
-	}
-
-	if len(conf.Label) > LabelMaxSize {
-		return nil, fmt.Errorf("could not use %q as a label: too long", conf.Label)
-	}
-
-	if conf.Label != "" {
-		nodeAwareTransport = &labelWrappedTransport{
-			label:              conf.Label,
-			NodeAwareTransport: nodeAwareTransport,
-		}
-	}
-
 	m := &Memberlist{
 		config:               conf,
 		shutdownCh:           make(chan struct{}),
 		leaveBroadcast:       make(chan struct{}, 1),
-		transport:            nodeAwareTransport,
+		transport:            transport,
 		handoffCh:            make(chan struct{}, 1),
 		highPriorityMsgQueue: list.New(),
 		lowPriorityMsgQueue:  list.New(),
 		nodeMap:              make(map[string]*nodeState),
 		nodeTimers:           make(map[string]*suspicion),
-		awareness:            newAwareness(conf.AwarenessMaxMultiplier, conf.MetricLabels),
+		awareness:            newAwareness(conf.AwarenessMaxMultiplier),
 		ackHandlers:          make(map[uint32]*ackHandler),
 		broadcasts:           &TransmitLimitedQueue{RetransmitMult: conf.RetransmitMult},
 		logger:               logger,
-		metricLabels:         conf.MetricLabels,
 	}
 	m.broadcasts.NumNodes = func() int {
 		return m.estNumNodes()
 	}
-
-	// Get the final advertise address from the transport, which may need
-	// to see which address we bound to. We'll refresh this each time we
-	// send out an alive message.
-	if _, _, err := m.refreshAdvertise(); err != nil {
-		return nil, err
-	}
-
 	go m.streamListen()
 	go m.packetListen()
 	go m.packetHandler()
-	go m.checkBroadcastQueueDepth()
 	return m, nil
 }
 
@@ -281,9 +230,8 @@ func (m *Memberlist) Join(existing []string) (int, error) {
 
 		for _, addr := range addrs {
 			hp := joinHostPort(addr.ip.String(), addr.port)
-			a := Address{Addr: hp, Name: addr.nodeName}
-			if err := m.pushPullNode(a, true); err != nil {
-				err = fmt.Errorf("Failed to join %s: %v", a.Addr, err)
+			if err := m.pushPullNode(hp, true); err != nil {
+				err = fmt.Errorf("Failed to join %s: %v", addr.ip, err)
 				errs = multierror.Append(errs, err)
 				m.logger.Printf("[DEBUG] memberlist: %v", err)
 				continue
@@ -300,9 +248,8 @@ func (m *Memberlist) Join(existing []string) (int, error) {
 
 // ipPort holds information about a node we want to try to join.
 type ipPort struct {
-	ip       net.IP
-	port     uint16
-	nodeName string // optional
+	ip   net.IP
+	port uint16
 }
 
 // tcpLookupIP is a helper to initiate a TCP-based DNS lookup for the given host.
@@ -311,7 +258,7 @@ type ipPort struct {
 // Consul's. By doing the TCP lookup directly, we get the best chance for the
 // largest list of hosts to join. Since joins are relatively rare events, it's ok
 // to do this rather expensive operation.
-func (m *Memberlist) tcpLookupIP(host string, defaultPort uint16, nodeName string) ([]ipPort, error) {
+func (m *Memberlist) tcpLookupIP(host string, defaultPort uint16) ([]ipPort, error) {
 	// Don't attempt any TCP lookups against non-fully qualified domain
 	// names, since those will likely come from the resolv.conf file.
 	if !strings.Contains(host, ".") {
@@ -353,9 +300,9 @@ func (m *Memberlist) tcpLookupIP(host string, defaultPort uint16, nodeName strin
 		for _, r := range in.Answer {
 			switch rr := r.(type) {
 			case (*dns.A):
-				ips = append(ips, ipPort{ip: rr.A, port: defaultPort, nodeName: nodeName})
+				ips = append(ips, ipPort{rr.A, defaultPort})
 			case (*dns.AAAA):
-				ips = append(ips, ipPort{ip: rr.AAAA, port: defaultPort, nodeName: nodeName})
+				ips = append(ips, ipPort{rr.AAAA, defaultPort})
 			case (*dns.CNAME):
 				m.logger.Printf("[DEBUG] memberlist: Ignoring CNAME RR in TCP-first answer for '%s'", host)
 			}
@@ -369,16 +316,6 @@ func (m *Memberlist) tcpLookupIP(host string, defaultPort uint16, nodeName strin
 // resolveAddr is used to resolve the address into an address,
 // port, and error. If no port is given, use the default
 func (m *Memberlist) resolveAddr(hostStr string) ([]ipPort, error) {
-	// First peel off any leading node name. This is optional.
-	nodeName := ""
-	if slashIdx := strings.Index(hostStr, "/"); slashIdx >= 0 {
-		if slashIdx == 0 {
-			return nil, fmt.Errorf("empty node name provided")
-		}
-		nodeName = hostStr[0:slashIdx]
-		hostStr = hostStr[slashIdx+1:]
-	}
-
 	// This captures the supplied port, or the default one.
 	hostStr = ensurePort(hostStr, m.config.BindPort)
 	host, sport, err := net.SplitHostPort(hostStr)
@@ -395,15 +332,13 @@ func (m *Memberlist) resolveAddr(hostStr string) ([]ipPort, error) {
 	// will make sure the host part is in good shape for parsing, even for
 	// IPv6 addresses.
 	if ip := net.ParseIP(host); ip != nil {
-		return []ipPort{
-			ipPort{ip: ip, port: port, nodeName: nodeName},
-		}, nil
+		return []ipPort{ipPort{ip, port}}, nil
 	}
 
 	// First try TCP so we have the best chance for the largest list of
 	// hosts to join. If this fails it's not fatal since this isn't a standard
 	// way to query DNS, and we have a fallback below.
-	ips, err := m.tcpLookupIP(host, port, nodeName)
+	ips, err := m.tcpLookupIP(host, port)
 	if err != nil {
 		m.logger.Printf("[DEBUG] memberlist: TCP-first lookup failed for '%s', falling back to UDP: %s", hostStr, err)
 	}
@@ -420,7 +355,7 @@ func (m *Memberlist) resolveAddr(hostStr string) ([]ipPort, error) {
 	}
 	ips = make([]ipPort, 0, len(ans))
 	for _, ip := range ans {
-		ips = append(ips, ipPort{ip: ip, port: port, nodeName: nodeName})
+		ips = append(ips, ipPort{ip, port})
 	}
 	return ips, nil
 }
@@ -431,9 +366,10 @@ func (m *Memberlist) resolveAddr(hostStr string) ([]ipPort, error) {
 func (m *Memberlist) setAlive() error {
 	// Get the final advertise address from the transport, which may need
 	// to see which address we bound to.
-	addr, port, err := m.refreshAdvertise()
+	addr, port, err := m.transport.FinalAdvertiseAddr(
+		m.config.AdvertiseAddr, m.config.AdvertisePort)
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to get final advertise address: %v", err)
 	}
 
 	// Check if this is a public address without encryption
@@ -466,34 +402,14 @@ func (m *Memberlist) setAlive() error {
 		Addr:        addr,
 		Port:        uint16(port),
 		Meta:        meta,
-		Vsn:         m.config.BuildVsnArray(),
+		Vsn: []uint8{
+			ProtocolVersionMin, ProtocolVersionMax, m.config.ProtocolVersion,
+			m.config.DelegateProtocolMin, m.config.DelegateProtocolMax,
+			m.config.DelegateProtocolVersion,
+		},
 	}
 	m.aliveNode(&a, nil, true)
-
 	return nil
-}
-
-func (m *Memberlist) getAdvertise() (net.IP, uint16) {
-	m.advertiseLock.RLock()
-	defer m.advertiseLock.RUnlock()
-	return m.advertiseAddr, m.advertisePort
-}
-
-func (m *Memberlist) setAdvertise(addr net.IP, port int) {
-	m.advertiseLock.Lock()
-	defer m.advertiseLock.Unlock()
-	m.advertiseAddr = addr
-	m.advertisePort = uint16(port)
-}
-
-func (m *Memberlist) refreshAdvertise() (net.IP, int, error) {
-	addr, port, err := m.transport.FinalAdvertiseAddr(
-		m.config.AdvertiseAddr, m.config.AdvertisePort)
-	if err != nil {
-		return nil, 0, fmt.Errorf("Failed to get final advertise address: %v", err)
-	}
-	m.setAdvertise(addr, port)
-	return addr, port, nil
 }
 
 // LocalNode is used to return the local Node
@@ -531,7 +447,11 @@ func (m *Memberlist) UpdateNode(timeout time.Duration) error {
 		Addr:        state.Addr,
 		Port:        state.Port,
 		Meta:        meta,
-		Vsn:         m.config.BuildVsnArray(),
+		Vsn: []uint8{
+			ProtocolVersionMin, ProtocolVersionMax, m.config.ProtocolVersion,
+			m.config.DelegateProtocolMin, m.config.DelegateProtocolMax,
+			m.config.DelegateProtocolVersion,
+		},
 	}
 	notifyCh := make(chan struct{})
 	m.aliveNode(&a, notifyCh, true)
@@ -551,29 +471,24 @@ func (m *Memberlist) UpdateNode(timeout time.Duration) error {
 	return nil
 }
 
-// Deprecated: SendTo is deprecated in favor of SendBestEffort, which requires a node to
-// target. If you don't have a node then use SendToAddress.
+// SendTo is deprecated in favor of SendBestEffort, which requires a node to
+// target.
 func (m *Memberlist) SendTo(to net.Addr, msg []byte) error {
-	a := Address{Addr: to.String(), Name: ""}
-	return m.SendToAddress(a, msg)
-}
-
-func (m *Memberlist) SendToAddress(a Address, msg []byte) error {
 	// Encode as a user message
 	buf := make([]byte, 1, len(msg)+1)
 	buf[0] = byte(userMsg)
 	buf = append(buf, msg...)
 
 	// Send the message
-	return m.rawSendMsgPacket(a, nil, buf)
+	return m.rawSendMsgPacket(to.String(), nil, buf)
 }
 
-// Deprecated: SendToUDP is deprecated in favor of SendBestEffort.
+// SendToUDP is deprecated in favor of SendBestEffort.
 func (m *Memberlist) SendToUDP(to *Node, msg []byte) error {
 	return m.SendBestEffort(to, msg)
 }
 
-// Deprecated: SendToTCP is deprecated in favor of SendReliable.
+// SendToTCP is deprecated in favor of SendReliable.
 func (m *Memberlist) SendToTCP(to *Node, msg []byte) error {
 	return m.SendReliable(to, msg)
 }
@@ -589,8 +504,7 @@ func (m *Memberlist) SendBestEffort(to *Node, msg []byte) error {
 	buf = append(buf, msg...)
 
 	// Send the message
-	a := Address{Addr: to.Address(), Name: to.Name}
-	return m.rawSendMsgPacket(a, to, buf)
+	return m.rawSendMsgPacket(to.Address(), to, buf)
 }
 
 // SendReliable uses the reliable stream-oriented interface of the transport to
@@ -598,7 +512,7 @@ func (m *Memberlist) SendBestEffort(to *Node, msg []byte) error {
 // mechanism). Delivery is guaranteed if no error is returned, and there is no
 // limit on the size of the message.
 func (m *Memberlist) SendReliable(to *Node, msg []byte) error {
-	return m.sendUserMsg(to.FullAddress(), msg)
+	return m.sendUserMsg(to.Address(), msg)
 }
 
 // Members returns a list of all known live nodes. The node structures
@@ -610,7 +524,7 @@ func (m *Memberlist) Members() []*Node {
 
 	nodes := make([]*Node, 0, len(m.nodes))
 	for _, n := range m.nodes {
-		if !n.DeadOrLeft() {
+		if n.State != stateDead {
 			nodes = append(nodes, &n.Node)
 		}
 	}
@@ -627,7 +541,7 @@ func (m *Memberlist) NumMembers() (alive int) {
 	defer m.nodeLock.RUnlock()
 
 	for _, n := range m.nodes {
-		if !n.DeadOrLeft() {
+		if n.State != stateDead {
 			alive++
 		}
 	}
@@ -664,14 +578,9 @@ func (m *Memberlist) Leave(timeout time.Duration) error {
 			return nil
 		}
 
-		// This dead message is special, because Node and From are the
-		// same. This helps other nodes figure out that a node left
-		// intentionally. When Node equals From, other nodes know for
-		// sure this node is gone.
 		d := dead{
 			Incarnation: state.Incarnation,
 			Node:        state.Name,
-			From:        state.Name,
 		}
 		m.deadNode(&d)
 
@@ -697,7 +606,7 @@ func (m *Memberlist) anyAlive() bool {
 	m.nodeLock.RLock()
 	defer m.nodeLock.RUnlock()
 	for _, n := range m.nodes {
-		if !n.DeadOrLeft() && n.Name != m.config.Name {
+		if n.State != stateDead && n.Name != m.config.Name {
 			return true
 		}
 	}
@@ -720,7 +629,7 @@ func (m *Memberlist) ProtocolVersion() uint8 {
 	return m.config.ProtocolVersion
 }
 
-// Shutdown will stop any background maintenance of network activity
+// Shutdown will stop any background maintanence of network activity
 // for this memberlist, causing it to appear "dead". A leave message
 // will not be broadcasted prior, so the cluster being left will have
 // to detect this node's shutdown using probing. If you wish to more
@@ -757,7 +666,7 @@ func (m *Memberlist) hasLeft() bool {
 	return atomic.LoadInt32(&m.leave) == 1
 }
 
-func (m *Memberlist) getNodeState(addr string) NodeStateType {
+func (m *Memberlist) getNodeState(addr string) nodeStateType {
 	m.nodeLock.RLock()
 	defer m.nodeLock.RUnlock()
 
@@ -779,18 +688,4 @@ func (m *Memberlist) changeNode(addr string, f func(*nodeState)) {
 
 	n := m.nodeMap[addr]
 	f(n)
-}
-
-// checkBroadcastQueueDepth periodically checks the size of the broadcast queue
-// to see if it is too large
-func (m *Memberlist) checkBroadcastQueueDepth() {
-	for {
-		select {
-		case <-time.After(m.config.QueueCheckInterval):
-			numq := m.broadcasts.NumQueued()
-			metrics.AddSampleWithLabels([]string{"memberlist", "queue", "broadcasts"}, float32(numq), m.metricLabels)
-		case <-m.shutdownCh:
-			return
-		}
-	}
 }

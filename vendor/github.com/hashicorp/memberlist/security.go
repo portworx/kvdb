@@ -1,6 +1,3 @@
-// Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
-
 package memberlist
 
 import (
@@ -109,10 +106,7 @@ func encryptPayload(vsn encryptionVersion, key []byte, msg []byte, data []byte, 
 	dst.WriteByte(byte(vsn))
 
 	// Add a random nonce
-	_, err = io.CopyN(dst, rand.Reader, nonceSize)
-	if err != nil {
-		return err
-	}
+	io.CopyN(dst, rand.Reader, nonceSize)
 	afterNonce := dst.Len()
 
 	// Ensure we are correctly padded (only version 0)
@@ -201,23 +195,4 @@ func decryptPayload(keys [][]byte, msg []byte, data []byte) ([]byte, error) {
 	}
 
 	return nil, fmt.Errorf("No installed keys could decrypt the message")
-}
-
-func appendBytes(first []byte, second []byte) []byte {
-	hasFirst := len(first) > 0
-	hasSecond := len(second) > 0
-
-	switch {
-	case hasFirst && hasSecond:
-		out := make([]byte, 0, len(first)+len(second))
-		out = append(out, first...)
-		out = append(out, second...)
-		return out
-	case hasFirst:
-		return first
-	case hasSecond:
-		return second
-	default:
-		return nil
-	}
 }

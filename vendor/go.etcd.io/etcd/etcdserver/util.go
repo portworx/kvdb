@@ -20,11 +20,13 @@ import (
 	"strings"
 	"time"
 
-	pb "github.com/coreos/etcd/etcdserver/etcdserverpb"
-	"github.com/coreos/etcd/etcdserver/membership"
-	"github.com/coreos/etcd/pkg/types"
-	"github.com/coreos/etcd/rafthttp"
 	"github.com/golang/protobuf/proto"
+	"go.etcd.io/etcd/etcdserver/api/membership"
+	"go.etcd.io/etcd/etcdserver/api/rafthttp"
+	pb "go.etcd.io/etcd/etcdserver/etcdserverpb"
+	"go.etcd.io/etcd/pkg/types"
+
+	"go.uber.org/zap"
 )
 
 // isConnectedToQuorumSince checks whether the local member is connected to the
@@ -101,24 +103,34 @@ func (nc *notifier) notify(err error) {
 	close(nc.c)
 }
 
-func warnOfExpensiveRequest(now time.Time, reqStringer fmt.Stringer, respMsg proto.Message, err error) {
+func warnOfExpensiveRequest(lg *zap.Logger, now time.Time, reqStringer fmt.Stringer, respMsg proto.Message, err error) {
 	var resp string
 	if !isNil(respMsg) {
 		resp = fmt.Sprintf("size:%d", proto.Size(respMsg))
 	}
-	warnOfExpensiveGenericRequest(now, reqStringer, "", resp, err)
+	warnOfExpensiveGenericRequest(lg, now, reqStringer, "", resp, err)
 }
 
-func warnOfFailedRequest(now time.Time, reqStringer fmt.Stringer, respMsg proto.Message, err error) {
+func warnOfFailedRequest(lg *zap.Logger, now time.Time, reqStringer fmt.Stringer, respMsg proto.Message, err error) {
 	var resp string
 	if !isNil(respMsg) {
 		resp = fmt.Sprintf("size:%d", proto.Size(respMsg))
 	}
 	d := time.Since(now)
-	plog.Warningf("failed to apply request,took %v,request %s,resp %s,err is %v", d, reqStringer.String(), resp, err)
+	if lg != nil {
+		lg.Warn(
+			"failed to apply request",
+			zap.Duration("took", d),
+			zap.String("request", reqStringer.String()),
+			zap.String("response", resp),
+			zap.Error(err),
+		)
+	} else {
+		plog.Warningf("failed to apply request %q with response %q took (%v) to execute, err is %v", reqStringer.String(), resp, d, err)
+	}
 }
 
-func warnOfExpensiveReadOnlyTxnRequest(now time.Time, r *pb.TxnRequest, txnResponse *pb.TxnResponse, err error) {
+func warnOfExpensiveReadOnlyTxnRequest(lg *zap.Logger, now time.Time, r *pb.TxnRequest, txnResponse *pb.TxnResponse, err error) {
 	reqStringer := pb.NewLoggableTxnRequest(r)
 	var resp string
 	if !isNil(txnResponse) {
@@ -133,32 +145,61 @@ func warnOfExpensiveReadOnlyTxnRequest(now time.Time, r *pb.TxnRequest, txnRespo
 		}
 		resp = fmt.Sprintf("responses:<%s> size:%d", strings.Join(resps, " "), proto.Size(txnResponse))
 	}
-	warnOfExpensiveGenericRequest(now, reqStringer, "read-only range ", resp, err)
+	warnOfExpensiveGenericRequest(lg, now, reqStringer, "read-only range ", resp, err)
 }
 
-func warnOfExpensiveReadOnlyRangeRequest(now time.Time, reqStringer fmt.Stringer, rangeResponse *pb.RangeResponse, err error) {
+func warnOfExpensiveReadOnlyRangeRequest(lg *zap.Logger, now time.Time, reqStringer fmt.Stringer, rangeResponse *pb.RangeResponse, err error) {
 	var resp string
 	if !isNil(rangeResponse) {
 		resp = fmt.Sprintf("range_response_count:%d size:%d", len(rangeResponse.Kvs), proto.Size(rangeResponse))
 	}
-	warnOfExpensiveGenericRequest(now, reqStringer, "read-only range ", resp, err)
+	warnOfExpensiveGenericRequest(lg, now, reqStringer, "read-only range ", resp, err)
 }
 
-func warnOfExpensiveGenericRequest(now time.Time, reqStringer fmt.Stringer, prefix string, resp string, err error) {
-	// TODO: add metrics
+func warnOfExpensiveGenericRequest(lg *zap.Logger, now time.Time, reqStringer fmt.Stringer, prefix string, resp string, err error) {
 	d := time.Since(now)
 	if d > warnApplyDuration {
-		var result string
-		if err != nil {
-			result = fmt.Sprintf("error:%v", err)
+		if lg != nil {
+			lg.Warn(
+				"apply request took too long",
+				zap.Duration("took", d),
+				zap.Duration("expected-duration", warnApplyDuration),
+				zap.String("prefix", prefix),
+				zap.String("request", reqStringer.String()),
+				zap.String("response", resp),
+				zap.Error(err),
+			)
 		} else {
-			result = resp
+			var result string
+			if err != nil {
+				result = fmt.Sprintf("error:%v", err)
+			} else {
+				result = resp
+			}
+			plog.Warningf("%srequest %q with result %q took too long (%v) to execute", prefix, reqStringer.String(), result, d)
 		}
-		plog.Warningf("%srequest %q with result %q took too long (%v) to execute", prefix, reqStringer.String(), result, d)
 		slowApplies.Inc()
 	}
 }
 
 func isNil(msg proto.Message) bool {
 	return msg == nil || reflect.ValueOf(msg).IsNil()
+}
+
+// panicAlternativeStringer wraps a fmt.Stringer, and if calling String() panics, calls the alternative instead.
+// This is needed to ensure logging slow v2 requests does not panic, which occurs when running integration tests
+// with the embedded server with github.com/golang/protobuf v1.4.0+. See https://github.com/etcd-io/etcd/issues/12197.
+type panicAlternativeStringer struct {
+	stringer    fmt.Stringer
+	alternative func() string
+}
+
+func (n panicAlternativeStringer) String() (s string) {
+	defer func() {
+		if err := recover(); err != nil {
+			s = n.alternative()
+		}
+	}()
+	s = n.stringer.String()
+	return s
 }

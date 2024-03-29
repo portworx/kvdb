@@ -1,6 +1,3 @@
-// Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
-
 package api
 
 import (
@@ -48,16 +45,12 @@ func (e *Event) Fire(params *UserEvent, q *WriteOptions) (string, *WriteMeta, er
 	if params.Payload != nil {
 		r.body = bytes.NewReader(params.Payload)
 	}
-	r.header.Set("Content-Type", "application/octet-stream")
 
-	rtt, resp, err := e.c.doRequest(r)
+	rtt, resp, err := requireOK(e.c.doRequest(r))
 	if err != nil {
 		return "", nil, err
 	}
-	defer closeResponseBody(resp)
-	if err := requireOK(resp); err != nil {
-		return "", nil, err
-	}
+	defer resp.Body.Close()
 
 	wm := &WriteMeta{RequestTime: rtt}
 	var out UserEvent
@@ -77,14 +70,11 @@ func (e *Event) List(name string, q *QueryOptions) ([]*UserEvent, *QueryMeta, er
 	if name != "" {
 		r.params.Set("name", name)
 	}
-	rtt, resp, err := e.c.doRequest(r)
+	rtt, resp, err := requireOK(e.c.doRequest(r))
 	if err != nil {
 		return nil, nil, err
 	}
-	defer closeResponseBody(resp)
-	if err := requireOK(resp); err != nil {
-		return nil, nil, err
-	}
+	defer resp.Body.Close()
 
 	qm := &QueryMeta{}
 	parseQueryMeta(resp, qm)

@@ -1,6 +1,3 @@
-// Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
-
 package memberlist
 
 // AliveDelegate is used to involve a client in processing
@@ -10,8 +7,8 @@ package memberlist
 // a node out and prevent it from being considered a peer
 // using application specific logic.
 type AliveDelegate interface {
-	// NotifyAlive is invoked when a message about a live
-	// node is received from the network.  Returning a non-nil
-	// error prevents the node from being considered a peer.
+	// NotifyMerge is invoked when a merge could take place.
+	// Provides a list of the nodes known by the peer. If
+	// the return value is non-nil, the merge is canceled.
 	NotifyAlive(peer *Node) error
 }

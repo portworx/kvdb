@@ -1,6 +1,3 @@
-// Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
-
 package api
 
 // Status can be used to query the Status endpoints
@@ -14,21 +11,13 @@ func (c *Client) Status() *Status {
 }
 
 // Leader is used to query for a known leader
-func (s *Status) LeaderWithQueryOptions(q *QueryOptions) (string, error) {
+func (s *Status) Leader() (string, error) {
 	r := s.c.newRequest("GET", "/v1/status/leader")
-
-	if q != nil {
-		r.setQueryOptions(q)
-	}
-
-	_, resp, err := s.c.doRequest(r)
+	_, resp, err := requireOK(s.c.doRequest(r))
 	if err != nil {
 		return "", err
 	}
-	defer closeResponseBody(resp)
-	if err := requireOK(resp); err != nil {
-		return "", err
-	}
+	defer resp.Body.Close()
 
 	var leader string
 	if err := decodeBody(resp, &leader); err != nil {
@@ -37,34 +26,18 @@ func (s *Status) LeaderWithQueryOptions(q *QueryOptions) (string, error) {
 	return leader, nil
 }
 
-func (s *Status) Leader() (string, error) {
-	return s.LeaderWithQueryOptions(nil)
-}
-
 // Peers is used to query for a known raft peers
-func (s *Status) PeersWithQueryOptions(q *QueryOptions) ([]string, error) {
+func (s *Status) Peers() ([]string, error) {
 	r := s.c.newRequest("GET", "/v1/status/peers")
-
-	if q != nil {
-		r.setQueryOptions(q)
-	}
-
-	_, resp, err := s.c.doRequest(r)
+	_, resp, err := requireOK(s.c.doRequest(r))
 	if err != nil {
 		return nil, err
 	}
-	defer closeResponseBody(resp)
-	if err := requireOK(resp); err != nil {
-		return nil, err
-	}
+	defer resp.Body.Close()
 
 	var peers []string
 	if err := decodeBody(resp, &peers); err != nil {
 		return nil, err
 	}
 	return peers, nil
-}
-
-func (s *Status) Peers() ([]string, error) {
-	return s.PeersWithQueryOptions(nil)
 }

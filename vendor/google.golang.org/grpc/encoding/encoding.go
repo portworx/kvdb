@@ -19,17 +19,12 @@
 // Package encoding defines the interface for the compressor and codec, and
 // functions to register and retrieve compressors and codecs.
 //
-// # Experimental
-//
-// Notice: This package is EXPERIMENTAL and may be changed or removed in a
-// later release.
+// This package is EXPERIMENTAL.
 package encoding
 
 import (
 	"io"
 	"strings"
-
-	"google.golang.org/grpc/internal/grpcutil"
 )
 
 // Identity specifies the optional encoding for uncompressed streams.
@@ -38,10 +33,6 @@ const Identity = "identity"
 
 // Compressor is used for compressing and decompressing when sending or
 // receiving messages.
-//
-// If a Compressor implements `DecompressedSize(compressedBytes []byte) int`,
-// gRPC will invoke it to determine the size of the buffer allocated for the
-// result of decompression.  A return value of -1 indicates unknown size.
 type Compressor interface {
 	// Compress writes the data written to wc to w after compressing it.  If an
 	// error occurs while initializing the compressor, that error is returned
@@ -55,6 +46,10 @@ type Compressor interface {
 	// coding header.  The result must be static; the result cannot change
 	// between calls.
 	Name() string
+	// EXPERIMENTAL: if a Compressor implements
+	// DecompressedSize(compressedBytes []byte) int, gRPC will call it
+	// to determine the size of the buffer allocated for the result of decompression.
+	// Return -1 to indicate unknown size.
 }
 
 var registeredCompressor = make(map[string]Compressor)
@@ -70,9 +65,6 @@ var registeredCompressor = make(map[string]Compressor)
 // registered with the same name, the one registered last will take effect.
 func RegisterCompressor(c Compressor) {
 	registeredCompressor[c.Name()] = c
-	if !grpcutil.IsCompressorNameRegistered(c.Name()) {
-		grpcutil.RegisteredCompressorNames = append(grpcutil.RegisteredCompressorNames, c.Name())
-	}
 }
 
 // GetCompressor returns Compressor for the given compressor name.
@@ -85,9 +77,9 @@ func GetCompressor(name string) Compressor {
 // methods can be called from concurrent goroutines.
 type Codec interface {
 	// Marshal returns the wire format of v.
-	Marshal(v any) ([]byte, error)
+	Marshal(v interface{}) ([]byte, error)
 	// Unmarshal parses the wire format into v.
-	Unmarshal(data []byte, v any) error
+	Unmarshal(data []byte, v interface{}) error
 	// Name returns the name of the Codec implementation. The returned string
 	// will be used as part of content type in transmission.  The result must be
 	// static; the result cannot change between calls.
@@ -108,7 +100,7 @@ var registeredCodecs = make(map[string]Codec)
 // more details.
 //
 // NOTE: this function must only be called during initialization time (i.e. in
-// an init() function), and is not thread-safe.  If multiple Codecs are
+// an init() function), and is not thread-safe.  If multiple Compressors are
 // registered with the same name, the one registered last will take effect.
 func RegisterCodec(codec Codec) {
 	if codec == nil {

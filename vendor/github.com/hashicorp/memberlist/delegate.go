@@ -1,6 +1,3 @@
-// Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
-
 package memberlist
 
 // Delegate is the interface that clients must implement if they want to hook
