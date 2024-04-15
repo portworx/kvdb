@@ -1677,6 +1677,7 @@ func (et *etcdKV) ListMembers() (map[uint64]*kvdb.MemberInfo, error) {
 			mi.PeerUrls = member.PeerURLs
 			mi.Name = member.Name
 			mi.HasStarted = len(member.Name) > 0
+			mi.IsLearner = member.IsLearner
 		} else {
 			// no status -- add "blank" MemberInfo
 			membersMap[member.ID] = &kvdb.MemberInfo{
@@ -1684,6 +1685,7 @@ func (et *etcdKV) ListMembers() (map[uint64]*kvdb.MemberInfo, error) {
 				Name:       member.Name,
 				HasStarted: len(member.Name) > 0,
 				ID:         strconv.FormatUint(member.ID, 16),
+				IsLearner:  member.IsLearner,
 			}
 		}
 	}
