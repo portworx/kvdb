@@ -426,6 +426,8 @@ type MemberInfo struct {
 	Name string
 	// HasStarted indicates if this member has successfully started kvdb.
 	HasStarted bool
+	// IsLearner indicates if this member is a learner (i.e. not yet promoted to a full voting member).
+	IsLearner bool
 }
 
 // Controller interface provides APIs to manage Kvdb Cluster and Kvdb Clients.
