@@ -4,12 +4,12 @@ services:
 - docker
 language: go
 go:
-- 1.17.13
+- 1.20.5
 install:
 - go install github.com/vbatts/git-validation@master
 script:
 - git-validation -run DCO,short-subject
-- make docker-test
+- make docker-build-kvdb-dev docker-test
 notifications:
   email:
     recipients:
