@@ -2,8 +2,6 @@ module github.com/portworx/kvdb
 
 go 1.21
 
-toolchain go1.22.2
-
 replace google.golang.org/grpc/naming => github.com/xiegeo/grpc-naming v1.29.1-alpha
 
 require (
