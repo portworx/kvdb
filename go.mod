@@ -1,8 +1,6 @@
 module github.com/portworx/kvdb
 
-go 1.21
-
-toolchain go1.22.2
+go 1.20
 
 replace google.golang.org/grpc/naming => github.com/xiegeo/grpc-naming v1.29.1-alpha
 
@@ -15,9 +13,9 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.8.4
 	go.etcd.io/etcd v3.3.27+incompatible
-	go.etcd.io/etcd/api/v3 v3.5.14
-	go.etcd.io/etcd/client/v3 v3.5.14
-	go.etcd.io/etcd/server/v3 v3.5.14
+	go.etcd.io/etcd/api/v3 v3.5.13
+	go.etcd.io/etcd/client/v3 v3.5.13
+	go.etcd.io/etcd/server/v3 v3.5.13
 	golang.org/x/net v0.21.0
 	google.golang.org/grpc v1.63.0
 )
@@ -62,11 +60,11 @@ require (
 	github.com/prometheus/procfs v0.6.0 // indirect
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
 	github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2 // indirect
-	go.etcd.io/bbolt v1.3.10 // indirect
-	go.etcd.io/etcd/client/pkg/v3 v3.5.14 // indirect
-	go.etcd.io/etcd/client/v2 v2.305.14 // indirect
-	go.etcd.io/etcd/pkg/v3 v3.5.14 // indirect
-	go.etcd.io/etcd/raft/v3 v3.5.14 // indirect
+	go.etcd.io/bbolt v1.3.9 // indirect
+	go.etcd.io/etcd/client/pkg/v3 v3.5.13 // indirect
+	go.etcd.io/etcd/client/v2 v2.305.13 // indirect
+	go.etcd.io/etcd/pkg/v3 v3.5.13 // indirect
+	go.etcd.io/etcd/raft/v3 v3.5.13 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.46.0 // indirect
 	go.opentelemetry.io/otel v1.20.0 // indirect
 	go.opentelemetry.io/otel/metric v1.20.0 // indirect
