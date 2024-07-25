@@ -785,7 +785,9 @@ func (et *etcdKV) Unlock(kvp *kvdb.KVPair) error {
 		// the lock, so even if we have connection errors we don't
 		// need to report error.
 		if closeChan {
-			l.Done <- struct{}{}
+			// close the channel without writing to it. This avoid blocking on the Done channel
+			// indefinitely if the caller has gone away (example: due to double Unlock)
+			close(l.Done)
 		}
 		return nil
 	}
