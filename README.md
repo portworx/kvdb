@@ -152,5 +152,3 @@ You can add the sign off when creating the git commit via `git commit -s`.
 ### License
 
 kvdb library is licensed under the Apache License 2.0
-
-replace google.golang.org/grpc/naming => github.com/xiegeo/grpc-naming v1.29.1-alpha
