@@ -773,26 +773,16 @@ func (et *etcdKV) Unlock(kvp *kvdb.KVPair) error {
 	l.Lock()
 	// Don't modify kvp here, CompareAndDelete does that.
 	_, err := et.CompareAndDelete(kvp, kvdb.KVFlags(0))
-	connectionError := false
 	if err != nil {
-		connectionError, _ = isRetryNeeded(err, "Unlock", kvp.Key, 300)
+		// ignore error since the lock will expire automatically after we stop the refresh
+		logrus.Warnf("Ignoring error when unlocking key %s: %v", kvp.Key, err)
 	}
-	if err == nil || connectionError {
-		l.Unlocked = true
-		closeChan := l.Err == nil
-		l.Unlock()
-		// stopping lock refresh will automatically release
-		// the lock, so even if we have connection errors we don't
-		// need to report error.
-		if closeChan {
-			// close the channel without writing to it. This avoid blocking on the Done channel
-			// indefinitely if the caller has gone away (example: due to double Unlock)
-			close(l.Done)
-		}
-		return nil
-	}
+	l.Unlocked = true
 	l.Unlock()
-	return err
+	// Close the channel without writing to it. This avoids blocking on the Done channel
+	// indefinitely when refreshLock has exited (e.g. after encountering an error)
+	close(l.Done)
+	return nil
 }
 
 func (et *etcdKV) TxNew() (kvdb.Tx, error) {
