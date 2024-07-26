@@ -25,10 +25,7 @@ import (
 
 // PreparedMsg is responsible for creating a Marshalled and Compressed object.
 //
-// # Experimental
-//
-// Notice: This type is EXPERIMENTAL and may be changed or removed in a
-// later release.
+// This API is EXPERIMENTAL.
 type PreparedMsg struct {
 	// Struct for preparing msg before sending them
 	encodedData []byte
@@ -37,7 +34,7 @@ type PreparedMsg struct {
 }
 
 // Encode marshalls and compresses the message using the codec and compressor for the stream.
-func (p *PreparedMsg) Encode(s Stream, msg any) error {
+func (p *PreparedMsg) Encode(s Stream, msg interface{}) error {
 	ctx := s.Context()
 	rpcInfo, ok := rpcInfoFromContext(ctx)
 	if !ok {
