@@ -19,6 +19,7 @@
 package base
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -28,29 +29,32 @@ import (
 	"google.golang.org/grpc/resolver"
 )
 
-var logger = grpclog.Component("balancer")
-
 type baseBuilder struct {
-	name          string
-	pickerBuilder PickerBuilder
-	config        Config
+	name            string
+	pickerBuilder   PickerBuilder
+	v2PickerBuilder V2PickerBuilder
+	config          Config
 }
 
 func (bb *baseBuilder) Build(cc balancer.ClientConn, opt balancer.BuildOptions) balancer.Balancer {
 	bal := &baseBalancer{
-		cc:            cc,
-		pickerBuilder: bb.pickerBuilder,
+		cc:              cc,
+		pickerBuilder:   bb.pickerBuilder,
+		v2PickerBuilder: bb.v2PickerBuilder,
 
-		subConns: resolver.NewAddressMap(),
+		subConns: make(map[resolver.Address]balancer.SubConn),
 		scStates: make(map[balancer.SubConn]connectivity.State),
 		csEvltr:  &balancer.ConnectivityStateEvaluator{},
 		config:   bb.config,
-		state:    connectivity.Connecting,
 	}
 	// Initialize picker to a picker that always returns
 	// ErrNoSubConnAvailable, because when state of a SubConn changes, we
 	// may call UpdateState with this picker.
-	bal.picker = NewErrPicker(balancer.ErrNoSubConnAvailable)
+	if bb.pickerBuilder != nil {
+		bal.picker = NewErrPicker(balancer.ErrNoSubConnAvailable)
+	} else {
+		bal.v2Picker = NewErrPickerV2(balancer.ErrNoSubConnAvailable)
+	}
 	return bal
 }
 
@@ -58,78 +62,82 @@ func (bb *baseBuilder) Name() string {
 	return bb.name
 }
 
+var _ balancer.V2Balancer = (*baseBalancer)(nil) // Assert that we implement V2Balancer
+
 type baseBalancer struct {
-	cc            balancer.ClientConn
-	pickerBuilder PickerBuilder
+	cc              balancer.ClientConn
+	pickerBuilder   PickerBuilder
+	v2PickerBuilder V2PickerBuilder
 
 	csEvltr *balancer.ConnectivityStateEvaluator
 	state   connectivity.State
 
-	subConns *resolver.AddressMap
+	subConns map[resolver.Address]balancer.SubConn
 	scStates map[balancer.SubConn]connectivity.State
 	picker   balancer.Picker
+	v2Picker balancer.V2Picker
 	config   Config
 
 	resolverErr error // the last error reported by the resolver; cleared on successful resolution
 	connErr     error // the last connection error; cleared upon leaving TransientFailure
 }
 
+func (b *baseBalancer) HandleResolvedAddrs(addrs []resolver.Address, err error) {
+	panic("not implemented")
+}
+
 func (b *baseBalancer) ResolverError(err error) {
 	b.resolverErr = err
-	if b.subConns.Len() == 0 {
+	if len(b.subConns) == 0 {
 		b.state = connectivity.TransientFailure
 	}
-
 	if b.state != connectivity.TransientFailure {
 		// The picker will not change since the balancer does not currently
 		// report an error.
 		return
 	}
 	b.regeneratePicker()
-	b.cc.UpdateState(balancer.State{
-		ConnectivityState: b.state,
-		Picker:            b.picker,
-	})
+	if b.picker != nil {
+		b.cc.UpdateBalancerState(b.state, b.picker)
+	} else {
+		b.cc.UpdateState(balancer.State{
+			ConnectivityState: b.state,
+			Picker:            b.v2Picker,
+		})
+	}
 }
 
 func (b *baseBalancer) UpdateClientConnState(s balancer.ClientConnState) error {
+	// TODO: handle s.ResolverState.Err (log if not nil) once implemented.
 	// TODO: handle s.ResolverState.ServiceConfig?
-	if logger.V(2) {
-		logger.Info("base.baseBalancer: got new ClientConn state: ", s)
+	if grpclog.V(2) {
+		grpclog.Infoln("base.baseBalancer: got new ClientConn state: ", s)
 	}
 	// Successful resolution; clear resolver error and ensure we return nil.
 	b.resolverErr = nil
 	// addrsSet is the set converted from addrs, it's used for quick lookup of an address.
-	addrsSet := resolver.NewAddressMap()
+	addrsSet := make(map[resolver.Address]struct{})
 	for _, a := range s.ResolverState.Addresses {
-		addrsSet.Set(a, nil)
-		if _, ok := b.subConns.Get(a); !ok {
+		addrsSet[a] = struct{}{}
+		if _, ok := b.subConns[a]; !ok {
 			// a is a new address (not existing in b.subConns).
-			var sc balancer.SubConn
-			opts := balancer.NewSubConnOptions{
-				HealthCheckEnabled: b.config.HealthCheck,
-				StateListener:      func(scs balancer.SubConnState) { b.updateSubConnState(sc, scs) },
-			}
-			sc, err := b.cc.NewSubConn([]resolver.Address{a}, opts)
+			sc, err := b.cc.NewSubConn([]resolver.Address{a}, balancer.NewSubConnOptions{HealthCheckEnabled: b.config.HealthCheck})
 			if err != nil {
-				logger.Warningf("base.baseBalancer: failed to create new SubConn: %v", err)
+				grpclog.Warningf("base.baseBalancer: failed to create new SubConn: %v", err)
 				continue
 			}
-			b.subConns.Set(a, sc)
+			b.subConns[a] = sc
 			b.scStates[sc] = connectivity.Idle
-			b.csEvltr.RecordTransition(connectivity.Shutdown, connectivity.Idle)
 			sc.Connect()
 		}
 	}
-	for _, a := range b.subConns.Keys() {
-		sci, _ := b.subConns.Get(a)
-		sc := sci.(balancer.SubConn)
+	for a, sc := range b.subConns {
 		// a was removed by resolver.
-		if _, ok := addrsSet.Get(a); !ok {
-			sc.Shutdown()
-			b.subConns.Delete(a)
+		if _, ok := addrsSet[a]; !ok {
+			b.cc.RemoveSubConn(sc)
+			delete(b.subConns, a)
 			// Keep the state of this sc in b.scStates until sc's state becomes Shutdown.
-			// The entry will be deleted in updateSubConnState.
+			// The entry will be deleted in HandleSubConnStateChange.
 		}
 	}
 	// If resolver state contains no addresses, return an error so ClientConn
@@ -140,9 +148,6 @@ func (b *baseBalancer) UpdateClientConnState(s balancer.ClientConnState) error {
 		b.ResolverError(errors.New("produced zero addresses"))
 		return balancer.ErrBadResolverState
 	}
-
-	b.regeneratePicker()
-	b.cc.UpdateState(balancer.State{ConnectivityState: b.state, Picker: b.picker})
 	return nil
 }
 
@@ -162,51 +167,60 @@ func (b *baseBalancer) mergeErrors() error {
 
 // regeneratePicker takes a snapshot of the balancer, and generates a picker
 // from it. The picker is
-//   - errPicker if the balancer is in TransientFailure,
-//   - built by the pickerBuilder with all READY SubConns otherwise.
+//  - errPicker if the balancer is in TransientFailure,
+//  - built by the pickerBuilder with all READY SubConns otherwise.
 func (b *baseBalancer) regeneratePicker() {
 	if b.state == connectivity.TransientFailure {
-		b.picker = NewErrPicker(b.mergeErrors())
+		if b.pickerBuilder != nil {
+			b.picker = NewErrPicker(balancer.ErrTransientFailure)
+		} else {
+			b.v2Picker = NewErrPickerV2(balancer.TransientFailureError(b.mergeErrors()))
+		}
 		return
 	}
-	readySCs := make(map[balancer.SubConn]SubConnInfo)
+	if b.pickerBuilder != nil {
+		readySCs := make(map[resolver.Address]balancer.SubConn)
 
-	// Filter out all ready SCs from full subConn map.
-	for _, addr := range b.subConns.Keys() {
-		sci, _ := b.subConns.Get(addr)
-		sc := sci.(balancer.SubConn)
-		if st, ok := b.scStates[sc]; ok && st == connectivity.Ready {
-			readySCs[sc] = SubConnInfo{Address: addr}
+		// Filter out all ready SCs from full subConn map.
+		for addr, sc := range b.subConns {
+			if st, ok := b.scStates[sc]; ok && st == connectivity.Ready {
+				readySCs[addr] = sc
+			}
 		}
+		b.picker = b.pickerBuilder.Build(readySCs)
+	} else {
+		readySCs := make(map[balancer.SubConn]SubConnInfo)
+
+		// Filter out all ready SCs from full subConn map.
+		for addr, sc := range b.subConns {
+			if st, ok := b.scStates[sc]; ok && st == connectivity.Ready {
+				readySCs[sc] = SubConnInfo{Address: addr}
+			}
+		}
+		b.v2Picker = b.v2PickerBuilder.Build(PickerBuildInfo{ReadySCs: readySCs})
 	}
-	b.picker = b.pickerBuilder.Build(PickerBuildInfo{ReadySCs: readySCs})
 }
 
-// UpdateSubConnState is a nop because a StateListener is always set in NewSubConn.
+func (b *baseBalancer) HandleSubConnStateChange(sc balancer.SubConn, s connectivity.State) {
+	panic("not implemented")
+}
+
 func (b *baseBalancer) UpdateSubConnState(sc balancer.SubConn, state balancer.SubConnState) {
-	logger.Errorf("base.baseBalancer: UpdateSubConnState(%v, %+v) called unexpectedly", sc, state)
-}
-
-func (b *baseBalancer) updateSubConnState(sc balancer.SubConn, state balancer.SubConnState) {
 	s := state.ConnectivityState
-	if logger.V(2) {
-		logger.Infof("base.baseBalancer: handle SubConn state change: %p, %v", sc, s)
+	if grpclog.V(2) {
+		grpclog.Infof("base.baseBalancer: handle SubConn state change: %p, %v", sc, s)
 	}
 	oldS, ok := b.scStates[sc]
 	if !ok {
-		if logger.V(2) {
-			logger.Infof("base.baseBalancer: got state changes for an unknown SubConn: %p, %v", sc, s)
+		if grpclog.V(2) {
+			grpclog.Infof("base.baseBalancer: got state changes for an unknown SubConn: %p, %v", sc, s)
 		}
 		return
 	}
-	if oldS == connectivity.TransientFailure &&
-		(s == connectivity.Connecting || s == connectivity.Idle) {
-		// Once a subconn enters TRANSIENT_FAILURE, ignore subsequent IDLE or
+	if oldS == connectivity.TransientFailure && s == connectivity.Connecting {
+		// Once a subconn enters TRANSIENT_FAILURE, ignore subsequent
 		// CONNECTING transitions to prevent the aggregated state from being
 		// always CONNECTING when many backends exist but are all down.
-		if s == connectivity.Idle {
-			sc.Connect()
-		}
 		return
 	}
 	b.scStates[sc] = s
@@ -214,8 +228,8 @@ func (b *baseBalancer) updateSubConnState(sc balancer.SubConn, state balancer.Su
 	case connectivity.Idle:
 		sc.Connect()
 	case connectivity.Shutdown:
-		// When an address was removed by resolver, b called Shutdown but kept
-		// the sc's state in scStates. Remove state for this sc here.
+		// When an address was removed by resolver, b called RemoveSubConn but
+		// kept the sc's state in scStates. Remove state for this sc here.
 		delete(b.scStates, sc)
 	case connectivity.TransientFailure:
 		// Save error to be reported via picker.
@@ -232,33 +246,41 @@ func (b *baseBalancer) updateSubConnState(sc balancer.SubConn, state balancer.Su
 		b.state == connectivity.TransientFailure {
 		b.regeneratePicker()
 	}
-	b.cc.UpdateState(balancer.State{ConnectivityState: b.state, Picker: b.picker})
+
+	if b.picker != nil {
+		b.cc.UpdateBalancerState(b.state, b.picker)
+	} else {
+		b.cc.UpdateState(balancer.State{ConnectivityState: b.state, Picker: b.v2Picker})
+	}
 }
 
 // Close is a nop because base balancer doesn't have internal state to clean up,
-// and it doesn't need to call Shutdown for the SubConns.
+// and it doesn't need to call RemoveSubConn for the SubConns.
 func (b *baseBalancer) Close() {
 }
 
-// ExitIdle is a nop because the base balancer attempts to stay connected to
-// all SubConns at all times.
-func (b *baseBalancer) ExitIdle() {
-}
-
-// NewErrPicker returns a Picker that always returns err on Pick().
+// NewErrPicker returns a picker that always returns err on Pick().
 func NewErrPicker(err error) balancer.Picker {
 	return &errPicker{err: err}
 }
-
-// NewErrPickerV2 is temporarily defined for backward compatibility reasons.
-//
-// Deprecated: use NewErrPicker instead.
-var NewErrPickerV2 = NewErrPicker
 
 type errPicker struct {
 	err error // Pick() always returns this err.
 }
 
-func (p *errPicker) Pick(info balancer.PickInfo) (balancer.PickResult, error) {
+func (p *errPicker) Pick(context.Context, balancer.PickInfo) (balancer.SubConn, func(balancer.DoneInfo), error) {
+	return nil, nil, p.err
+}
+
+// NewErrPickerV2 returns a V2Picker that always returns err on Pick().
+func NewErrPickerV2(err error) balancer.V2Picker {
+	return &errPickerV2{err: err}
+}
+
+type errPickerV2 struct {
+	err error // Pick() always returns this err.
+}
+
+func (p *errPickerV2) Pick(info balancer.PickInfo) (balancer.PickResult, error) {
 	return balancer.PickResult{}, p.err
 }
