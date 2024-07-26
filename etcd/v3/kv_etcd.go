@@ -15,10 +15,10 @@ import (
 	ec "github.com/portworx/kvdb/etcd/common"
 	"github.com/portworx/kvdb/mem"
 	"github.com/sirupsen/logrus"
-	"go.etcd.io/etcd/api/v3/mvccpb"
-	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
-	e "go.etcd.io/etcd/client/v3"
-	"go.etcd.io/etcd/client/v3/concurrency"
+	e "go.etcd.io/etcd/clientv3"
+	"go.etcd.io/etcd/clientv3/concurrency"
+	"go.etcd.io/etcd/etcdserver/api/v3rpc/rpctypes"
+	"go.etcd.io/etcd/mvcc/mvccpb"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
@@ -153,7 +153,7 @@ func New(
 		DialKeepAliveTime:    defaultKeepAliveTime,
 		DialKeepAliveTimeout: defaultKeepAliveTimeout,
 
-		// As per the comment in go.etcd.io/etcd/client/v3/config.go, we need to pass "grpc.WithBlock()"
+		// As per the comment in go.etcd.io/etcd/clientv3/config.go, we need to pass "grpc.WithBlock()"
 		// to block until the underlying connection is up. Without this, Dial returns immediately and
 		// connecting the server happens in background. This is a behavior change in 3.4.
 		// We use WithBlock to preserve the old behavior.
@@ -187,7 +187,7 @@ func New(
 	// API errors out for an endpoint, the etcd client code marks the pinned address as not reachable
 	// instead of the actual endpoint for which the Status command failed. This causes the etcd
 	// balancer to go into a retry loop trying to fix its healthy endpoints.
-	// https://github.com/etcd-io/etcd/blob/v3.3.1/client/v3/retry.go#L102
+	// https://github.com/etcd-io/etcd/blob/v3.3.1/clientv3/retry.go#L102
 	// keepalive is not required for maintenance requests
 	mCfg := cfg
 	mCfg.DialKeepAliveTime = 0
