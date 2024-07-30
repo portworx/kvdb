@@ -2,6 +2,8 @@ package etcdv3
 
 import (
 	"fmt"
+	"math/rand"
+	"sync"
 	"testing"
 	"time"
 
@@ -120,7 +122,7 @@ func testWithRestarts(t *testing.T, testFn func(chan int, kvdb.Kvdb, *kvdb.KVPai
 	val := "great"
 	err := common.TestStart(true)
 	assert.NoError(t, err, "Unable to start kvdb")
-	kv := newKv(t)
+	kv := newKv(t, 0)
 
 	defer func() {
 		kv.DeleteTree(key)
@@ -154,8 +156,13 @@ func testWithRestarts(t *testing.T, testFn func(chan int, kvdb.Kvdb, *kvdb.KVPai
 func TestKeys(t *testing.T) {
 	err := common.TestStart(true)
 	require.NoError(t, err, "Unable to start kvdb")
-	kv := newKv(t)
+	kv := newKv(t, 0)
 	require.NotNil(t, kv)
+
+	defer func() {
+		t.Log("Stopping kvdb")
+		common.TestStop()
+	}()
 
 	data := []struct {
 		key, val string
@@ -165,9 +172,6 @@ func TestKeys(t *testing.T) {
 		{"foo/keys/key3d/key3", "val3"},
 		{"foo/keys/key3d/key3b", "val3b"},
 	}
-	defer func() {
-		kv.DeleteTree("foo/keys")
-	}()
 
 	// load the data
 	for i, td := range data {
@@ -225,10 +229,75 @@ func TestKeys(t *testing.T) {
 	}
 }
 
-func newKv(t *testing.T) kvdb.Kvdb {
-	kv, err := New("pwx/test", nil, nil, nil)
+func TestUnlock(t *testing.T) {
+	err := common.TestStart(true)
+	require.NoError(t, err, "Unable to start kvdb")
+	t.Log("Started kvdb")
+
+	kv := newKv(t, 2*time.Second)
+	require.NotNil(t, kv)
+
+	defer func() {
+		t.Log("Stopping kvdb")
+		common.TestStop()
+	}()
+
+	data := []struct {
+		key, val string
+	}{
+		{"foo/keys/key1", "val1"},
+		{"foo/keys/key2", "val2"},
+		{"foo/keys/key3", "val3"},
+	}
+
+	// load the data
+	for i, td := range data {
+		_, err := kv.Put(td.key, []byte(td.val), 0)
+		require.NoError(t, err, "Unxpected error in Put on test# %d : %v", i+1, td)
+	}
+	t.Log("loaded data")
+
+	var wg sync.WaitGroup
+	for i := 0; i < 30; i++ {
+		key := fmt.Sprintf("foo/keys/key%d", i%3+1)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			kvp, err := kv.Lock(key)
+			require.NoError(t, err, "Failed to lock key %s", key)
+			t.Log("locked key", key)
+
+			dur := time.Duration(2000+rand.Intn(2000)) * time.Millisecond
+			time.Sleep(dur)
+
+			err = kv.Unlock(kvp)
+			require.NoError(t, err, "Failed to unlock key %s", key)
+			t.Log("unlocked key", key)
+
+			dur = time.Duration(rand.Intn(500)) * time.Millisecond
+			time.Sleep(dur)
+
+			// unlock again (double unlock is not recommended but can happen)
+			err = kv.Unlock(kvp)
+			require.NoError(t, err, "Failed to double unlock key %s", key)
+			t.Log("unlocked key again", key)
+		}()
+	}
+	wg.Wait()
+	// give some time for refreshLocks to finish
+	time.Sleep(time.Second)
+}
+
+func newKv(t *testing.T, lockRefreshDuration time.Duration) kvdb.Kvdb {
+	kv, err := New("pwx/test", nil, nil, func(err error, format string, args ...interface{}) {
+		t.Fatalf(format, args...)
+	})
 	if err != nil {
 		t.Fatalf(err.Error())
+	}
+	if lockRefreshDuration != 0 {
+		et := kv.(*etcdKV)
+		et.lockRefreshDuration = lockRefreshDuration
 	}
 	return kv
 }
