@@ -241,5 +241,7 @@ func TestStart(removeData bool) error {
 
 // TestStop stops test
 func TestStop() error {
-	return cmd.Process.Kill()
+	err := cmd.Process.Kill()
+	time.Sleep(5 * time.Second)
+	return err
 }

@@ -115,10 +115,11 @@ func init() {
 
 type etcdKV struct {
 	common.BaseKvdb
-	kvClient          *e.Client
-	authClient        e.Auth
-	maintenanceClient *e.Client
-	domain            string
+	kvClient            *e.Client
+	authClient          e.Auth
+	maintenanceClient   *e.Client
+	domain              string
+	lockRefreshDuration time.Duration
 	ec.EtcdCommon
 }
 
@@ -206,6 +207,7 @@ func New(
 		e.NewAuth(kvClient),
 		mClient,
 		domain,
+		ec.DefaultLockRefreshDuration,
 		etcdCommon,
 	}, nil
 }
@@ -772,12 +774,12 @@ func (et *etcdKV) Unlock(kvp *kvdb.KVPair) error {
 	}
 	l.Lock()
 	defer l.Unlock()
-	// Don't modify kvp here, CompareAndDelete does that.
-	if _, err := et.CompareAndDelete(kvp, kvdb.KVFlags(0)); err != nil {
-		// ignore error since the lock will expire automatically after we stop the refresh
-		logrus.Warnf("Ignoring error when unlocking key %s: %v", kvp.Key, err)
-	}
 	if !l.Unlocked {
+		// Don't modify kvp here, CompareAndDelete does that.
+		if _, err := et.CompareAndDelete(kvp, kvdb.KVFlags(0)); err != nil {
+			// ignore error since the lock will expire automatically after we stop the refresh
+			logrus.Warnf("Ignoring error when unlocking key %s: %v", kvp.Key, err)
+		}
 		// Close the channel without writing to it. This avoids blocking indefinitely when writing to the channel
 		// after refreshLock has exited (e.g. after encountering an error).
 		close(l.Done)
@@ -921,7 +923,7 @@ func (et *etcdKV) refreshLock(
 ) {
 	l := kvPair.Lock.(*ec.EtcdLock)
 	ttl := kvPair.TTL
-	refresh := time.NewTicker(ec.DefaultLockRefreshDuration)
+	refresh := time.NewTicker(et.lockRefreshDuration)
 	var (
 		keyString      string
 		currentRefresh time.Time
