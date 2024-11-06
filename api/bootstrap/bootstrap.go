@@ -18,11 +18,13 @@ type BootstrapEntry struct {
 	Type NodeType
 	// Ts is the last updated timestamp of this bootstrap entry
 	Ts time.Time
-	// Version is the bootstrap entry version
+	// Version DEPRECATED This will always be "v2" for backward compatibility. New code should use EntryVersion.
 	Version string
+	// EntryVersion is the bootstrap entry version
+	EntryVersion int
 	// used only for tests
 	// PeerPort is the peer port for kvdb node
-	PeerPort string `json:"peerport,omitemty"`
+	PeerPort string `json:"peerport,omitempty"`
 	// ClientPort is the client port for kvdb node
 	ClientPort string `json:"clientport,omitempty"`
 	// Domain is the domain name advertised in the peer urls for this kvdb node
@@ -33,6 +35,12 @@ type BootstrapEntry struct {
 	// DataDirType is the type of data directory being used by internal kvdb on
 	// this node
 	DataDirType Type
+	// Filesystem UUID of the disk used by the kvdb node for it's db
+	DiskUUID string
+	// IsStorageless is set to true if the node is storageless
+	IsStorageless bool
+	// Zone is the zone of the node
+	Zone string
 }
 
 // NodeState is the state of a kvdb bootstrap node
